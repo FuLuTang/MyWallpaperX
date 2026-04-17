@@ -59,6 +59,7 @@ extension WallpaperManager {
         )
         lastAppliedEnginePauseSettings = EnginePauseSettingsSnapshot(settings: settings)
         WallpaperEngine.shared.setVolume(Float(settings.volume))
+        applySystemAudioSpectrumToEngine()
     }
 
     // 启动自动切换 timer（始终从 0 重新计时）
@@ -172,7 +173,7 @@ extension WallpaperManager {
 
     func shouldRunAutoSwitchTimer() -> Bool {
         // 只有“启用自动切换 + 有壁纸 + 处于可切换模式”时才启动 timer。
-        settings.autoSwitchEnabled && !wallpapers.isEmpty && isSwitchingPlaybackMode()
+        settings.autoSwitchEnabled && !wallpapers.isEmpty && currentWallpaper != nil && isSwitchingPlaybackMode()
     }
 
     func shouldLoopCurrentItemInEngine() -> Bool {
@@ -270,9 +271,31 @@ extension WallpaperManager {
         }
     }
 
+    func setSyncSystemWallpaperEnabled(_ enabled: Bool) {
+        settings.syncSystemWallpaper = enabled
+        if !enabled {
+            pendingSystemWallpaperSyncWorkItem?.cancel()
+            pendingSystemWallpaperSyncWorkItem = nil
+        }
+    }
+
     func applyPlaybackRateToEngine() {
         // 播放速率只影响引擎内部，不重建 daemon session，直接更新速率并在未暂停时立即生效。
-        let rate = Float(max(0.25, min(2.0, settings.playbackRate)))
+        let effectiveRate = settings.playbackRateEnabled ? settings.playbackRate : 1.0
+        let rate = Float(max(0.25, min(2.0, effectiveRate)))
         WallpaperEngine.shared.setPlaybackRate(rate)
+    }
+
+    func applySystemAudioSpectrumToEngine() {
+        WallpaperEngine.shared.configureSystemAudioSpectrum(
+            enabled: settings.systemAudioSpectrumEnabled,
+            style: settings.systemAudioSpectrumStyle,
+            sensitivity: settings.systemAudioSpectrumSensitivity,
+            colorHex: settings.systemAudioSpectrumColorHex,
+            offsetX: Float(settings.systemAudioSpectrumOffsetX),
+            offsetY: Float(settings.systemAudioSpectrumOffsetY),
+            barCount: settings.systemAudioSpectrumBarCount,
+            peakCapsEnabled: settings.systemAudioSpectrumPeakCapsEnabled
+        )
     }
 }

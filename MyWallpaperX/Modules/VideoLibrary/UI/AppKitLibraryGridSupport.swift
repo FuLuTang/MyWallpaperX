@@ -103,18 +103,12 @@ final class AppKitWallpaperCollectionView: NSCollectionView, GridCollectionViewP
         super.mouseUp(with: event)
         guard event.type == .leftMouseUp else { return }
         if let pressedCardIndexPath {
-            let elapsed = ProcessInfo.processInfo.systemUptime - pressedCardTimestamp
-            let remaining = max(0, UIInteractionAnimation.minimumPressVisualDuration - elapsed)
-            let releaseWork = DispatchWorkItem { [weak self] in
+            pendingPressReleaseWorkItem = VideoLibraryCollectionInteractionSupport.schedulePressRelease(
+                pressedAt: pressedCardTimestamp
+            ) { [weak self] in
                 guard let self else { return }
                 self.cardPressStateHandler?(pressedCardIndexPath, false)
                 self.pressedCardIndexPath = nil
-            }
-            pendingPressReleaseWorkItem = releaseWork
-            if remaining <= 0 {
-                releaseWork.perform()
-            } else {
-                DispatchQueue.main.asyncAfter(deadline: .now() + remaining, execute: releaseWork)
             }
         }
         let point = convert(event.locationInWindow, from: nil)
@@ -132,11 +126,14 @@ final class AppKitWallpaperCollectionView: NSCollectionView, GridCollectionViewP
 
     override func keyDown(with event: NSEvent) {
         // 方向键由 WallpaperManager 统一处理选中态移动，不走 NSCollectionView 默认行为。
-        let arrowKeyCodes: Set<UInt16> = [123, 124, 125, 126]
-        if arrowKeyCodes.contains(event.keyCode),
-           event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty {
-            WallpaperManager.shared.moveSingleSelectionByArrowKey(event.keyCode)
-            return
+        if event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty {
+            switch event.keyCode {
+            case 123, 124, 125, 126:
+                WallpaperManager.shared.moveSingleSelectionByArrowKey(event.keyCode)
+                return
+            default:
+                break
+            }
         }
         // 回车键：将当前选中的卡片设为壁纸。
         if event.keyCode == 36,
@@ -167,9 +164,9 @@ final class AppKitWallpaperCollectionView: NSCollectionView, GridCollectionViewP
 
 final class AppKitThumbnailProvider {
     private let wallpaperManager: WallpaperManager
-    private let cache = ThumbnailCache(
-        label: "com.mywallpaper.videolibrary.thumbnail.decode",
-        countLimit: 360
+    private let decodeQueue = DispatchQueue(
+        label: "com.mywallpaper.videolibrary.thumbnail.provider",
+        qos: .userInitiated
     )
 
     init(wallpaperManager: WallpaperManager) {
@@ -177,21 +174,23 @@ final class AppKitThumbnailProvider {
     }
 
     func loadThumbnail(for wallpaper: VideoWallpaper, completion: @escaping (NSImage?) -> Void) {
-        let key = wallpaperManager.normalizedPath(wallpaper.path)
-        cache.load(forKey: key, loader: { [weak self] in
-            guard let self else { return nil }
-            guard let thumbPath = self.wallpaperManager.resolvedThumbnailPath(for: wallpaper) else { return nil }
-            return NSImage(contentsOfFile: thumbPath)
-        }, completion: completion)
+        decodeQueue.async { [weak self] in
+            guard let self else { return }
+            let image: NSImage?
+            if let thumbPath = self.wallpaperManager.resolvedThumbnailPath(for: wallpaper) {
+                image = NSImage(contentsOfFile: thumbPath)
+            } else {
+                image = nil
+            }
+
+            DispatchQueue.main.async {
+                completion(image)
+            }
+        }
     }
 
     func prefetchThumbnail(for wallpaper: VideoWallpaper) {
-        let key = wallpaperManager.normalizedPath(wallpaper.path)
-        cache.prefetch(forKey: key, loader: { [weak self] in
-            guard let self else { return nil }
-            guard let thumbPath = self.wallpaperManager.resolvedThumbnailPath(for: wallpaper) else { return nil }
-            return NSImage(contentsOfFile: thumbPath)
-        })
+        loadThumbnail(for: wallpaper) { _ in }
     }
 
     func cancelPrefetch(id: String) {

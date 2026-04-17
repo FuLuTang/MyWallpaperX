@@ -65,6 +65,7 @@ final class AppKitSidebarContainerView: NSView {
         case others
         case images
         case online
+        case steam
 
         var title: String {
             switch self {
@@ -73,6 +74,7 @@ final class AppKitSidebarContainerView: NSView {
             case .others: return "其他"
             case .images: return "图像"
             case .online: return "在线"
+            case .steam: return "Steam"
             }
         }
     }
@@ -85,6 +87,8 @@ final class AppKitSidebarContainerView: NSView {
         case staticImageLibrary
         case onlineLibrary
         case onlineDownloads     // 在线库已下载项
+        case steamWorkshop
+        case steamDownloads
     }
 
     private final class SidebarNode: NSObject {
@@ -122,6 +126,10 @@ final class AppKitSidebarContainerView: NSView {
                 return .onlineLibrary
             case .onlineDownloads:
                 return .onlineDownloads
+            case .steamWorkshop:
+                return .steamWorkshop
+            case .steamDownloads:
+                return .steamDownloads
             case .section:
                 return nil
             }
@@ -145,6 +153,7 @@ final class AppKitSidebarContainerView: NSView {
         let silTagCounts: [String: Int]
         let silWallpapersCount: Int  // 图片库总数，变化时触发侧边栏重建
         let onlineDownloadsCount: Int // 在线库已下载数，变化时更新侧边栏计数
+        let steamDownloadsCount: Int
     }
 
     private struct SidebarLibraryStats {
@@ -318,6 +327,11 @@ final class AppKitSidebarContainerView: NSView {
             .sink { [weak self] _ in self?.scheduleReloadSidebarData() }
             .store(in: &cancellables)
 
+        SteamWorkshopService.shared.$downloads
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.scheduleReloadSidebarData() }
+            .store(in: &cancellables)
+
         NotificationCenter.default.publisher(for: .wallpaperManagerDidResetToFreshInstallState)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
@@ -379,7 +393,8 @@ final class AppKitSidebarContainerView: NSView {
             silTags: silTagsList,
             silTagCounts: silTagCounts,
             silWallpapersCount: SILService.shared.wallpapers.count,
-            onlineDownloadsCount: OnlineLibraryService.shared.downloadedIDs.count
+            onlineDownloadsCount: OnlineLibraryService.shared.downloadedIDs.count,
+            steamDownloadsCount: SteamWorkshopService.shared.downloadsCount
         )
     }
 
@@ -434,19 +449,6 @@ final class AppKitSidebarContainerView: NSView {
             )
         }
 
-        let othersSection = SidebarNode(
-            kind: .section(.others),
-            title: SidebarSectionID.others.title,
-            children: [
-                SidebarNode(
-                    kind: .category(.settings),
-                    title: "设置",
-                    symbolName: "gearshape",
-                    count: nil
-                )
-            ]
-        )
-
         // 图片壁纸分区：主入口 + 图片专属标签（共享同一分区，与视频库完全独立）
         let silTags = SILService.shared.silTags
         let silTagChildren = silTags.map { tag in
@@ -473,27 +475,45 @@ final class AppKitSidebarContainerView: NSView {
         )
         sections.append(imagesSection)
 
-        // 在线图库独立分区（只作为浏览入口，不参与本地库任何逻辑）
+        // Pixabay 独立分区（只作为浏览入口，不参与本地库任何逻辑）
         let onlineSection = SidebarNode(
             kind: .section(.online),
             title: SidebarSectionID.online.title,
             children: [
                 SidebarNode(
                     kind: .onlineLibrary,
-                    title: "在线图库",
+                    title: "Pixabay 素材库",
                     symbolName: "globe",
                     count: nil
                 ),
                 SidebarNode(
                     kind: .onlineDownloads,
-                    title: "已下载项",
+                    title: "Pixabay 下载",
                     symbolName: "arrow.down.circle",
                     count: OnlineLibraryService.shared.downloadedIDs.count
                 )
             ]
         )
+        let steamSection = SidebarNode(
+            kind: .section(.steam),
+            title: SidebarSectionID.steam.title,
+            children: [
+                SidebarNode(
+                    kind: .steamWorkshop,
+                    title: "Steam 创意工坊",
+                    symbolName: "shippingbox",
+                    count: nil
+                ),
+                SidebarNode(
+                    kind: .steamDownloads,
+                    title: "Steam 下载",
+                    symbolName: "arrow.down.doc",
+                    count: signature.steamDownloadsCount
+                )
+            ]
+        )
+        sections.append(steamSection)
         sections.append(onlineSection)
-        sections.append(othersSection)
 
         rootNodes = sections
     }
@@ -594,7 +614,8 @@ final class AppKitSidebarContainerView: NSView {
             silTags: signature.silTags,
             silTagCounts: signature.silTagCounts,
             silWallpapersCount: signature.silWallpapersCount,
-            onlineDownloadsCount: signature.onlineDownloadsCount
+            onlineDownloadsCount: signature.onlineDownloadsCount,
+            steamDownloadsCount: signature.steamDownloadsCount
         )
     }
 

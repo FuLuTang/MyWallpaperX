@@ -16,10 +16,19 @@ struct DaemonCommand: Codable {
     let action: String
     let videoPath: String?
     let framePath: String?
+    let webRootPath: String?
+    let propertiesJSON: String?
     let fillMode: String?
     let shouldLoopCurrentItem: Bool?
     let volume: Float?
     let playbackRate: Float?
+    let spectrumEnabled: Bool?
+    let spectrumLevels: [Float]?
+    let spectrumBarCount: Int?
+    let spectrumColorHex: String?
+    let spectrumOffsetX: Float?
+    let spectrumOffsetY: Float?
+    let spectrumPeakCapsEnabled: Bool?
     let requestID: Int?
 }
 
@@ -29,4 +38,5 @@ struct DaemonEvent: Codable {
     let requestID: Int?
     let message: String?
     let videoPath: String?
+    let contentKind: String?
 }

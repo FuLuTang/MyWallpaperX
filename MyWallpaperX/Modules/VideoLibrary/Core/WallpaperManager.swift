@@ -48,11 +48,28 @@ class WallpaperManager: ObservableObject {
     
     @Published var selectedCategory: Category = .myWallpapers
     @Published var selectedTag: String? = nil
-    @Published var wallpapers: [VideoWallpaper] = []
+    @Published var wallpapers: [VideoWallpaper] = [] {
+        didSet {
+            syncSelectedWallpaperInspectorIfNeeded()
+        }
+    }
     @Published var settings: WallpaperSettings = WallpaperSettings()
-    @Published var selectedWallpaperId: String? = nil
-    @Published var selectedWallpaperIds: Set<String> = []
-    @Published var isMultiSelectMode: Bool = false
+    @Published var selectedWallpaperId: String? = nil {
+        didSet {
+            syncSelectedWallpaperInspectorIfNeeded()
+        }
+    }
+    @Published var selectedWallpaperIds: Set<String> = [] {
+        didSet {
+            syncSelectedWallpaperInspectorIfNeeded()
+        }
+    }
+    @Published var inspectedWallpaperID: String? = nil
+    @Published var isMultiSelectMode: Bool = false {
+        didSet {
+            syncSelectedWallpaperInspectorIfNeeded()
+        }
+    }
     @Published var isDragSelecting: Bool = false
     @Published var currentWallpaper: VideoWallpaper? = nil
     @Published var recentlyUsedWallpapers: [VideoWallpaper] = []
@@ -101,6 +118,9 @@ class WallpaperManager: ObservableObject {
     var missingIndexedFilePaths = Set<String>()
     var pendingMissingIndexedTitles = Set<String>()
     var missingIndexedAlertWorkItem: DispatchWorkItem?
+    var missingIndexedSourceScanWorkItem: DispatchWorkItem?
+    var thumbnailGenerationFailures: [String: Date] = [:]
+    let thumbnailGenerationFailureLock = NSLock()
     var wallpapersAutoSaveWorkItem: DispatchWorkItem?
     var recentWallpapersAutoSaveWorkItem: DispatchWorkItem?
     var settingsAutoSaveWorkItem: DispatchWorkItem?
@@ -188,6 +208,7 @@ class WallpaperManager: ObservableObject {
             }
             // 播放速率变化时立即同步到引擎。
             self.applyPlaybackRateToEngine()
+            self.applySystemAudioSpectrumToEngine()
         }
         .store(in: &cancellables)
 
@@ -198,7 +219,7 @@ class WallpaperManager: ObservableObject {
             self.scheduleWallpapersAutoPersist()
         }
         .store(in: &cancellables)
-        
+
         // 监听当前壁纸变化，自动保存
         $currentWallpaper
         .dropFirst()
@@ -242,6 +263,7 @@ class WallpaperManager: ObservableObject {
 
     var pendingCardInteraction = false
     var pendingCardInteractionResetWorkItem: DispatchWorkItem?
+    let thumbnailFailureRetryCooldown: TimeInterval = 12
 
     func normalizedPath(_ path: String) -> String {
         // 路径比较统一先做标准化，避免符号链接、相对路径和大小写差异造成重复项。

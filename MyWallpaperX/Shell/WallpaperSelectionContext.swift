@@ -115,7 +115,9 @@ extension WallpaperManager {
         if let tag = selectedTag {
             return .tag(tag)
         }
-        return .category(selectedCategory)
+        // 设置页现在统一使用独立窗口语义；主窗口选择态若残留旧的 `.settings` 持久化值，回退到视频库默认入口。
+        let sanitizedCategory: Category = (selectedCategory == .settings) ? .myWallpapers : selectedCategory
+        return .category(sanitizedCategory)
     }
 }
 
@@ -129,6 +131,10 @@ extension SelectedItem {
         case .onlineLibrary:
             return .category(.myWallpapers)
         case .onlineDownloads:
+            return .category(.myWallpapers)
+        case .steamWorkshop:
+            return .category(.myWallpapers)
+        case .steamDownloads:
             return .category(.myWallpapers)
         case .staticImageLibrary:
             return .category(.myWallpapers)
@@ -156,6 +162,10 @@ extension SelectedItem {
         case .onlineLibrary:
             break
         case .onlineDownloads:
+            break
+        case .steamWorkshop:
+            break
+        case .steamDownloads:
             break
         case .staticImageLibrary:
             break
@@ -185,7 +195,7 @@ extension SelectedItem {
         switch self {
         case .category, .tag:
             return true
-        case .staticImageLibrary, .silTag, .onlineLibrary, .onlineDownloads:
+        case .staticImageLibrary, .silTag, .onlineLibrary, .onlineDownloads, .steamWorkshop, .steamDownloads:
             return false
         }
     }
@@ -195,7 +205,16 @@ extension SelectedItem {
         switch self {
         case .staticImageLibrary, .silTag:
             return true
-        case .category, .tag, .onlineLibrary, .onlineDownloads:
+        case .category, .tag, .onlineLibrary, .onlineDownloads, .steamWorkshop, .steamDownloads:
+            return false
+        }
+    }
+
+    var isInSteamWorkshopContext: Bool {
+        switch self {
+        case .steamWorkshop, .steamDownloads:
+            return true
+        case .category, .tag, .staticImageLibrary, .silTag, .onlineLibrary, .onlineDownloads:
             return false
         }
     }

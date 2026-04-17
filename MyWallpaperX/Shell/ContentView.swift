@@ -22,6 +22,7 @@ struct ContentView: View {
             .ignoresSafeArea(.container, edges: .top)
             .onAppear {
                 syncSelectedItemFromManager()
+                syncInitialModuleFocusIfNeeded()
             }
             .onChange(of: selectedItem) { _, newValue in
                 syncManagerSelection(from: newValue)
@@ -43,7 +44,11 @@ struct ContentView: View {
                 selectedItem = .category(.myWallpapers)
                 lastPostedModuleID = .videoLibrary
                 contentReloadToken = UUID()
+                NotificationCenter.default.post(name: .inspectorHostCloseRequested, object: nil)
                 syncQuickLookPreviewIfNeeded()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .appOpenSettingsRequested)) { _ in
+                SettingsWindowController.shared.showWindow()
             }
             .simultaneousGesture(
                 TapGesture().onEnded {
@@ -102,16 +107,20 @@ struct ContentView: View {
         // 只在真正改变时发通知，避免视频库内部分类切换时反复触发工具栏重建。
         let isSIL = item == .staticImageLibrary || { if case .silTag = item { return true }; return false }()
         let isOnline = item == .onlineLibrary || item == .onlineDownloads
+        let isSteam = item == .steamWorkshop || item == .steamDownloads
         let newModule: ModuleIdentifier
         switch item {
         case .staticImageLibrary: newModule = .staticImageLibrary
         case .silTag:             newModule = .staticImageLibrary
         case .onlineLibrary:      newModule = .onlineLibrary
         case .onlineDownloads:    newModule = .onlineLibrary  // 已下载项属于在线库子页面
+        case .steamWorkshop:      newModule = .steamWorkshop
+        case .steamDownloads:     newModule = .steamWorkshop
         default:                  newModule = .videoLibrary
         }
         // 只在模块真正切换时才发工具栏模式通知，减少无效工具栏重建
         if lastPostedModuleID != newModule {
+            NotificationCenter.default.post(name: .inspectorHostCloseRequested, object: nil)
             lastPostedModuleID = newModule
             // silTag 上下文附加到通知中，供 SILToolbarController 更新工具栏标题
             var silUserInfo: [String: Any] = ["enabled": isSIL]
@@ -127,6 +136,14 @@ struct ContentView: View {
                 userInfo: [
                     "enabled": isOnline,
                     "isDownloads": item == .onlineDownloads
+                ]
+            )
+            NotificationCenter.default.post(
+                name: .steamWorkshopModeDidChange,
+                object: nil,
+                userInfo: [
+                    "enabled": isSteam,
+                    "isDownloads": item == .steamDownloads
                 ]
             )
         } else if isSIL {
@@ -148,6 +165,15 @@ struct ContentView: View {
                     "isDownloads": item == .onlineDownloads
                 ]
             )
+        } else if isSteam {
+            NotificationCenter.default.post(
+                name: .steamWorkshopModeDidChange,
+                object: nil,
+                userInfo: [
+                    "enabled": true,
+                    "isDownloads": item == .steamDownloads
+                ]
+            )
         }
         // 通知目标模块容器视图接管键盘焦点
         // 工具栏重建需要时间，延迟适当增加到 120ms 确保 CollectionView 已可见
@@ -162,6 +188,28 @@ struct ContentView: View {
 
     private func syncQuickLookPreviewIfNeeded() {
         QuickLookPreviewController.shared.syncVisiblePreview(for: wallpaperManager.selectedWallpaperForQuickLook)
+    }
+
+    private func syncInitialModuleFocusIfNeeded() {
+        let module: ModuleIdentifier
+        switch selectedItem {
+        case .staticImageLibrary, .silTag:
+            module = .staticImageLibrary
+        case .onlineLibrary, .onlineDownloads:
+            module = .onlineLibrary
+        case .steamWorkshop, .steamDownloads:
+            module = .steamWorkshop
+        default:
+            module = .videoLibrary
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+            NotificationCenter.default.post(
+                name: .moduleDidBecomeActive,
+                object: nil,
+                userInfo: ["module": module.rawValue]
+            )
+        }
     }
 
 }

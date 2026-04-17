@@ -1,0 +1,217 @@
+import Foundation
+
+struct SteamWorkshopWebAnalysisCacheManifest: Codable, Equatable {
+    static let currentVersion = 3
+
+    let version: Int
+    let recordID: String
+    let generatedAt: Date
+    let projectModifiedAt: Date?
+    let propertySourceRecordID: String?
+    let propertySourceProjectModifiedAt: Date?
+    let resolvedEntryModifiedAt: Date?
+    let analysis: CachedResolvedWebProjectDescriptor
+}
+
+struct SteamWorkshopWebRuntimeCacheManifest: Codable, Equatable {
+    static let currentVersion = 9
+
+    let version: Int
+    let recordID: String
+    let generatedAt: Date
+    let projectModifiedAt: Date?
+    let propertySourceRecordID: String?
+    let propertySourceProjectModifiedAt: Date?
+    let resolvedEntryModifiedAt: Date?
+    let overridesSignature: Data?
+    let execution: CachedResolvedWebExecutionManifest
+}
+
+struct CachedResolvedWebExecutionManifest: Codable, Equatable {
+    let resolvedEntryPath: String
+    let effectiveRootPath: String
+    let propertyPayloadJSON: String?
+}
+
+struct CachedResolvedWebProjectDescriptor: Codable, Equatable {
+    let sourceKind: ResolvedWebProjectDescriptor.SourceKind
+    let declaredEntryRelativePath: String?
+    let resolvedEntryRelativePath: String
+    let resolvedEntryPath: String
+    let effectiveRootPath: String
+    let entrySource: ResolvedWebProjectDescriptor.EntrySource
+    let sampleStructure: SteamWorkshopWebSampleStructure
+    let propertySource: SteamWorkshopWebPropertySource
+    let propertyDefinitions: [SteamWorkshopWebPropertyDefinition]
+    let defaultValueMap: [String: SteamWorkshopWebPropertyValue]
+    let presetOverrideMap: [String: SteamWorkshopWebPropertyValue]
+    let presetResourceBindingsByKey: [String: ResolvedWebResourceBinding]
+    let baselineVisiblePropertyKeys: [String]
+    let baselineVisibleOptionsByKey: [String: [SteamWorkshopWebPropertyOption]]
+    let baselinePreconditionStates: [ResolvedWebRuntimePrecondition]
+    let resolvedLocalizationMap: [String: String]
+    let hostCapabilitySnapshot: ResolvedWebHostCapabilitySnapshot
+    let staticContentSummary: ResolvedWebStaticContentSummary
+    let runtimeRiskFlags: [ResolvedWebRuntimeRiskFlag]
+}
+
+extension SteamWorkshopService {
+    func webAnalysisCacheFileURL(for record: SteamWorkshopDownloadRecord) -> URL {
+        record.folderURL.appendingPathComponent(".mywallpaperx-web-analysis.json")
+    }
+
+    func webRuntimeCacheFileURL(for record: SteamWorkshopDownloadRecord) -> URL {
+        record.folderURL.appendingPathComponent(".mywallpaperx-web-runtime.json")
+    }
+
+    func preloadWebRuntimeCaches(for records: [SteamWorkshopDownloadRecord]) {
+        let webRecords = records.filter { $0.contentType == .web }
+        guard !webRecords.isEmpty else { return }
+        webRuntimePreloadTask?.cancel()
+        webRuntimePreloadTask = Task(priority: .utility) { @MainActor [weak self] in
+            guard let self else { return }
+            for record in webRecords {
+                guard !Task.isCancelled else { break }
+                if self.loadCachedWebPlaybackContext(for: record) == nil {
+                    _ = self.resolvedWebPlaybackContext(for: record)
+                }
+                try? await Task.sleep(for: .milliseconds(40))
+            }
+            self.webRuntimePreloadTask = nil
+        }
+    }
+
+    func loadCachedWebPlaybackContext(for record: SteamWorkshopDownloadRecord) -> ResolvedWebPlaybackContext? {
+        let fileURL = webRuntimeCacheFileURL(for: record)
+        guard let data = try? Data(contentsOf: fileURL),
+              let manifest = try? JSONDecoder().decode(SteamWorkshopWebRuntimeCacheManifest.self, from: data),
+              manifest.version == SteamWorkshopWebRuntimeCacheManifest.currentVersion,
+              manifest.recordID == record.id,
+              isWebRuntimeCacheManifestValid(manifest, for: record) else {
+            return nil
+        }
+
+        let resolvedEntryURL = URL(fileURLWithPath: manifest.execution.resolvedEntryPath).resolvingSymlinksInPath().standardizedFileURL
+        let effectiveRootURL = URL(fileURLWithPath: manifest.execution.effectiveRootPath).resolvingSymlinksInPath().standardizedFileURL
+        guard FileManager.default.fileExists(atPath: resolvedEntryURL.path),
+              FileManager.default.fileExists(atPath: effectiveRootURL.path) else {
+            return nil
+        }
+
+        return ResolvedWebPlaybackContext(
+            recordID: record.id,
+            effectiveEntryURL: resolvedEntryURL,
+            effectiveRootURL: effectiveRootURL,
+            propertyPayloadJSON: manifest.execution.propertyPayloadJSON
+        )
+    }
+
+    func loadCachedWebProjectDescriptor(for record: SteamWorkshopDownloadRecord) -> ResolvedWebProjectDescriptor? {
+        let fileURL = webAnalysisCacheFileURL(for: record)
+        guard let data = try? Data(contentsOf: fileURL),
+              let manifest = try? JSONDecoder().decode(SteamWorkshopWebAnalysisCacheManifest.self, from: data),
+              manifest.version == SteamWorkshopWebAnalysisCacheManifest.currentVersion,
+              manifest.recordID == record.id,
+              isWebAnalysisCacheManifestValid(manifest, for: record) else {
+            return nil
+        }
+
+        let cached = manifest.analysis
+        let resolvedEntryURL = URL(fileURLWithPath: cached.resolvedEntryPath).resolvingSymlinksInPath().standardizedFileURL
+        let effectiveRootURL = URL(fileURLWithPath: cached.effectiveRootPath).resolvingSymlinksInPath().standardizedFileURL
+        guard FileManager.default.fileExists(atPath: resolvedEntryURL.path),
+              FileManager.default.fileExists(atPath: effectiveRootURL.path) else {
+            return nil
+        }
+
+        return ResolvedWebProjectDescriptor(
+            recordID: record.id,
+            sourceKind: cached.sourceKind,
+            declaredEntryRelativePath: cached.declaredEntryRelativePath,
+            resolvedEntryRelativePath: cached.resolvedEntryRelativePath,
+            resolvedEntryURL: resolvedEntryURL,
+            effectiveRootURL: effectiveRootURL,
+            entrySource: cached.entrySource,
+            sampleStructure: cached.sampleStructure,
+            propertySource: cached.propertySource,
+            propertyDefinitions: cached.propertyDefinitions,
+            defaultValueMap: cached.defaultValueMap,
+            presetOverrideMap: cached.presetOverrideMap,
+            presetResourceBindingsByKey: cached.presetResourceBindingsByKey,
+            baselineVisiblePropertyKeys: cached.baselineVisiblePropertyKeys,
+            baselineVisibleOptionsByKey: cached.baselineVisibleOptionsByKey,
+            baselinePreconditionStates: cached.baselinePreconditionStates,
+            resolvedLocalizationMap: cached.resolvedLocalizationMap,
+            hostCapabilitySnapshot: cached.hostCapabilitySnapshot,
+            staticContentSummary: cached.staticContentSummary,
+            runtimeRiskFlags: cached.runtimeRiskFlags
+        )
+    }
+
+    func saveWebAnalysisCache(
+        descriptor: ResolvedWebProjectDescriptor,
+        for record: SteamWorkshopDownloadRecord
+    ) {
+        let manifest = SteamWorkshopWebAnalysisCacheManifest(
+            version: SteamWorkshopWebAnalysisCacheManifest.currentVersion,
+            recordID: record.id,
+            generatedAt: Date(),
+            projectModifiedAt: webRuntimeCacheProjectModifiedAt(for: record),
+            propertySourceRecordID: webPropertyDefinitionSourceRecord(for: record)?.id,
+            propertySourceProjectModifiedAt: webRuntimeCachePropertySourceProjectModifiedAt(for: record),
+            resolvedEntryModifiedAt: webRuntimeCacheResolvedEntryModifiedAt(for: record),
+            analysis: CachedResolvedWebProjectDescriptor(
+                sourceKind: descriptor.sourceKind,
+                declaredEntryRelativePath: descriptor.declaredEntryRelativePath,
+                resolvedEntryRelativePath: descriptor.resolvedEntryRelativePath,
+                resolvedEntryPath: descriptor.resolvedEntryURL.path,
+                effectiveRootPath: descriptor.effectiveRootURL.path,
+                entrySource: descriptor.entrySource,
+                sampleStructure: descriptor.sampleStructure,
+                propertySource: descriptor.propertySource,
+                propertyDefinitions: descriptor.propertyDefinitions,
+                defaultValueMap: descriptor.defaultValueMap,
+                presetOverrideMap: descriptor.presetOverrideMap,
+                presetResourceBindingsByKey: descriptor.presetResourceBindingsByKey,
+                baselineVisiblePropertyKeys: descriptor.baselineVisiblePropertyKeys,
+                baselineVisibleOptionsByKey: descriptor.baselineVisibleOptionsByKey,
+                baselinePreconditionStates: descriptor.baselinePreconditionStates,
+                resolvedLocalizationMap: descriptor.resolvedLocalizationMap,
+                hostCapabilitySnapshot: descriptor.hostCapabilitySnapshot,
+                staticContentSummary: descriptor.staticContentSummary,
+                runtimeRiskFlags: descriptor.runtimeRiskFlags
+            )
+        )
+
+        guard let data = try? JSONEncoder().encode(manifest) else { return }
+        try? data.write(to: webAnalysisCacheFileURL(for: record), options: [.atomic])
+    }
+
+    func saveWebRuntimeCache(
+        descriptor: ResolvedWebProjectDescriptor,
+        propertyPayloadJSON: String?,
+        for record: SteamWorkshopDownloadRecord
+    ) {
+        saveWebAnalysisCache(descriptor: descriptor, for: record)
+
+        let manifest = SteamWorkshopWebRuntimeCacheManifest(
+            version: SteamWorkshopWebRuntimeCacheManifest.currentVersion,
+            recordID: record.id,
+            generatedAt: Date(),
+            projectModifiedAt: webRuntimeCacheProjectModifiedAt(for: record),
+            propertySourceRecordID: webPropertyDefinitionSourceRecord(for: record)?.id,
+            propertySourceProjectModifiedAt: webRuntimeCachePropertySourceProjectModifiedAt(for: record),
+            resolvedEntryModifiedAt: webRuntimeCacheResolvedEntryModifiedAt(for: record),
+            overridesSignature: webRuntimeCacheOverridesSignature(for: record),
+            execution: CachedResolvedWebExecutionManifest(
+                resolvedEntryPath: descriptor.resolvedEntryURL.path,
+                effectiveRootPath: descriptor.effectiveRootURL.path,
+                propertyPayloadJSON: propertyPayloadJSON
+            )
+        )
+
+        guard let data = try? JSONEncoder().encode(manifest) else { return }
+        try? data.write(to: webRuntimeCacheFileURL(for: record), options: [.atomic])
+    }
+
+}

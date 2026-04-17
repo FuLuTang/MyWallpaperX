@@ -11,6 +11,13 @@ import Combine
 import Foundation
 import UniformTypeIdentifiers
 
+enum SILThumbnailStore {
+    static let sharedCache = ThumbnailCache(
+        label: "com.mywallpaper.sil.thumbnail",
+        countLimit: 180
+    )
+}
+
 // MARK: - 数据模型
 
 struct SILWallpaper: Identifiable, Codable, Hashable {
@@ -82,6 +89,7 @@ final class SILService: ObservableObject {
     @Published var wallpapers: [SILWallpaper] = []
     @Published var selectedID: String? = nil
     @Published var selectedIDs: Set<String> = []
+    @Published var inspectedWallpaperID: String? = nil
     @Published var isMultiSelectMode: Bool = false
     @Published var gridZoomOffset: Int = 0
     @Published var searchQuery: String = ""
@@ -98,6 +106,7 @@ final class SILService: ObservableObject {
     private let zoomOffsetKey = "SILGridZoomOffset"
     private let sortStateKey  = "SILSortState"
     private let silTagsKey    = "SILTags"
+    private let initialMissingFilesAlertRetryLimit = 5
 
     /// 供外部（如重置功能）访问持久化文件路径
     var silPersistenceURL: URL { persistenceURL }
@@ -117,6 +126,7 @@ final class SILService: ObservableObject {
         if let saved = UserDefaults.standard.stringArray(forKey: silTagsKey) {
             silTags = saved
         }
+        reconcileMissingFilesOnLaunch()
     }
 
     // MARK: - 持久化
@@ -159,6 +169,53 @@ final class SILService: ObservableObject {
 
     func saveSILTags() {
         UserDefaults.standard.set(silTags, forKey: silTagsKey)
+    }
+
+    private func reconcileMissingFilesOnLaunch() {
+        let fm = FileManager.default
+        let removed = wallpapers.filter { !fm.fileExists(atPath: $0.path) }
+        guard !removed.isEmpty else { return }
+
+        let removedIDs = Set(removed.map(\.id))
+        wallpapers.removeAll { removedIDs.contains($0.id) }
+        selectedIDs.subtract(removedIDs)
+        if let selectedID, removedIDs.contains(selectedID) {
+            self.selectedID = nil
+        }
+        if let inspectedWallpaperID, removedIDs.contains(inspectedWallpaperID) {
+            self.inspectedWallpaperID = nil
+        }
+        save()
+        scheduleInitialMissingFilesAlert(for: removed, attempt: 0)
+    }
+
+    private func scheduleInitialMissingFilesAlert(for removed: [SILWallpaper], attempt: Int) {
+        guard !removed.isEmpty else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + (attempt == 0 ? 0.9 : 0.45)) { [weak self] in
+            guard let self else { return }
+            guard let hostWindow = appModalHostWindow() else {
+                guard attempt < self.initialMissingFilesAlertRetryLimit else { return }
+                self.scheduleInitialMissingFilesAlert(for: removed, attempt: attempt + 1)
+                return
+            }
+
+            let removedNames = removed.prefix(3).map {
+                URL(fileURLWithPath: $0.path).lastPathComponent
+            }
+            var lines = ["启动时已自动从图库移除 \(removed.count) 个本地不存在的文件。"]
+            if !removedNames.isEmpty {
+                lines.append(removedNames.joined(separator: "\n"))
+            }
+            if removed.count > removedNames.count {
+                lines.append("其余 \(removed.count - removedNames.count) 个文件也已同步移除。")
+            }
+            let alert = makeAppAlert(
+                title: "图库已清理失效文件",
+                message: lines.joined(separator: "\n\n"),
+                buttons: ["好"]
+            )
+            presentAppAlert(alert, in: hostWindow)
+        }
     }
 
     // MARK: - 图片专属标签 CRUD
@@ -244,6 +301,16 @@ final class SILService: ObservableObject {
         return selectedID != nil
     }
 
+    /// 当前唯一有效选中项。
+    /// 单选模式返回 `selectedID`，多选模式仅在恰好选中一项时返回该项。
+    var singleEffectiveSelectedID: String? {
+        if isMultiSelectMode {
+            guard selectedIDs.count == 1 else { return nil }
+            return selectedIDs.first
+        }
+        return selectedID
+    }
+
     /// 某标签下的壁纸列表
     func wallpapers(forSILTag tag: String) -> [SILWallpaper] {
         wallpapers.filter { $0.tags.contains(tag) }
@@ -287,33 +354,40 @@ final class SILService: ObservableObject {
     func setSingleSelection(_ id: String) {
         guard !isMultiSelectMode else { return }
         selectedID = id
+        syncSelectedWallpaperInspectorIfNeeded()
     }
 
     func replaceMultiSelection(with ids: Set<String>) {
         selectedIDs = ids
+        syncSelectedWallpaperInspectorIfNeeded()
     }
 
     func selectAll() {
         selectedIDs = Set(sortedWallpapers.map(\.id))
+        syncSelectedWallpaperInspectorIfNeeded()
     }
 
     func deselectAll() {
         selectedIDs = []
+        syncSelectedWallpaperInspectorIfNeeded()
     }
 
     func clearSingleSelection() {
         selectedID = nil
+        syncSelectedWallpaperInspectorIfNeeded()
     }
 
     func enterMultiSelectMode() {
         isMultiSelectMode = true
         selectedIDs = []
         selectedID = nil
+        syncSelectedWallpaperInspectorIfNeeded()
     }
 
     func exitMultiSelectMode() {
         isMultiSelectMode = false
         selectedIDs = []
+        syncSelectedWallpaperInspectorIfNeeded()
     }
 
     /// 切换列表或执行批量操作后统一调用，效果与视频库 clearSelectionState() 一致
@@ -321,6 +395,7 @@ final class SILService: ObservableObject {
         isMultiSelectMode = false
         selectedIDs = []
         selectedID = nil
+        syncSelectedWallpaperInspectorIfNeeded()
     }
 
     func moveSingleSelectionByArrowKey(_ keyCode: UInt16) {
@@ -329,6 +404,7 @@ final class SILService: ObservableObject {
         guard !list.isEmpty else { return }
         guard let current = selectedID, let idx = list.firstIndex(where: { $0.id == current }) else {
             selectedID = list.first?.id
+            syncSelectedWallpaperInspectorIfNeeded()
             return
         }
         let cols = max(1, visibleGridColumnCount)
@@ -341,6 +417,34 @@ final class SILService: ObservableObject {
         default: return
         }
         selectedID = list[newIdx].id
+        syncSelectedWallpaperInspectorIfNeeded()
+    }
+
+    var selectedWallpaperForInspector: SILWallpaper? {
+        guard let inspectedWallpaperID else { return nil }
+        return wallpapers.first { $0.id == inspectedWallpaperID }
+    }
+
+    func presentInspectorForSelectedWallpaper() {
+        guard let selectedID = singleEffectiveSelectedID,
+              wallpapers.contains(where: { $0.id == selectedID }) else {
+            return
+        }
+        inspectedWallpaperID = selectedID
+    }
+
+    func dismissSelectedWallpaperInspector() {
+        inspectedWallpaperID = nil
+    }
+
+    func syncSelectedWallpaperInspectorIfNeeded() {
+        guard inspectedWallpaperID != nil else { return }
+        guard let selectedID = singleEffectiveSelectedID,
+              wallpapers.contains(where: { $0.id == selectedID }) else {
+            inspectedWallpaperID = nil
+            return
+        }
+        inspectedWallpaperID = selectedID
     }
 
     // MARK: - 导入
@@ -443,6 +547,7 @@ final class SILService: ObservableObject {
         selectedIDs.subtract(ids)
         selectedID = nextID
         if isMultiSelectMode { isMultiSelectMode = false }
+        syncSelectedWallpaperInspectorIfNeeded()
         save()
     }
 

@@ -47,19 +47,13 @@ struct OnlineLibraryBrowserView: View {
         .onAppear {
             apiKeyInput = service.apiKey
             triggerInitialSearchIfNeeded()
-            // 监听工具栏「API Key」按钮通知
-            NotificationCenter.default.addObserver(
-                forName: .olShowAPIKeySettings, object: nil, queue: .main
-            ) { [self] _ in
-                apiKeyInput = ""
-                showingAPIKeyEdit = true
-            }
-            // 监听工具栏「清空 API Key」通知
-            NotificationCenter.default.addObserver(
-                forName: .olClearAPIKey, object: nil, queue: .main
-            ) { [self] _ in
-                service.clearAPIKeyAndReset()
-            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .olShowAPIKeySettings)) { _ in
+            apiKeyInput = ""
+            showingAPIKeyEdit = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .olClearAPIKey)) { _ in
+            service.clearAPIKeyAndReset()
         }
         // 点击内容区任意位置时放弃搜索框焦点
         .onTapGesture {
@@ -74,8 +68,8 @@ struct OnlineLibraryBrowserView: View {
             Text(service.downloadError ?? "")
         }
         // OL-04：下载成功 Toast 触发器
-        .onChange(of: service.downloadSuccessMessage) { msg in
-            guard msg != nil else { return }
+        .onChange(of: service.downloadSuccessMessage) {
+            guard service.downloadSuccessMessage != nil else { return }
             showDownloadToast = true
             isToastHovering = false
             scheduleToastDismiss(after: 4)
@@ -156,7 +150,7 @@ struct OnlineLibraryBrowserView: View {
                     VStack(spacing: 12) {
                         Image(systemName: "play.rectangle.on.rectangle")
                             .font(.system(size: 36)).foregroundColor(.secondary)
-                        Text("探索海量免费视频壁纸").foregroundColor(.secondary).font(.system(size: 13))
+                        Text("探索 Pixabay 海量免费视频").foregroundColor(.secondary).font(.system(size: 13))
                         Button("开始浏览") {
                             service.searchWithCurrentContext(order: .popular)
                         }.buttonStyle(.borderedProminent)
@@ -211,7 +205,7 @@ struct OnlineLibraryBrowserView: View {
         VStack(spacing: 20) {
             Image(systemName: "key.fill").font(.system(size: 44)).foregroundColor(.accentColor)
             Text("需要 API Key").font(.system(size: 16, weight: .semibold))
-            Text("请前往 Pixabay 获取免费 API Key，即可开始浏览在线壁纸。")
+            Text("请前往 Pixabay 获取免费 API Key，即可开始浏览 Pixabay 视频。")
                 .font(.system(size: 13)).foregroundColor(.secondary)
                 .multilineTextAlignment(.center).frame(maxWidth: 360)
             Button("前往 Pixabay 获取 API Key") {
@@ -339,7 +333,6 @@ private struct OLThumbnailView: View {
 
     private func load() {
         guard let url, !isLoading else { return }
-        // 先查磁盘缓存
         Task {
             if let cached = await OLThumbnailCache.shared.cachedData(for: url),
                let img = NSImage(data: cached) {
@@ -347,12 +340,8 @@ private struct OLThumbnailView: View {
                 return
             }
             await MainActor.run { isLoading = true; hasFailed = false }
-            do {
-                let (data, _) = try await URLSession.shared.data(from: url)
-                guard let img = NSImage(data: data) else { throw URLError(.cannotDecodeContentData) }
-                await OLThumbnailCache.shared.store(data: data, for: url)
-                await MainActor.run { image = img; isLoading = false }
-            } catch {
+            guard let data = await OLThumbnailRequestCoordinator.shared.loadData(from: url, priority: .visible),
+                  let img = await Task.detached(priority: .utility) { NSImage(data: data) }.value else {
                 await MainActor.run {
                     isLoading = false
                     retryCount += 1
@@ -366,7 +355,10 @@ private struct OLThumbnailView: View {
                         hasFailed = true
                     }
                 }
+                return
             }
+            await OLThumbnailCache.shared.store(data: data, for: url)
+            await MainActor.run { image = img; isLoading = false }
         }
     }
 }
@@ -411,7 +403,7 @@ private struct OLDownloadToast: View {
                 Text("下载完成")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundColor(.primary)
-                Text("已保存到 影片/MyWallpaperX/在线图库")
+                Text("已保存到 影片/MyWallpaperX/Pixabay")
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
                     .lineLimit(1)

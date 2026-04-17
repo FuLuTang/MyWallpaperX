@@ -57,6 +57,7 @@ extension WallpaperManager {
         )
         lastAppliedEnginePauseSettings = EnginePauseSettingsSnapshot(settings: settings)
         WallpaperEngine.shared.setVolume(Float(settings.volume))
+        applySystemAudioSpectrumToEngine()
 
         if settings.autoSwitchEnabled && userInitiated {
             // 用户手动切换时立即重置 timer，从 0 重新计时。
@@ -257,6 +258,22 @@ extension WallpaperManager {
 
         let alert = makeAppAlert(
             title: "发现失效文件",
+            message: message,
+            style: .warning,
+            buttons: ["知道了"]
+        )
+        presentAppAlert(alert, in: appModalHostWindow())
+    }
+
+    func presentAutoRemovedMissingIndexedFilesAlert(titles: [String]) {
+        guard !titles.isEmpty else { return }
+        let preview = titles.prefix(5).joined(separator: "\n")
+        let remaining = max(0, titles.count - 5)
+        let suffix = remaining > 0 ? "\n还有 \(remaining) 个未显示" : ""
+        let message = "启动扫描发现以下源文件已缺失，系统已自动将它们从视频库移除：\n\(preview)\(suffix)\n\n对应缩略图与静帧缓存也已一并清理。"
+
+        let alert = makeAppAlert(
+            title: "已移除失效文件",
             message: message,
             style: .warning,
             buttons: ["知道了"]

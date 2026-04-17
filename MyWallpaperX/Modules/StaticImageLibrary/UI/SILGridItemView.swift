@@ -65,15 +65,12 @@ final class SILCollectionView: NSCollectionView, GridCollectionViewProtocol {
         super.mouseUp(with: event)
         guard event.type == .leftMouseUp else { return }
         if let ip = pressedCardIndexPath {
-            let elapsed = ProcessInfo.processInfo.systemUptime - pressedCardTimestamp
-            let remaining = max(0, UIInteractionAnimation.minimumPressVisualDuration - elapsed)
-            let work = DispatchWorkItem { [weak self] in
+            pendingPressReleaseWorkItem = SILCollectionInteractionSupport.schedulePressRelease(
+                pressedAt: pressedCardTimestamp
+            ) { [weak self] in
                 self?.cardPressStateHandler?(ip, false)
                 self?.pressedCardIndexPath = nil
             }
-            pendingPressReleaseWorkItem = work
-            if remaining <= 0 { work.perform() }
-            else { DispatchQueue.main.asyncAfter(deadline: .now() + remaining, execute: work) }
         }
         let point = convert(event.locationInWindow, from: nil)
         if lastPrimaryClickIndexPath == nil, indexPathForItem(at: point) == nil {
@@ -87,10 +84,14 @@ final class SILCollectionView: NSCollectionView, GridCollectionViewProtocol {
     }
 
     override func keyDown(with event: NSEvent) {
-        let arrowKeys: Set<UInt16> = [123, 124, 125, 126]
         let noMod = event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty
-        if arrowKeys.contains(event.keyCode), noMod {
-            SILService.shared.moveSingleSelectionByArrowKey(event.keyCode); return
+        if noMod {
+            switch event.keyCode {
+            case 123, 124, 125, 126:
+                SILService.shared.moveSingleSelectionByArrowKey(event.keyCode); return
+            default:
+                break
+            }
         }
         // ⌘A：多选模式下全选
         if event.keyCode == 0,
@@ -224,6 +225,7 @@ final class SILGridItem: NSCollectionViewItem {
         isHovering = false; isPressingCard = false
         isSelectedState = false; isMultiSelect = false
         thumbnailView.image = nil
+        placeholderLabel.stringValue = "加载中..."
         placeholderLabel.isHidden = false
         multiSelectBadge.isHidden = true; multiSelectIcon.isHidden = true
         imageContainer.layer?.transform = CATransform3DIdentity
@@ -238,7 +240,7 @@ final class SILGridItem: NSCollectionViewItem {
         wallpaper: SILWallpaper,
         isSelected: Bool,
         isMultiSelectMode: Bool,
-        thumbnailLoader: @escaping (@escaping (NSImage?) -> Void) -> Void
+        thumbnailLoader: @escaping (@escaping (SILThumbnailLoadResult) -> Void) -> Void
     ) {
         wallpaperID = wallpaper.id
         titleLabel.stringValue = wallpaper.title
@@ -255,12 +257,24 @@ final class SILGridItem: NSCollectionViewItem {
 
         applySelectionState(isSelected: isSelected, multiSelectMode: isMultiSelectMode)
         applyHoverVisibility(isHovering, animated: false)
+        placeholderLabel.stringValue = "加载中..."
         placeholderLabel.isHidden = false
         let taskID = UUID(); imageTaskID = taskID
-        thumbnailLoader { [weak self] image in
+        thumbnailLoader { [weak self] result in
             guard let self, self.imageTaskID == taskID, self.wallpaperID == wallpaper.id else { return }
-            self.thumbnailView.image = image
-            self.placeholderLabel.isHidden = image != nil
+            switch result {
+            case .image(let image):
+                self.thumbnailView.image = image
+                self.placeholderLabel.isHidden = true
+            case .missingFile:
+                self.thumbnailView.image = nil
+                self.placeholderLabel.stringValue = "原文件不存在"
+                self.placeholderLabel.isHidden = false
+            case .unavailable:
+                self.thumbnailView.image = nil
+                self.placeholderLabel.stringValue = "缩略图不可用"
+                self.placeholderLabel.isHidden = false
+            }
         }
     }
 
@@ -478,4 +492,3 @@ final class SILGridItem: NSCollectionViewItem {
         refreshThemeAwareAppearance()
     }
 }
-

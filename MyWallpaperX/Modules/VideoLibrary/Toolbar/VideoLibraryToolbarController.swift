@@ -53,10 +53,13 @@ final class VideoLibraryToolbarController: NSObject, NSToolbarDelegate, NSSearch
     weak var window: NSWindow?
     let wallpaperManager: WallpaperManager
     var cancellables = Set<AnyCancellable>()
+    private var observerTokens: [NSObjectProtocol] = []
     var pendingToolbarRefreshWorkItem: DispatchWorkItem?
     var lastRefreshSignature: ToolbarRefreshSignature?
     // 在线图库工具栏控制器
     lazy var onlineLibraryToolbarController = OnlineLibraryToolbarController(toolbar: toolbar, window: window)
+    // Steam 创意工坊工具栏控制器
+    lazy var steamWorkshopToolbarController = SteamWorkshopToolbarController(toolbar: toolbar, window: window)
     // 图片壁纸库工具栏控制器
     private(set) lazy var staticImageLibraryToolbarController = SILToolbarController(toolbar: toolbar, window: window)
 
@@ -255,6 +258,12 @@ final class VideoLibraryToolbarController: NSObject, NSToolbarDelegate, NSSearch
             self?.titleLabel.stringValue = title
             self?.titleItem.toolTip = title
         }
+        steamWorkshopToolbarController.localModeIdentifiers = standardIdentifiers
+        _ = steamWorkshopToolbarController
+        steamWorkshopToolbarController.titleUpdateHandler = { [weak self] title in
+            self?.titleLabel.stringValue = title
+            self?.titleItem.toolTip = title
+        }
         // 关联 bridge，使工具栏控制器能响应选择态变化
         OnlineDownloadsBridge.shared.toolbarController = onlineLibraryToolbarController
         staticImageLibraryToolbarController.localModeIdentifiers = standardIdentifiers
@@ -273,16 +282,39 @@ final class VideoLibraryToolbarController: NSObject, NSToolbarDelegate, NSSearch
         }
     }
 
+    deinit {
+        observerTokens.forEach { NotificationCenter.default.removeObserver($0) }
+        pendingToolbarRefreshWorkItem?.cancel()
+    }
+
     func observeModuleChanges() {
-        NotificationCenter.default.addObserver(forName: .staticImageLibraryModeDidChange, object: nil, queue: .main) { [weak self] n in
+        let staticModeObserver = NotificationCenter.default.addObserver(forName: .staticImageLibraryModeDidChange, object: nil, queue: .main) { [weak self] n in
             guard let enabled = n.userInfo?["enabled"] as? Bool else { return }
             self?.handleModuleLayoutSwitch(to: enabled ? .staticImageLibrary : .videoLibrary)
         }
-        NotificationCenter.default.addObserver(forName: .onlineLibraryModeDidChange, object: nil, queue: .main) { [weak self] n in
+        observerTokens.append(staticModeObserver)
+
+        let onlineModeObserver = NotificationCenter.default.addObserver(forName: .onlineLibraryModeDidChange, object: nil, queue: .main) { [weak self] n in
             guard let enabled = n.userInfo?["enabled"] as? Bool else { return }
             let isDownloads = n.userInfo?["isDownloads"] as? Bool ?? false
             self?.handleModuleLayoutSwitch(to: enabled ? (isDownloads ? .onlineDownloads : .onlineLibrary) : .videoLibrary)
         }
+        observerTokens.append(onlineModeObserver)
+
+        let steamModeObserver = NotificationCenter.default.addObserver(forName: .steamWorkshopModeDidChange, object: nil, queue: .main) { [weak self] n in
+            guard let enabled = n.userInfo?["enabled"] as? Bool else { return }
+            let isDownloads = n.userInfo?["isDownloads"] as? Bool ?? false
+            self?.handleModuleLayoutSwitch(to: enabled ? (isDownloads ? .steamDownloads : .steamWorkshop) : .videoLibrary)
+        }
+        observerTokens.append(steamModeObserver)
+
+        let steamBrowseContextObserver = NotificationCenter.default.addObserver(forName: .steamWorkshopBrowseContextDidChange, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self, self.currentLayoutModule == .steamWorkshop else { return }
+                self.applyIdentifiers(self.steamWorkshopToolbarController.browserIdentifiers)
+            }
+        }
+        observerTokens.append(steamBrowseContextObserver)
     }
 
     private enum LayoutModule {
@@ -290,18 +322,16 @@ final class VideoLibraryToolbarController: NSObject, NSToolbarDelegate, NSSearch
         case staticImageLibrary
         case onlineLibrary
         case onlineDownloads
+        case steamWorkshop
+        case steamDownloads
     }
 
     private var currentLayoutModule: LayoutModule = .videoLibrary
 
     private func handleModuleLayoutSwitch(to module: LayoutModule) {
-        // 只有当目标模块确实变化，或者是视频库模式（用于承接其他模块退出）时才处理
         if module == .videoLibrary {
-            // 检查当前是否真的没有任何其他模块激活了
-            if !staticImageLibraryToolbarController.isSILMode && !onlineLibraryToolbarController.isOnlineLibraryMode {
-                applyIdentifiers(toolbarDefaultItemIdentifiers(toolbar))
-                currentLayoutModule = .videoLibrary
-            }
+            applyIdentifiers(toolbarDefaultItemIdentifiers(toolbar))
+            currentLayoutModule = .videoLibrary
             return
         }
 
@@ -315,6 +345,10 @@ final class VideoLibraryToolbarController: NSObject, NSToolbarDelegate, NSSearch
             applyIdentifiers(onlineLibraryToolbarController.onlineIdentifiers)
         case .onlineDownloads:
             applyIdentifiers(onlineLibraryToolbarController.downloadsIdentifiers)
+        case .steamWorkshop:
+            applyIdentifiers(steamWorkshopToolbarController.browserIdentifiers)
+        case .steamDownloads:
+            applyIdentifiers(steamWorkshopToolbarController.downloadsIdentifiers)
         case .videoLibrary: break
         }
     }
@@ -354,13 +388,14 @@ final class VideoLibraryToolbarController: NSObject, NSToolbarDelegate, NSSearch
 
         // 窗口 resize 时通知在线库工具栏更新分类栏宽度（OL-07）
         if let window {
-            NotificationCenter.default.addObserver(
+            let resizeObserver = NotificationCenter.default.addObserver(
                 forName: NSWindow.didResizeNotification,
                 object: window,
                 queue: .main
             ) { [weak self] _ in
                 self?.onlineLibraryToolbarController.updateCategoryScrollWidth()
             }
+            observerTokens.append(resizeObserver)
         }
     }
 
@@ -547,7 +582,7 @@ final class VideoLibraryToolbarController: NSObject, NSToolbarDelegate, NSSearch
 
     @objc func handleInfoButtonAction() {
         performToolbarAction(requiresNonSettingsSelection: true) { _ in
-            UIActionHelper.presentInfo(manager: wallpaperManager, window: window)
+            wallpaperManager.toggleInspectorForSelectedWallpaper()
         }
     }
 
@@ -622,23 +657,42 @@ final class VideoLibraryToolbarController: NSObject, NSToolbarDelegate, NSSearch
 
         let menu = NSMenu()
         for mode in WallpaperSortMode.allCases {
-            let item = NSMenuItem(title: mode.displayName, action: #selector(handleSortMenuItemAction(_:)), keyEquivalent: "")
-            item.target = self
-            item.representedObject = mode
-            item.state = state.mode == mode ? .on : .off
-            menu.addItem(item)
+            menu.addItem(
+                makeSortMenuItem(
+                    title: mode.displayName,
+                    action: #selector(handleSortMenuItemAction(_:)),
+                    representedObject: mode,
+                    state: state.mode == mode ? .on : .off
+                )
+            )
         }
         menu.addItem(.separator())
         [("升序", true), ("降序", false)].forEach { title, asc in
-            let item = NSMenuItem(title: title, action: #selector(handleSortDirAction(_:)), keyEquivalent: "")
-            item.target = self
-            item.representedObject = asc
-            item.state = state.ascending == asc ? .on : .off
-            menu.addItem(item)
+            menu.addItem(
+                makeSortMenuItem(
+                    title: title,
+                    action: #selector(handleSortDirAction(_:)),
+                    representedObject: asc,
+                    state: state.ascending == asc ? .on : .off
+                )
+            )
         }
         let buttonBounds = sender.convert(sender.bounds, to: nil)
         let screenRect = sender.window?.convertToScreen(buttonBounds) ?? .zero
         menu.popUp(positioning: nil, at: NSPoint(x: screenRect.minX, y: screenRect.minY), in: nil)
+    }
+
+    private func makeSortMenuItem(
+        title: String,
+        action: Selector,
+        representedObject: Any,
+        state: NSControl.StateValue
+    ) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+        item.target = self
+        item.representedObject = representedObject
+        item.state = state
+        return item
     }
 
     @objc func handleSortMenuItemAction(_ sender: NSMenuItem) {
@@ -689,6 +743,7 @@ extension VideoLibraryToolbarController {
         [IDs.sidebar, IDs.title, IDs.import, IDs.select, IDs.navigation, IDs.delete, IDs.favorite, IDs.tag, IDs.info, IDs.sort, IDs.zoom, IDs.search, .space, .flexibleSpace,
          .olCategory, .olRefresh, .olZoom, .olSearch, .olOrder, .olSettings,
          .olDownloadsTitle, .olDownloadsSelect, .olDownloadsDelete, .olDownloadsInfo, .olDownloadsSort, .olDownloadsReveal, .olDownloadsSearch,
+         .steamSort, .steamTrendingWindow, .steamFilter, .steamAccount, .steamRefresh, .steamZoom, .steamSearch, .steamDownloadsTitle, .steamDownloadsReveal, .steamDownloadsSearch,
          .silImport, .silSelect, .silDelete, .silInfo, .silSort, .silZoom, .silSearch]
     }
 
@@ -725,6 +780,7 @@ extension VideoLibraryToolbarController {
         default:
             // 代理给在线图库工具栏控制器处理
             if let item = onlineLibraryToolbarController.makeItem(for: itemIdentifier) { return item }
+            if let item = steamWorkshopToolbarController.makeItem(for: itemIdentifier) { return item }
             // 代理给图片库工具栏控制器处理
             if let item = staticImageLibraryToolbarController.makeItem(for: itemIdentifier) { return item }
             return nil
@@ -750,6 +806,10 @@ extension VideoLibraryToolbarController {
             onlineLibraryToolbarController.focusSearch()
             return
         }
+        if steamWorkshopToolbarController.isSteamWorkshopMode {
+            steamWorkshopToolbarController.focusSearch()
+            return
+        }
         if staticImageLibraryToolbarController.isSILMode {
             staticImageLibraryToolbarController.focusSearch()
             return
@@ -762,6 +822,10 @@ extension VideoLibraryToolbarController {
         // 在线图库模式：代理给在线图库工具栏控制器处理，不触碰 WallpaperManager
         if onlineLibraryToolbarController.isOnlineLibraryMode {
             onlineLibraryToolbarController.performZoom(delta: delta)
+            return
+        }
+        if steamWorkshopToolbarController.isSteamWorkshopMode {
+            steamWorkshopToolbarController.performZoom(delta: delta)
             return
         }
         // 图片壁纸库模式：代理给 SIL 工具栏控制器处理

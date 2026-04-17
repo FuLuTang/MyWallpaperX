@@ -161,16 +161,10 @@ final class AppKitOLDownloadsCollectionView: NSCollectionView {
         guard event.type == .leftMouseUp else { return }
 
         if let ip = pressedCardIndexPath {
-            let elapsed = ProcessInfo.processInfo.systemUptime - pressedCardTimestamp
-            let remaining = max(0, UIInteractionAnimation.minimumPressVisualDuration - elapsed)
-            let releaseWork = DispatchWorkItem { [weak self] in
+            pendingPressReleaseWorkItem = OnlineLibraryCollectionInteractionSupport.schedulePressRelease(
+                pressedAt: pressedCardTimestamp
+            ) { [weak self] in
                 self?.cardPressStateHandler?(ip, false)
-            }
-            pendingPressReleaseWorkItem = releaseWork
-            if remaining <= 0 {
-                releaseWork.perform()
-            } else {
-                DispatchQueue.main.asyncAfter(deadline: .now() + remaining, execute: releaseWork)
             }
             pressedCardIndexPath = nil
         }
@@ -198,9 +192,11 @@ final class AppKitOLDownloadsCollectionView: NSCollectionView {
         if event.keyCode == 49 { // Space
             spaceHandler?(); return
         }
-        let arrows: Set<UInt16> = [123, 124, 125, 126]
-        if arrows.contains(event.keyCode) {
+        switch event.keyCode {
+        case 123, 124, 125, 126:
             arrowHandler?(event.keyCode); return
+        default:
+            break
         }
         super.keyDown(with: event)
     }
@@ -260,6 +256,9 @@ final class AppKitOLDownloadsContainerView: NSView, ModuleFocusable {
     }()
 
     private var effectiveSelectedIDs: Set<Int> {
+        if isMultiSelectMode {
+            return selectedIDs
+        }
         if !selectedIDs.isEmpty {
             return selectedIDs
         }
@@ -271,6 +270,10 @@ final class AppKitOLDownloadsContainerView: NSView, ModuleFocusable {
 
     private var primarySelectedID: Int? {
         selectedAnchorID ?? selectedIDs.first
+    }
+
+    private var availableInspectorSelectionIDs: Set<Int> {
+        Set(orderedIDs)
     }
 
     var hasAnySelection: Bool {
@@ -294,7 +297,7 @@ final class AppKitOLDownloadsContainerView: NSView, ModuleFocusable {
     }
 
     private let emptyLabel: NSTextField = {
-        let l = NSTextField(labelWithString: "暂无已下载视频壁纸")
+        let l = NSTextField(labelWithString: "暂无已下载 Pixabay 视频")
         l.alignment = .center
         l.textColor = .secondaryLabelColor
         l.font = .systemFont(ofSize: 16, weight: .regular)
@@ -305,7 +308,7 @@ final class AppKitOLDownloadsContainerView: NSView, ModuleFocusable {
 
     private lazy var searchField: NSSearchField = {
         let f = NSSearchField()
-        f.placeholderString = "搜索已下载项"
+        f.placeholderString = "搜索 Pixabay 下载"
         f.sendsSearchStringImmediately = true
         f.translatesAutoresizingMaskIntoConstraints = false
         f.target = self
@@ -594,13 +597,14 @@ final class AppKitOLDownloadsContainerView: NSView, ModuleFocusable {
         if let anchor = selectedAnchorID, !orderedIDs.contains(anchor) {
             selectedAnchorID = nil
         }
-        if selectedIDs.isEmpty, let first = orderedIDs.first {
+        if !isMultiSelectMode, selectedIDs.isEmpty, let first = orderedIDs.first {
             selectedIDs = [first]
             selectedAnchorID = first
         }
+        syncInspectorSelectionIfNeeded()
 
         let isEmpty = orderedIDs.isEmpty
-        emptyLabel.stringValue = searchQuery.isEmpty ? "暂无已下载视频壁纸" : "无匹配结果"
+        emptyLabel.stringValue = searchQuery.isEmpty ? "暂无已下载 Pixabay 视频" : "无匹配结果"
         emptyLabel.isHidden = !isEmpty
         applySnapshot(ids: orderedIDs)
         DispatchQueue.main.async {
@@ -639,24 +643,16 @@ final class AppKitOLDownloadsContainerView: NSView, ModuleFocusable {
     }
 
     private func updateLayoutItemSize() {
-        let inset = flowLayout.sectionInset
-        let available = max(0, bounds.width - inset.left - inset.right)
-        let cols = GridLayoutHelper.columnCount(
-            for: available,
+        let metrics = OnlineLibraryGridLayoutSupport.metrics(
+            boundsWidth: bounds.width,
             zoomOffset: OnlineLibraryService.shared.zoomOffset,
-            minCols: 3, maxCols: 6
+            hoverScale: AppKitOLDownloadsItem.hoverScale,
+            sectionInset: flowLayout.sectionInset
         )
-        lastComputedColumns = cols
-        let hoverScale: CGFloat = AppKitOLDownloadsItem.hoverScale
-        let estimatedW = max(100, (available - flowLayout.minimumInteritemSpacing * CGFloat(max(0, cols - 1))) / CGFloat(cols))
-        let minSpacing = estimatedW * (hoverScale - 1.0)
-        let spacing = max(8, minSpacing)
-        flowLayout.minimumInteritemSpacing = spacing
-        flowLayout.minimumLineSpacing = spacing
-        let totalSpacing = CGFloat(max(0, cols - 1)) * spacing
-        let cardW = max(100, (available - totalSpacing) / CGFloat(cols))
-        let cardH = max(56, cardW / (16.0 / 9.0))
-        let newSize = NSSize(width: floor(cardW), height: floor(cardH + 2))
+        lastComputedColumns = metrics.columns
+        flowLayout.minimumInteritemSpacing = metrics.interitemSpacing
+        flowLayout.minimumLineSpacing = metrics.lineSpacing
+        let newSize = metrics.itemSize
         guard flowLayout.itemSize != newSize else { return }
         flowLayout.itemSize = newSize
         // 布局变化与悬停视觉同步生效，避免渐变层在缩放期间出现跟随滞后。
@@ -692,23 +688,21 @@ final class AppKitOLDownloadsContainerView: NSView, ModuleFocusable {
         }
         selectedIDs = Set(orderedIDs)
         reloadVisibleSelectionItems()
+        syncInspectorSelectionIfNeeded()
         OnlineDownloadsBridge.shared.refreshToolbar()
     }
 
     func toggleMultiSelect() {
         isMultiSelectMode.toggle()
         if isMultiSelectMode {
-            if let anchor = selectedAnchorID {
-                selectedIDs = [anchor]
-            } else if let first = orderedIDs.first {
-                selectedAnchorID = first
-                selectedIDs = [first]
-            }
-        } else if let anchor = selectedAnchorID {
-            selectedIDs = [anchor]
+            selectedIDs = []
+            selectedAnchorID = nil
+        } else {
+            selectedIDs = []
         }
         collectionView.allowsMultipleSelection = isMultiSelectMode
         reloadVisibleSelectionItems(forceReload: true)
+        syncInspectorSelectionIfNeeded()
     }
 
     func deleteSelected() {
@@ -728,29 +722,25 @@ final class AppKitOLDownloadsContainerView: NSView, ModuleFocusable {
     }
 
     func showInfo() {
-        let id = primarySelectedID
-        guard let id, let entry = entriesByID[id] else { return }
-        let path = entry.localURL.path
-        let attributes = (try? FileManager.default.attributesOfItem(atPath: path)) ?? [:]
-        let fileSize = attributes[.size] as? Int64 ?? 0
-        let fileSizeMB = Double(fileSize) / (1024 * 1024)
-        let creationDate = attributes[.creationDate] as? Date ?? Date()
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        formatter.timeStyle = .medium
-        let dateText = formatter.string(from: creationDate)
+        let service = OnlineLibraryService.shared
+        let selectedID = primarySelectedID
+        let availableIDs = availableInspectorSelectionIDs
 
-        let infoText = """
-        文件名: \(entry.localURL.lastPathComponent)
-        大小: \(String(format: "%.2f MB", fileSizeMB))
-        格式: \(entry.localURL.pathExtension.uppercased())
-        持续时间: \(entry.durationString.isEmpty ? "未知" : entry.durationString)
-        分辨率: \(entry.resolutionString ?? "未知")
-        添加时间: \(dateText)
-        路径: \(path)
-        """
-        let alert = makeAppAlert(title: "视频信息", message: infoText, buttons: ["好"])
-        presentAppAlert(alert, in: appModalHostWindow())
+        guard !isMultiSelectMode,
+              let selectedID,
+              availableIDs.contains(selectedID) else {
+            return
+        }
+
+        if service.selectedDownloadedItemIDForInspector == selectedID {
+            service.dismissSelectedDownloadedInspector()
+        } else {
+            service.presentInspectorForSelectedDownloadedItem(
+                selectedID,
+                isMultiSelectMode: isMultiSelectMode,
+                availableIDs: availableIDs
+            )
+        }
     }
 
     func revealInFinder() {
@@ -820,6 +810,7 @@ final class AppKitOLDownloadsContainerView: NSView, ModuleFocusable {
             selectedIDs = [targetID]
         }
         reloadVisibleSelectionItems()
+        syncInspectorSelectionIfNeeded()
         scrollToSelectedItemIfNeeded()
         OnlineDownloadsBridge.shared.refreshToolbar()
     }
@@ -828,16 +819,17 @@ final class AppKitOLDownloadsContainerView: NSView, ModuleFocusable {
         guard indexPath.item < orderedIDs.count else { return }
         let id = orderedIDs[indexPath.item]
         if isMultiSelectMode {
-            if event.modifierFlags.contains(.command) {
-                if selectedIDs.contains(id) { selectedIDs.remove(id) } else { selectedIDs.insert(id) }
+            if selectedIDs.contains(id) {
+                selectedIDs.remove(id)
             } else {
-                selectedIDs = [id]
+                selectedIDs.insert(id)
             }
         } else {
             selectedIDs = [id]
         }
         selectedAnchorID = id
         reloadVisibleSelectionItems()
+        syncInspectorSelectionIfNeeded()
         OnlineDownloadsBridge.shared.refreshToolbar()
         if let item = collectionView.item(at: indexPath) as? AppKitOLDownloadsItem {
             let point = item.view.convert(event.locationInWindow, from: nil)
@@ -900,36 +892,52 @@ final class AppKitOLDownloadsContainerView: NSView, ModuleFocusable {
                 selectedIDs = [id]
             }
             reloadVisibleSelectionItems()
+            syncInspectorSelectionIfNeeded()
         }
         guard !effectiveSelectedIDs.isEmpty else { return nil }
 
         let menu = NSMenu()
         menu.autoenablesItems = false
-        let setItem = NSMenuItem(title: "设为壁纸", action: #selector(contextSetAsWallpaper), keyEquivalent: "")
-        setItem.target = self
-        setItem.isEnabled = !isMultiSelectMode && primarySelectedID != nil
-        setItem.image = NSImage(systemSymbolName: "play.circle", accessibilityDescription: "设为壁纸")
-        menu.addItem(setItem)
-
-        let infoItem = NSMenuItem(title: "详细信息", action: #selector(contextShowInfo), keyEquivalent: "")
-        infoItem.target = self
-        infoItem.isEnabled = !isMultiSelectMode && primarySelectedID != nil
-        infoItem.image = NSImage(systemSymbolName: "info.circle", accessibilityDescription: "详细信息")
-        menu.addItem(infoItem)
-
-        let revealItem = NSMenuItem(title: "查看文件", action: #selector(contextRevealInFinder), keyEquivalent: "")
-        revealItem.target = self
-        revealItem.isEnabled = !isMultiSelectMode && primarySelectedID != nil
-        revealItem.image = NSImage(systemSymbolName: "folder", accessibilityDescription: "在访达中显示")
-        menu.addItem(revealItem)
+        let singleSelectionEnabled = !isMultiSelectMode && primarySelectedID != nil
+        menu.addItem(
+            makeMenuItem(
+                title: "设为壁纸",
+                symbolName: "play.circle",
+                accessibilityDescription: "设为壁纸",
+                action: #selector(contextSetAsWallpaper),
+                isEnabled: singleSelectionEnabled
+            )
+        )
+        menu.addItem(
+            makeMenuItem(
+                title: "详细信息",
+                symbolName: "info.circle",
+                accessibilityDescription: "详细信息",
+                action: #selector(contextShowInfo),
+                isEnabled: singleSelectionEnabled
+            )
+        )
+        menu.addItem(
+            makeMenuItem(
+                title: "查看文件",
+                symbolName: "folder",
+                accessibilityDescription: "在访达中显示",
+                action: #selector(contextRevealInFinder),
+                isEnabled: singleSelectionEnabled
+            )
+        )
 
         menu.addItem(.separator())
 
-        let deleteItem = NSMenuItem(title: "删除", action: #selector(contextDeleteSelected), keyEquivalent: "")
-        deleteItem.target = self
-        deleteItem.isEnabled = !selectedIDs.isEmpty || selectedAnchorID != nil
-        deleteItem.image = NSImage(systemSymbolName: "trash", accessibilityDescription: "删除")
-        menu.addItem(deleteItem)
+        menu.addItem(
+            makeMenuItem(
+                title: "删除",
+                symbolName: "trash",
+                accessibilityDescription: "删除",
+                action: #selector(contextDeleteSelected),
+                isEnabled: !selectedIDs.isEmpty || selectedAnchorID != nil
+            )
+        )
 
         return menu
     }
@@ -950,11 +958,29 @@ final class AppKitOLDownloadsContainerView: NSView, ModuleFocusable {
         deleteSelected()
     }
 
+    private func makeMenuItem(
+        title: String,
+        symbolName: String,
+        accessibilityDescription: String,
+        action: Selector,
+        isEnabled: Bool
+    ) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+        item.target = self
+        item.isEnabled = isEnabled
+        item.image = NSImage(
+            systemSymbolName: symbolName,
+            accessibilityDescription: accessibilityDescription
+        )
+        return item
+    }
+
     private func syncSelectionFromQuickLook(id: Int) {
         guard orderedIndexByID[id] != nil else { return }
         selectedAnchorID = id
         selectedIDs = [id]
         reloadVisibleSelectionItems()
+        syncInspectorSelectionIfNeeded()
         scrollToSelectedItemIfNeeded()
     }
 
@@ -963,6 +989,7 @@ final class AppKitOLDownloadsContainerView: NSView, ModuleFocusable {
         selectedIDs = []
         selectedAnchorID = nil
         reloadVisibleSelectionItems()
+        syncInspectorSelectionIfNeeded()
     }
 
     private func scrollToSelectedItemIfNeeded() {
@@ -990,12 +1017,22 @@ final class AppKitOLDownloadsContainerView: NSView, ModuleFocusable {
         guard !orderedIDs.isEmpty else {
             selectedAnchorID = nil
             selectedIDs = []
+            syncInspectorSelectionIfNeeded()
             return
         }
         let nextIndex = min(desiredIndex, orderedIDs.count - 1)
         let nextID = orderedIDs[nextIndex]
         selectedAnchorID = nextID
         selectedIDs = [nextID]
+        syncInspectorSelectionIfNeeded()
+    }
+
+    private func syncInspectorSelectionIfNeeded() {
+        OnlineLibraryService.shared.syncSelectedDownloadedInspectorIfNeeded(
+            selectedID: primarySelectedID,
+            isMultiSelectMode: isMultiSelectMode,
+            availableIDs: availableInspectorSelectionIDs
+        )
     }
 
     private func normalizedPath(_ path: String) -> String {

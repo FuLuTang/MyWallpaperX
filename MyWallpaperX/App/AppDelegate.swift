@@ -11,6 +11,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
  private var statusBarController: StatusBarController?
  private var pendingInitialWindowOpen: DispatchWorkItem?
 
+ private func normalizedMenuTitle(_ menuItem: NSMenuItem) -> String {
+ menuItem.title.replacingOccurrences(of: " ", with: "")
+ }
+
  // MARK: - 菜单验证（AppKit 每次菜单显示前自动调用，正确处理模块切换后的可用状态）
  func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
  let module = MainWindowCoordinator.activeModule
@@ -20,7 +24,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
  if module == .staticImageLibrary {
  menuItem.title = "导入图片"
  return true
- } else if module == .onlineLibrary {
+ } else if module == .onlineLibrary || module == .steamWorkshop {
  menuItem.title = "导入"
  return false
  } else {
@@ -29,11 +33,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
  }
  }
 
- switch menuItem.title {
- case "设为当前壁纸", "切换下一张", "切换上一张", "收藏 /取消收藏":
+ if normalizedMenuTitle(menuItem) == "查看文件" || normalizedMenuTitle(menuItem) == "刷新" {
+ menuItem.title = MainWindowCoordinator.revealInFinderMenuTitle
+ return MainWindowCoordinator.canRevealInFinder
+ }
+
+ switch normalizedMenuTitle(menuItem) {
+ case "设为当前壁纸", "切换下一张", "切换上一张", "收藏/取消收藏":
  return MainWindowCoordinator.canUseVideoLibraryOnlyCommands
 
- case "进入 /退出多选":
+ case "进入/退出多选":
  return MainWindowCoordinator.canToggleMultiSelect
 
  case "全选":
@@ -50,9 +59,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
  case "预览":
  return MainWindowCoordinator.canPreview
-
- case "查看文件":
- return MainWindowCoordinator.canRevealInFinder
 
  default:
  return true

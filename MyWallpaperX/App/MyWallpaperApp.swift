@@ -8,6 +8,98 @@
 
 import SwiftUI
 
+private struct SettingsSceneView: View {
+    @EnvironmentObject private var wallpaperManager: WallpaperManager
+
+    var body: some View {
+        AppKitSettingsView(
+            visibleSections: Set(AppSettingsSection.allCases),
+            topContentInset: 24
+        )
+        .environmentObject(wallpaperManager)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .ignoresSafeArea(.container, edges: .top)
+    }
+}
+
+struct AppSettingsCommands: Commands {
+    var body: some Commands {
+        CommandGroup(replacing: .appSettings) {
+            Button("偏好设置") {
+                SettingsWindowController.shared.showWindow()
+            }
+            .keyboardShortcut(",", modifiers: .command)
+        }
+    }
+}
+
+@MainActor
+final class SettingsWindowController: NSWindowController, NSWindowDelegate {
+    static let shared = SettingsWindowController()
+
+    private let targetWindowSize = NSSize(width: 500, height: 440)
+    private let hostingController: NSHostingController<AnyView>
+    private var hasShownWindow = false
+
+    private init() {
+        hostingController = NSHostingController(
+            rootView: AnyView(
+                SettingsSceneView()
+                    .environmentObject(WallpaperManager.shared)
+                    .frame(width: 500, height: 440)
+            )
+        )
+
+        let window = MainAppWindow(contentViewController: hostingController)
+        window.identifier = NSUserInterfaceItemIdentifier("SettingsWindow")
+        window.title = "设置"
+        window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
+        window.titleVisibility = .visible
+        window.titlebarAppearsTransparent = false
+        window.titlebarSeparatorStyle = .none
+        window.toolbarStyle = .unified
+        window.isOpaque = true
+        window.backgroundColor = .windowBackgroundColor
+        window.setContentSize(targetWindowSize)
+        window.minSize = targetWindowSize
+        window.maxSize = targetWindowSize
+        window.isReleasedWhenClosed = false
+        window.isRestorable = false
+        window.collectionBehavior.remove(.fullScreenAuxiliary)
+        window.collectionBehavior.remove(.moveToActiveSpace)
+        window.level = .normal
+        let toolbar = NSToolbar(identifier: "SettingsWindowToolbar")
+        toolbar.displayMode = .iconOnly
+        toolbar.allowsUserCustomization = false
+        window.toolbar = toolbar
+
+        super.init(window: window)
+        shouldCascadeWindows = false
+        self.window?.delegate = self
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    func showWindow() {
+        hostingController.rootView = AnyView(
+            SettingsSceneView()
+                .environmentObject(WallpaperManager.shared)
+                .frame(width: targetWindowSize.width, height: targetWindowSize.height)
+        )
+
+        NSApp.activate(ignoringOtherApps: true)
+        guard let window else { return }
+        if !hasShownWindow {
+            window.center()
+            hasShownWindow = true
+        }
+        window.makeKeyAndOrderFront(nil)
+    }
+}
+
 @main
 struct MyWallpaperApp: App {
     @StateObject private var wallpaperManager = WallpaperManager.shared
@@ -22,6 +114,8 @@ struct MyWallpaperApp: App {
             EmptyView()
         }
         .commands {
+            AppSettingsCommands()
+
             // MARK: - 文件菜单
             Group {
                 CommandGroup(replacing: .newItem) {
@@ -143,12 +237,6 @@ struct MyWallpaperApp: App {
                         NSApp.keyWindow?.performClose(nil)
                     }
                     .keyboardShortcut("w", modifiers: .command)
-                }
-                CommandGroup(replacing: .appSettings) {
-                    Button("偏好设置") {
-                        MainWindowCoordinator.activateMainWindow(select: .settings)
-                    }
-                    .keyboardShortcut(",", modifiers: .command)
                 }
                 CommandGroup(replacing: .help) {
                     Button("MyWallpaperX 帮助") {

@@ -7,61 +7,77 @@ import SwiftUI
 import AppKit
 import Combine
 import UniformTypeIdentifiers
+import Foundation
+
+enum AppSettingsSection: String, CaseIterable, Identifiable {
+    case playbackModes
+    case audio
+    case system
+    case hotkeys
+    case efficiency
+    case display
+    case maintenance
+
+    var id: String { rawValue }
+}
 
 struct AppKitSettingsView: NSViewRepresentable {
     @EnvironmentObject var wallpaperManager: WallpaperManager
+    var visibleSections: Set<AppSettingsSection> = Set(AppSettingsSection.allCases)
+    var topContentInset: CGFloat = 10
 
     func makeNSView(context: Context) -> AppKitSettingsContainerView {
         // SwiftUI 只负责把 AppKit 容器挂进来，设置页状态和交互都由容器自己维护。
-        AppKitSettingsContainerView(wallpaperManager: wallpaperManager)
+        AppKitSettingsContainerView(
+            wallpaperManager: wallpaperManager,
+            visibleSections: visibleSections,
+            topContentInset: topContentInset
+        )
     }
 
     func updateNSView(_ nsView: AppKitSettingsContainerView, context: Context) {
+        nsView.updateVisibleSections(visibleSections)
         nsView.refreshFromState()
     }
 }
 
 final class AppKitSettingsContainerView: NSView {
+    private enum LayoutSeed {
+        static let initialDocumentWidth: CGFloat = 760
+        static let initialDocumentHeight: CGFloat = 1200
+    }
+
+    private final class FlippedDocumentView: NSView {
+        override var isFlipped: Bool { true }
+    }
+
     private let wallpaperManager: WallpaperManager
     private var cancellables = Set<AnyCancellable>()
     private var isUpdatingUI = false
+    private var isDocumentFrameUpdateScheduled = false
     private var scrollToTopObserver: NSObjectProtocol?
-    private var isScrollToTopAnimating = false
-    private var restingScrollOrigin: NSPoint?
-
-    private let scrollView: NSScrollView = {
-        let view = NSScrollView()
-        view.drawsBackground = false
-        view.hasVerticalScroller = true
-        view.hasHorizontalScroller = false
-        view.autohidesScrollers = true
-        view.translatesAutoresizingMaskIntoConstraints = false
-        return view
-    }()
-
-    private let documentView: NSView = {
-        let view = NSView()
-        view.translatesAutoresizingMaskIntoConstraints = false
-        return view
-    }()
+    private var visibleSections: Set<AppSettingsSection>
+    private let topContentInset: CGFloat
+    private let scrollView = NSScrollView()
+    private let contentContainer = FlippedDocumentView()
 
     private let contentStack: NSStackView = {
         let stack = NSStackView()
         stack.orientation = .vertical
         stack.alignment = .leading
-        stack.distribution = .gravityAreas
-        stack.spacing = 16
+        stack.distribution = .fill
+        stack.spacing = 20
         stack.translatesAutoresizingMaskIntoConstraints = false
         return stack
     }()
 
-    private let playbackSection = SettingsGroupView(title: "播放控制")
+    private let playbackModesSection = SettingsGroupView(title: "播放模式")
+    private let audioSection = SettingsGroupView(title: "音频与速率")
     private let systemSection = SettingsGroupView(title: "系统行为")
-    private let performanceSection = SettingsGroupView(title: "性能设置")
+    private let hotkeysSection = SettingsGroupView(title: "快捷键")
+    private let efficiencySection = SettingsGroupView(title: "节能与暂停")
     private let displaySection = SettingsGroupView(title: "显示设置")
-    private let profileSettingsSection = SettingsGroupView(title: nil)
-    private let clearCacheSection = SettingsGroupView(title: nil)
-    private let resetSettingsSection = SettingsGroupView(title: nil)
+    private let maintenanceSection = SettingsGroupView(title: nil)
 
     private let loopSwitch = NSSwitch()
     private let randomSwitch = NSSwitch()
@@ -75,16 +91,28 @@ final class AppKitSettingsContainerView: NSView {
     private let volumeValueLabel = NSTextField(labelWithString: "50%")
     private let muteSwitch = NSSwitch()
 
-    private let playbackRateSlider = NSSlider(value: 1.0, minValue: 0.25, maxValue: 2.0, target: nil, action: nil)
+    private let playbackRateSlider = NSSlider(value: 1.0, minValue: 0.0, maxValue: 2.0, target: nil, action: nil)
     private let playbackRateValueLabel = NSTextField(labelWithString: "1.0x")
     private let playbackRateSwitch = NSSwitch()
     private var playbackRateRowView: NSView?
 
     private let startOnBootSwitch = NSSwitch()
     private let syncSystemWallpaperSwitch = NSSwitch()
+    private let systemAudioSpectrumSwitch = NSSwitch()
+    private let systemAudioSpectrumStylePopup = NSPopUpButton()
+    private let systemAudioSpectrumSensitivityPopup = NSPopUpButton()
+    private let systemAudioSpectrumBarCountPopup = NSPopUpButton()
+    private let systemAudioSpectrumColorWell = NSColorWell()
+    private let systemAudioSpectrumOffsetXSlider = NSSlider(value: 0, minValue: -30, maxValue: 30, target: nil, action: nil)
+    private let systemAudioSpectrumOffsetYSlider = NSSlider(value: 0, minValue: -20, maxValue: 20, target: nil, action: nil)
+    private let systemAudioSpectrumOffsetXValueLabel = NSTextField(labelWithString: "0%")
+    private let systemAudioSpectrumOffsetYValueLabel = NSTextField(labelWithString: "0%")
+    private let systemAudioSpectrumPeakCapsSwitch = NSSwitch()
+    private var systemAudioSpectrumOptionsContainer: NSView?
     private let systemHotkeysSwitch = NSSwitch()
     private let hotkeyRowsStack = NSStackView()
     private var hotkeyRowsContainer: NSView?
+    private var systemAudioSpectrumRowView: NSView?
     private var hotkeyEnableSwitches: [SystemHotkeyAction: NSSwitch] = [:]
     private var hotkeyPopups: [SystemHotkeyAction: NSPopUpButton] = [:]
 
@@ -99,32 +127,34 @@ final class AppKitSettingsContainerView: NSView {
     private let fillModeFitButton = NSButton(radioButtonWithTitle: VideoFillMode.aspectFit.rawValue, target: nil, action: nil)
     private let fillModeFillButton = NSButton(radioButtonWithTitle: VideoFillMode.aspectFill.rawValue, target: nil, action: nil)
 
-    private let clearCacheButton = NSButton(title: "清空所有缓存", target: nil, action: nil)
-    private let resetSettingsButton = NSButton(title: "重置为默认设置", target: nil, action: nil)
-    private let exportProfileButton = NSButton(title: "导出个人设置", target: nil, action: nil)
-    private let importProfileButton = NSButton(title: "导入个人设置", target: nil, action: nil)
+    private let clearCacheButton = NSButton(title: "清除缓存", target: nil, action: nil)
+    private let resetSettingsButton = NSButton(title: "重置默认", target: nil, action: nil)
+    private let exportProfileButton = NSButton(title: "导出设置", target: nil, action: nil)
+    private let importProfileButton = NSButton(title: "导入设置", target: nil, action: nil)
 
-    init(wallpaperManager: WallpaperManager) {
+    init(
+        wallpaperManager: WallpaperManager,
+        visibleSections: Set<AppSettingsSection>,
+        topContentInset: CGFloat
+    ) {
         self.wallpaperManager = wallpaperManager
+        self.visibleSections = visibleSections
+        self.topContentInset = topContentInset
         super.init(frame: .zero)
         setupLayout()
         setupSections()
+        primeInitialDocumentFrame()
         applyNativeControlSizes()
         bindEvents()
         observeManager()
         observeScrollToTopRequests()
+        applyVisibleSections()
         refreshFromState()
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         nil
-    }
-
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        guard window != nil else { return }
-        scheduleRestingScrollOriginCapture()
     }
 
     deinit {
@@ -170,6 +200,24 @@ final class AppKitSettingsContainerView: NSView {
 
         startOnBootSwitch.state = settings.startOnBoot ? .on : .off
         syncSystemWallpaperSwitch.state = settings.syncSystemWallpaper ? .on : .off
+        systemAudioSpectrumSwitch.state = settings.systemAudioSpectrumEnabled ? .on : .off
+        systemAudioSpectrumOptionsContainer?.isHidden = !settings.systemAudioSpectrumEnabled
+        systemAudioSpectrumStylePopup.isEnabled = settings.systemAudioSpectrumEnabled
+        systemAudioSpectrumSensitivityPopup.isEnabled = settings.systemAudioSpectrumEnabled
+        systemAudioSpectrumBarCountPopup.isEnabled = settings.systemAudioSpectrumEnabled
+        systemAudioSpectrumColorWell.isEnabled = settings.systemAudioSpectrumEnabled
+        systemAudioSpectrumOffsetXSlider.isEnabled = settings.systemAudioSpectrumEnabled
+        systemAudioSpectrumOffsetYSlider.isEnabled = settings.systemAudioSpectrumEnabled
+        systemAudioSpectrumPeakCapsSwitch.isEnabled = settings.systemAudioSpectrumEnabled
+        selectSystemAudioSpectrumStyle(settings.systemAudioSpectrumStyle)
+        selectSystemAudioSpectrumSensitivity(settings.systemAudioSpectrumSensitivity)
+        selectSystemAudioSpectrumBarCount(settings.systemAudioSpectrumBarCount)
+        systemAudioSpectrumColorWell.color = color(fromHex: settings.systemAudioSpectrumColorHex) ?? .white
+        systemAudioSpectrumOffsetXSlider.doubleValue = settings.systemAudioSpectrumOffsetX * 100
+        systemAudioSpectrumOffsetYSlider.doubleValue = settings.systemAudioSpectrumOffsetY * 100
+        systemAudioSpectrumOffsetXValueLabel.stringValue = "\(Int(round(settings.systemAudioSpectrumOffsetX * 100)))%"
+        systemAudioSpectrumOffsetYValueLabel.stringValue = "\(Int(round(settings.systemAudioSpectrumOffsetY * 100)))%"
+        systemAudioSpectrumPeakCapsSwitch.state = settings.systemAudioSpectrumPeakCapsEnabled ? .on : .off
         systemHotkeysSwitch.state = settings.systemHotkeysEnabled ? .on : .off
         hotkeyRowsContainer?.isHidden = !settings.systemHotkeysEnabled
 
@@ -184,20 +232,41 @@ final class AppKitSettingsContainerView: NSView {
         selectFillMode(settings.videoFillMode)
 
         refreshHotkeyRows()
-        scheduleRestingScrollOriginCapture()
+        applyVisibleSections()
+        refreshSectionChromeAndLayout()
+    }
+
+    func updateVisibleSections(_ visibleSections: Set<AppSettingsSection>) {
+        guard self.visibleSections != visibleSections else { return }
+        self.visibleSections = visibleSections
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.applyVisibleSections()
+            self.refreshSectionChromeAndLayout()
+        }
     }
 
     private func setupLayout() {
-        // 外层滚动视图是必须的，因为设置页内容会在高密度选项下超过窗口高度。
-        wantsLayer = true
-        layer?.backgroundColor = NSColor.clear.cgColor
+        // 设置页内容使用滚动承载，让内容可以自然穿入顶部材质过渡区。
+        wantsLayer = false
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        scrollView.borderType = .noBorder
+        scrollView.drawsBackground = false
+        scrollView.hasVerticalScroller = true
+        scrollView.hasHorizontalScroller = false
+        scrollView.autohidesScrollers = true
+        scrollView.scrollerStyle = .overlay
 
-        scrollView.documentView = documentView
+        // 给 documentView 一个非零初始尺寸，避免内部行在宽度为 0 的中间态下提前解约束。
+        contentContainer.frame = NSRect(
+            x: 0,
+            y: 0,
+            width: max(bounds.width, LayoutSeed.initialDocumentWidth),
+            height: max(bounds.height, LayoutSeed.initialDocumentHeight)
+        )
+        scrollView.documentView = contentContainer
         addSubview(scrollView)
-        documentView.addSubview(contentStack)
-
-        let preferredWidth = contentStack.widthAnchor.constraint(equalToConstant: 500)
-        preferredWidth.priority = .defaultHigh
+        contentContainer.addSubview(contentStack)
 
         NSLayoutConstraint.activate([
             scrollView.leadingAnchor.constraint(equalTo: leadingAnchor),
@@ -205,20 +274,38 @@ final class AppKitSettingsContainerView: NSView {
             scrollView.topAnchor.constraint(equalTo: topAnchor),
             scrollView.bottomAnchor.constraint(equalTo: bottomAnchor),
 
-            documentView.leadingAnchor.constraint(equalTo: scrollView.contentView.leadingAnchor),
-            documentView.topAnchor.constraint(equalTo: scrollView.contentView.topAnchor),
-            documentView.widthAnchor.constraint(equalTo: scrollView.contentView.widthAnchor),
-            documentView.heightAnchor.constraint(greaterThanOrEqualTo: scrollView.contentView.heightAnchor),
-
-            contentStack.topAnchor.constraint(equalTo: documentView.topAnchor, constant: 14),
-            contentStack.bottomAnchor.constraint(equalTo: documentView.bottomAnchor, constant: -20),
-            contentStack.centerXAnchor.constraint(equalTo: documentView.centerXAnchor),
-            contentStack.leadingAnchor.constraint(greaterThanOrEqualTo: documentView.leadingAnchor, constant: 24),
-            contentStack.trailingAnchor.constraint(lessThanOrEqualTo: documentView.trailingAnchor, constant: -24),
-            contentStack.widthAnchor.constraint(greaterThanOrEqualToConstant: 400),
-            contentStack.widthAnchor.constraint(lessThanOrEqualToConstant: 520),
-            preferredWidth
+            contentStack.topAnchor.constraint(equalTo: contentContainer.topAnchor, constant: topContentInset),
+            contentStack.leadingAnchor.constraint(equalTo: contentContainer.leadingAnchor, constant: 20),
+            contentStack.trailingAnchor.constraint(equalTo: contentContainer.trailingAnchor, constant: -20),
+            contentStack.bottomAnchor.constraint(lessThanOrEqualTo: contentContainer.bottomAnchor, constant: -18)
         ])
+    }
+
+    override func layout() {
+        super.layout()
+        updateDocumentFrame()
+    }
+
+    private func primeInitialDocumentFrame() {
+        let seededWidth = max(bounds.width, LayoutSeed.initialDocumentWidth)
+        let seededHeight = max(
+            contentStack.fittingSize.height + topContentInset + 18,
+            LayoutSeed.initialDocumentHeight
+        )
+        contentContainer.frame = NSRect(x: 0, y: 0, width: seededWidth, height: seededHeight)
+    }
+
+    private func updateDocumentFrame() {
+        let viewportSize = scrollView.contentSize
+        guard viewportSize.width > 0 else { return }
+
+        let fittingHeight = contentStack.fittingSize.height + topContentInset + 18
+        let targetHeight = max(viewportSize.height, fittingHeight)
+        let targetFrame = NSRect(x: 0, y: 0, width: viewportSize.width, height: targetHeight)
+
+        if contentContainer.frame.integral != targetFrame.integral {
+            contentContainer.frame = targetFrame
+        }
     }
 
     private func observeScrollToTopRequests() {
@@ -226,71 +313,66 @@ final class AppKitSettingsContainerView: NSView {
             forName: .appKitRequestScrollToTopForCurrentSelection,
             object: nil,
             queue: .main
-        ) { [weak self] _ in
-            guard let self else { return }
-            self.scrollToTop(animated: true)
+        ) { _ in
+            // 设置页改为固定高度后，不再处理滚动复位。
         }
-    }
-
-    private func scrollToTop(animated: Bool) {
-        guard !isScrollToTopAnimating else { return }
-        guard scrollView.documentView != nil else { return }
-
-        let targetOrigin = restingScrollOrigin ?? NSPoint(x: 0, y: 0)
-        guard scrollView.contentView.bounds.origin != targetOrigin else { return }
-
-        isScrollToTopAnimating = true
-        NotificationCenter.default.post(name: .appKitLibraryGridScrollToTopAnimationWillStart, object: nil)
-        NSAnimationContext.runAnimationGroup { context in
-            let distance = abs(scrollView.contentView.bounds.origin.y - targetOrigin.y)
-            context.duration = animated ? min(0.36, max(0.20, distance / 5200.0)) : 0
-            context.timingFunction = CAMediaTimingFunction(controlPoints: 0.18, 0.85, 0.20, 1.0)
-            scrollView.contentView.animator().setBoundsOrigin(targetOrigin)
-        } completionHandler: { [weak self] in
-            guard let self else { return }
-            self.scrollView.reflectScrolledClipView(self.scrollView.contentView)
-            self.isScrollToTopAnimating = false
-            NotificationCenter.default.post(name: .appKitLibraryGridScrollToTopAnimationDidEnd, object: nil)
-        }
-    }
-
-    private func scheduleRestingScrollOriginCapture() {
-        guard restingScrollOrigin == nil else { return }
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            guard self.restingScrollOrigin == nil else { return }
-            self.layoutSubtreeIfNeeded()
-            self.scrollView.layoutSubtreeIfNeeded()
-            self.documentView.layoutSubtreeIfNeeded()
-            self.captureRestingScrollOriginIfNeeded()
-        }
-    }
-
-    private func captureRestingScrollOriginIfNeeded() {
-        guard restingScrollOrigin == nil else { return }
-        guard window != nil, scrollView.documentView != nil else { return }
-        restingScrollOrigin = scrollView.contentView.bounds.origin
     }
 
     private func setupSections() {
-        // 分组顺序固定：播放、系统、性能、显示、维护，避免重排后影响用户心智和回归判断。
+        // 分组顺序固定：播放、系统、节能、显示、维护；由左侧导航决定当前显示哪些块。
         setupPlaybackSection()
         setupSystemSection()
-        setupPerformanceSection()
+        setupEfficiencySection()
         setupDisplaySection()
         setupMaintenanceSection()
 
-        addSection(playbackSection)
+        addSection(playbackModesSection)
+        addSection(audioSection)
         addSection(systemSection)
-        addSection(performanceSection)
+        addSection(hotkeysSection)
+        addSection(efficiencySection)
         addSection(displaySection)
-        let maintenanceSpacer = NSView()
-        maintenanceSpacer.translatesAutoresizingMaskIntoConstraints = false
-        maintenanceSpacer.heightAnchor.constraint(equalToConstant: 8).isActive = true
-        contentStack.addArrangedSubview(maintenanceSpacer)
-        addSection(profileSettingsSection)
-        addSection(clearCacheSection)
-        addSection(resetSettingsSection)
+        addSection(maintenanceSection)
+    }
+
+    private func applyVisibleSections() {
+        playbackModesSection.isHidden = !visibleSections.contains(.playbackModes)
+        audioSection.isHidden = !visibleSections.contains(.audio)
+        systemSection.isHidden = !visibleSections.contains(.system)
+        hotkeysSection.isHidden = !visibleSections.contains(.hotkeys)
+        efficiencySection.isHidden = !visibleSections.contains(.efficiency)
+        displaySection.isHidden = !visibleSections.contains(.display)
+
+        let showsMaintenance = visibleSections.contains(.maintenance)
+        maintenanceSection.isHidden = !showsMaintenance
+    }
+
+    private func refreshSectionChromeAndLayout() {
+        let sections = [
+            playbackModesSection,
+            audioSection,
+            systemSection,
+            hotkeysSection,
+            efficiencySection,
+            displaySection,
+            maintenanceSection
+        ]
+        sections.forEach { $0.refreshSeparators() }
+
+        needsLayout = true
+        contentContainer.needsLayout = true
+        contentStack.needsLayout = true
+        scheduleDocumentFrameUpdate()
+    }
+
+    private func scheduleDocumentFrameUpdate() {
+        guard !isDocumentFrameUpdateScheduled else { return }
+        isDocumentFrameUpdateScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.isDocumentFrameUpdateScheduled = false
+            self.updateDocumentFrame()
+        }
     }
 
     private func addSection(_ section: NSView) {
@@ -301,12 +383,12 @@ final class AppKitSettingsContainerView: NSView {
 
     private func setupPlaybackSection() {
         // 播放控制区只放与播放状态相关的可逆配置，避免和系统集成配置混在一起。
-        playbackSection.addRow(makeSettingRow(title: "循环播放", trailing: loopSwitch))
-        playbackSection.addRow(makeSettingRow(title: "顺序播放", trailing: sequentialSwitch))
-        playbackSection.addRow(makeSettingRow(title: "随机播放", trailing: randomSwitch))
-        let autoSwitchRow = makeSettingRow(title: "自动切换", trailing: autoSwitchSwitch)
+        playbackModesSection.addRow(makeSettingRow(title: "循环播放", iconSystemName: "repeat", trailing: loopSwitch))
+        playbackModesSection.addRow(makeSettingRow(title: "顺序播放", iconSystemName: "list.number", trailing: sequentialSwitch))
+        playbackModesSection.addRow(makeSettingRow(title: "随机播放", iconSystemName: "shuffle", trailing: randomSwitch))
+        let autoSwitchRow = makeSettingRow(title: "自动切换", iconSystemName: "arrow.triangle.2.circlepath", trailing: autoSwitchSwitch)
         autoSwitchRowView = autoSwitchRow
-        playbackSection.addRow(autoSwitchRow)
+        playbackModesSection.addRow(autoSwitchRow)
 
         intervalField.alignment = .right
         intervalField.translatesAutoresizingMaskIntoConstraints = false
@@ -324,9 +406,9 @@ final class AppKitSettingsContainerView: NSView {
         intervalControls.alignment = .centerY
         intervalControls.spacing = 8
 
-        intervalRowView = makeSettingRow(title: "-  间隔时间", trailing: intervalControls)
+        intervalRowView = makeSettingRow(title: "-  间隔时间", iconSystemName: "timer", trailing: intervalControls)
         if let intervalRowView {
-            playbackSection.addRow(intervalRowView)
+            playbackModesSection.addRow(intervalRowView)
         }
 
         volumeSlider.translatesAutoresizingMaskIntoConstraints = false
@@ -340,13 +422,13 @@ final class AppKitSettingsContainerView: NSView {
         volumeControls.orientation = .horizontal
         volumeControls.alignment = .centerY
         volumeControls.spacing = 8
-        playbackSection.addRow(makeSettingRow(title: "静音", trailing: volumeControls))
+        audioSection.addRow(makeSettingRow(title: "静音", iconSystemName: "speaker.slash", trailing: volumeControls))
 
-        // 播放速率行：开关控制滑块显隐，滑块宽度与音量条对齐。
+        // 播放速率行：开关控制滑块显隐，1x 保持在滑杆中点。
         playbackRateSwitch.toolTip = "启用后可调整播放速率"
         playbackRateSlider.translatesAutoresizingMaskIntoConstraints = false
         playbackRateSlider.widthAnchor.constraint(equalToConstant: 250).isActive = true
-        playbackRateSlider.numberOfTickMarks = 12
+        playbackRateSlider.numberOfTickMarks = 0
         playbackRateSlider.allowsTickMarkValuesOnly = false
         playbackRateValueLabel.alignment = .right
         playbackRateValueLabel.font = .monospacedDigitSystemFont(ofSize: 12, weight: .regular)
@@ -357,24 +439,128 @@ final class AppKitSettingsContainerView: NSView {
         rateControls.orientation = .horizontal
         rateControls.alignment = .centerY
         rateControls.spacing = 8
-        let rateRow = makeSettingRow(title: "播放速率", trailing: rateControls)
+        let rateRow = makeSettingRow(title: "播放速率", iconSystemName: "speedometer", trailing: rateControls)
         playbackRateRowView = rateRow
-        playbackSection.addRow(rateRow)
+        audioSection.addRow(rateRow)
     }
 
     private func setupSystemSection() {
         // 系统集成区只放会影响全局快捷键、同步壁纸和开机行为的配置。
         startOnBootSwitch.toolTip = "开机时自动启动应用并恢复上次的壁纸设置"
         syncSystemWallpaperSwitch.toolTip = "每次切换壁纸时同步更新系统壁纸"
+        systemAudioSpectrumSwitch.toolTip = "实验功能：采集系统音频并在桌面底部显示频谱条"
         systemHotkeysSwitch.toolTip = "允许使用全局 F1-F12 快捷键控制壁纸"
 
-        systemSection.addRow(makeSettingRow(title: "开机自启动", trailing: startOnBootSwitch))
-        systemSection.addRow(makeSettingRow(title: "同步系统壁纸", trailing: syncSystemWallpaperSwitch))
-        systemSection.addRow(makeSettingRow(title: "响应系统快捷键", trailing: systemHotkeysSwitch))
+        systemSection.addRow(makeSettingRow(title: "开机自启动", iconSystemName: "power", trailing: startOnBootSwitch))
+        systemSection.addRow(makeSettingRow(title: "同步系统壁纸", iconSystemName: "photo.on.rectangle", trailing: syncSystemWallpaperSwitch))
+        let systemAudioSpectrumRow = makeSettingRow(
+            title: "系统音频频谱",
+            iconSystemName: "chart.bar.xaxis",
+            subtitle: "实验功能：会增加GPU负载",
+            trailing: systemAudioSpectrumSwitch
+        )
+        systemAudioSpectrumRow.identifier = NSUserInterfaceItemIdentifier("settings.row.system-audio-spectrum")
+        systemAudioSpectrumRowView = systemAudioSpectrumRow
+        systemSection.addRow(systemAudioSpectrumRow)
+        for style in SystemAudioSpectrumStyle.allCases {
+            systemAudioSpectrumStylePopup.addItem(withTitle: style.displayName)
+            systemAudioSpectrumStylePopup.lastItem?.representedObject = style
+        }
+        for sensitivity in SystemAudioSpectrumSensitivity.allCases {
+            systemAudioSpectrumSensitivityPopup.addItem(withTitle: sensitivity.displayName)
+            systemAudioSpectrumSensitivityPopup.lastItem?.representedObject = sensitivity
+        }
+        for barCount in [16, 20, 28, 36, 48] {
+            systemAudioSpectrumBarCountPopup.addItem(withTitle: "\(barCount) 根")
+            systemAudioSpectrumBarCountPopup.lastItem?.representedObject = barCount
+        }
+        systemAudioSpectrumColorWell.supportsAlpha = false
+        systemAudioSpectrumColorWell.color = .white
+        systemAudioSpectrumOffsetXSlider.translatesAutoresizingMaskIntoConstraints = false
+        systemAudioSpectrumOffsetXSlider.widthAnchor.constraint(equalToConstant: 180).isActive = true
+        systemAudioSpectrumOffsetYSlider.translatesAutoresizingMaskIntoConstraints = false
+        systemAudioSpectrumOffsetYSlider.widthAnchor.constraint(equalToConstant: 180).isActive = true
+        for label in [systemAudioSpectrumOffsetXValueLabel, systemAudioSpectrumOffsetYValueLabel] {
+            label.alignment = .right
+            label.font = .monospacedDigitSystemFont(ofSize: 12, weight: .regular)
+            label.translatesAutoresizingMaskIntoConstraints = false
+            label.widthAnchor.constraint(equalToConstant: 36).isActive = true
+        }
+
+        let spectrumStyleRow = makeSettingRow(
+            title: "-  动态风格",
+            iconSystemName: "waveform.path.ecg",
+            trailing: systemAudioSpectrumStylePopup
+        )
+        let spectrumSensitivityRow = makeSettingRow(
+            title: "-  灵敏度",
+            iconSystemName: "slider.horizontal.3",
+            trailing: systemAudioSpectrumSensitivityPopup
+        )
+        let spectrumBarCountRow = makeSettingRow(
+            title: "-  频柱数量",
+            iconSystemName: "square.split.2x1",
+            trailing: systemAudioSpectrumBarCountPopup
+        )
+        let spectrumColorRow = makeSettingRow(
+            title: "-  颜色",
+            iconSystemName: "paintpalette",
+            trailing: systemAudioSpectrumColorWell
+        )
+        let offsetXControls = NSStackView(views: [systemAudioSpectrumOffsetXValueLabel, systemAudioSpectrumOffsetXSlider])
+        offsetXControls.orientation = .horizontal
+        offsetXControls.alignment = .centerY
+        offsetXControls.spacing = 8
+        let offsetYControls = NSStackView(views: [systemAudioSpectrumOffsetYValueLabel, systemAudioSpectrumOffsetYSlider])
+        offsetYControls.orientation = .horizontal
+        offsetYControls.alignment = .centerY
+        offsetYControls.spacing = 8
+        let spectrumOffsetXRow = makeSettingRow(
+            title: "-  X 位置",
+            iconSystemName: "arrow.left.and.right",
+            trailing: offsetXControls
+        )
+        let spectrumOffsetYRow = makeSettingRow(
+            title: "-  Y 位置",
+            iconSystemName: "arrow.up.and.down",
+            trailing: offsetYControls
+        )
+        let spectrumPeakCapsRow = makeSettingRow(
+            title: "-  显示峰值帽",
+            iconSystemName: "rectangle.topthird.inset.filled",
+            trailing: systemAudioSpectrumPeakCapsSwitch
+        )
+        let spectrumOptionsStack = NSStackView(views: [
+            spectrumStyleRow,
+            makeInlineSeparator(horizontalInset: 14),
+            spectrumSensitivityRow,
+            makeInlineSeparator(horizontalInset: 14),
+            spectrumBarCountRow,
+            makeInlineSeparator(horizontalInset: 14),
+            spectrumColorRow,
+            makeInlineSeparator(horizontalInset: 14),
+            spectrumOffsetXRow,
+            makeInlineSeparator(horizontalInset: 14),
+            spectrumOffsetYRow,
+            makeInlineSeparator(horizontalInset: 14),
+            spectrumPeakCapsRow
+        ])
+        spectrumOptionsStack.orientation = .vertical
+        spectrumOptionsStack.alignment = .leading
+        spectrumOptionsStack.distribution = .fill
+        spectrumOptionsStack.spacing = 0
+        spectrumOptionsStack.translatesAutoresizingMaskIntoConstraints = false
+        systemAudioSpectrumOptionsContainer = makeEmbeddedRow(content: spectrumOptionsStack)
+        if let systemAudioSpectrumOptionsContainer {
+            systemAudioSpectrumOptionsContainer.identifier = NSUserInterfaceItemIdentifier("settings.row.system-audio-spectrum.options")
+            spectrumOptionsStack.identifier = NSUserInterfaceItemIdentifier("settings.stack.system-audio-spectrum.options")
+            systemSection.addRow(systemAudioSpectrumOptionsContainer)
+        }
+        hotkeysSection.addRow(makeSettingRow(title: "响应系统快捷键", iconSystemName: "keyboard", trailing: systemHotkeysSwitch))
 
         hotkeyRowsStack.orientation = .vertical
         hotkeyRowsStack.alignment = .leading
-        hotkeyRowsStack.distribution = .gravityAreas
+        hotkeyRowsStack.distribution = .fill
         hotkeyRowsStack.spacing = 0
         hotkeyRowsStack.translatesAutoresizingMaskIntoConstraints = false
 
@@ -394,7 +580,7 @@ final class AppKitSettingsContainerView: NSView {
                 separator.widthAnchor.constraint(equalTo: hotkeyRowsStack.widthAnchor).isActive = true
             }
 
-            let row = makeSettingRow(title: action.displayName, trailing: controls)
+            let row = makeSettingRow(title: action.displayName, iconSystemName: "command", trailing: controls)
             hotkeyRowsStack.addArrangedSubview(row)
             row.translatesAutoresizingMaskIntoConstraints = false
             row.widthAnchor.constraint(equalTo: hotkeyRowsStack.widthAnchor).isActive = true
@@ -405,71 +591,60 @@ final class AppKitSettingsContainerView: NSView {
 
         hotkeyRowsContainer = makeEmbeddedRow(content: hotkeyRowsStack)
         if let hotkeyRowsContainer {
-            systemSection.addRow(hotkeyRowsContainer)
+            hotkeysSection.addRow(hotkeyRowsContainer)
         }
     }
 
-    private func setupPerformanceSection() {
+    private func setupEfficiencySection() {
         // 性能区的开关会直接影响引擎暂停状态，改动后必须同步到 WallpaperEngine。
         pauseOtherAppFullscreenSwitch.toolTip = "当其他应用进入全屏并占据主要桌面空间时暂停壁纸播放"
         pauseWhenUnpluggedSwitch.toolTip = "使用电池时暂停壁纸播放以节省电量"
         pauseWhenIdleSwitch.toolTip = "当电脑长时间不活跃时暂停壁纸播放"
 
-        performanceSection.addRow(makeSettingRow(title: "其他应用焦点时暂停", trailing: pauseOtherAppFocusedSwitch))
-        performanceSection.addRow(makeSettingRow(title: "其他应用全屏时暂停", trailing: pauseOtherAppFullscreenSwitch))
-        performanceSection.addRow(makeSettingRow(title: "未连接电源时暂停播放", trailing: pauseWhenUnpluggedSwitch))
-        performanceSection.addRow(makeSettingRow(title: "电脑不活跃时暂停播放", trailing: pauseWhenIdleSwitch))
+        efficiencySection.addRow(makeSettingRow(title: "其他应用焦点时暂停", iconSystemName: "app.badge", trailing: pauseOtherAppFocusedSwitch))
+        efficiencySection.addRow(makeSettingRow(title: "其他应用全屏时暂停", iconSystemName: "arrow.up.left.and.arrow.down.right", trailing: pauseOtherAppFullscreenSwitch))
+        efficiencySection.addRow(makeSettingRow(title: "未连接电源时暂停播放", iconSystemName: "battery.25", trailing: pauseWhenUnpluggedSwitch))
+        efficiencySection.addRow(makeSettingRow(title: "电脑不活跃时暂停播放", iconSystemName: "moon.zzz", trailing: pauseWhenIdleSwitch))
 
         for value in [5, 10, 15, 20, 30, 60] {
             idleTimeoutPopup.addItem(withTitle: "\(value)分钟")
             idleTimeoutPopup.lastItem?.representedObject = value
         }
-        idleTimeoutRowView = makeSettingRow(title: "-  不活跃时间", trailing: idleTimeoutPopup)
+        idleTimeoutRowView = makeSettingRow(title: "-  不活跃时间", iconSystemName: "clock", trailing: idleTimeoutPopup)
         if let idleTimeoutRowView {
-            performanceSection.addRow(idleTimeoutRowView)
+            efficiencySection.addRow(idleTimeoutRowView)
         }
     }
 
     private func setupDisplaySection() {
         // 显示区只处理屏幕适配和画面比例，不混入播放策略。
         multiDisplaySwitch.toolTip = "在所有显示器上显示视频壁纸"
-        displaySection.addRow(makeSettingRow(title: "多屏适配", trailing: multiDisplaySwitch))
+        displaySection.addRow(makeSettingRow(title: "多屏适配", iconSystemName: "rectangle.on.rectangle", trailing: multiDisplaySwitch))
 
         let fillModeControls = NSStackView(views: [fillModeFitButton, fillModeFillButton])
         fillModeControls.orientation = .horizontal
         fillModeControls.alignment = .centerY
         fillModeControls.spacing = 16
-        displaySection.addRow(makeSettingRow(title: "视频填充模式", trailing: fillModeControls))
+        displaySection.addRow(makeSettingRow(title: "视频填充模式", iconSystemName: "aspectratio", trailing: fillModeControls))
     }
 
     private func setupMaintenanceSection() {
         // 维护区只承载导入导出、清缓存和恢复默认这类高风险动作，和普通设置分开。
-        // 导出/导入按钮去掉 bordered 样式，避免与 section 背景产生双层视觉叠加。
-        exportProfileButton.isBordered = false
-        exportProfileButton.bezelStyle = .rounded
-        exportProfileButton.contentTintColor = .controlAccentColor
-        exportProfileButton.isEnabled = true
+        configureMaintenanceActionButton(exportProfileButton)
         exportProfileButton.target = self
         exportProfileButton.action = #selector(handleExportProfile)
-        importProfileButton.isBordered = false
-        importProfileButton.bezelStyle = .rounded
-        importProfileButton.contentTintColor = .controlAccentColor
-        importProfileButton.isEnabled = true
+
+        configureMaintenanceActionButton(importProfileButton)
         importProfileButton.target = self
         importProfileButton.action = #selector(handleImportProfile)
 
-        clearCacheButton.isBordered = false
+        configureMaintenanceActionButton(clearCacheButton)
+        configureMaintenanceActionButton(resetSettingsButton, tint: .systemRed)
 
-        resetSettingsButton.isBordered = false
-        resetSettingsButton.contentTintColor = .systemRed
-
-        let profileButtons = NSStackView(views: [exportProfileButton, importProfileButton])
-        profileButtons.orientation = .horizontal
-        profileButtons.alignment = .centerY
-        profileButtons.spacing = 20
-        profileSettingsSection.addRow(makeCenteredControlRow(content: profileButtons))
-        clearCacheSection.addRow(makeCenteredControlRow(content: clearCacheButton))
-        resetSettingsSection.addRow(makeCenteredControlRow(content: resetSettingsButton))
+        maintenanceSection.addRow(makeMaintenanceActionRow(button: exportProfileButton, iconSystemName: "square.and.arrow.up"))
+        maintenanceSection.addRow(makeMaintenanceActionRow(button: importProfileButton, iconSystemName: "square.and.arrow.down"))
+        maintenanceSection.addRow(makeMaintenanceActionRow(button: clearCacheButton, iconSystemName: "trash"))
+        maintenanceSection.addRow(makeMaintenanceActionRow(button: resetSettingsButton, iconSystemName: "arrow.counterclockwise"))
     }
 
     private func applyNativeControlSizes() {
@@ -483,6 +658,7 @@ final class AppKitSettingsContainerView: NSView {
             playbackRateSwitch,
             startOnBootSwitch,
             syncSystemWallpaperSwitch,
+            systemAudioSpectrumSwitch,
             systemHotkeysSwitch,
             pauseOtherAppFocusedSwitch,
             pauseOtherAppFullscreenSwitch,
@@ -494,22 +670,16 @@ final class AppKitSettingsContainerView: NSView {
         hotkeyEnableSwitches.values.forEach { $0.controlSize = .mini }
 
         let popups: [NSPopUpButton] = [timeUnitPopup, idleTimeoutPopup] + hotkeyPopups.values
+            + [systemAudioSpectrumStylePopup, systemAudioSpectrumSensitivityPopup, systemAudioSpectrumBarCountPopup]
         popups.forEach { $0.controlSize = .small }
 
         intervalField.controlSize = .small
-        volumeSlider.controlSize = .regular
-        playbackRateSlider.controlSize = .regular
+        volumeSlider.controlSize = .small
+        playbackRateSlider.controlSize = .small
         exportProfileButton.controlSize = .regular
         importProfileButton.controlSize = .regular
         clearCacheButton.controlSize = .regular
         resetSettingsButton.controlSize = .regular
-
-        // 这四个按钮字号和字重单独强化，避免被系统 controlSize 默认字体压得偏小。
-        let maintenanceFont = NSFont.systemFont(ofSize: 13, weight: .medium)
-        exportProfileButton.font = maintenanceFont
-        importProfileButton.font = maintenanceFont
-        clearCacheButton.font = maintenanceFont
-        resetSettingsButton.font = NSFont.systemFont(ofSize: 13, weight: .medium)
     }
 
     private func bindEvents() {
@@ -538,6 +708,22 @@ final class AppKitSettingsContainerView: NSView {
         startOnBootSwitch.action = #selector(handleStartOnBootToggle)
         syncSystemWallpaperSwitch.target = self
         syncSystemWallpaperSwitch.action = #selector(handleSyncSystemWallpaperToggle)
+        systemAudioSpectrumSwitch.target = self
+        systemAudioSpectrumSwitch.action = #selector(handleSystemAudioSpectrumToggle)
+        systemAudioSpectrumStylePopup.target = self
+        systemAudioSpectrumStylePopup.action = #selector(handleSystemAudioSpectrumStyleChange)
+        systemAudioSpectrumSensitivityPopup.target = self
+        systemAudioSpectrumSensitivityPopup.action = #selector(handleSystemAudioSpectrumSensitivityChange)
+        systemAudioSpectrumBarCountPopup.target = self
+        systemAudioSpectrumBarCountPopup.action = #selector(handleSystemAudioSpectrumBarCountChange)
+        systemAudioSpectrumColorWell.target = self
+        systemAudioSpectrumColorWell.action = #selector(handleSystemAudioSpectrumColorChange)
+        systemAudioSpectrumOffsetXSlider.target = self
+        systemAudioSpectrumOffsetXSlider.action = #selector(handleSystemAudioSpectrumOffsetChange)
+        systemAudioSpectrumOffsetYSlider.target = self
+        systemAudioSpectrumOffsetYSlider.action = #selector(handleSystemAudioSpectrumOffsetChange)
+        systemAudioSpectrumPeakCapsSwitch.target = self
+        systemAudioSpectrumPeakCapsSwitch.action = #selector(handleSystemAudioSpectrumPeakCapsToggle)
         systemHotkeysSwitch.target = self
         systemHotkeysSwitch.action = #selector(handleSystemHotkeysToggle)
 
@@ -589,27 +775,31 @@ final class AppKitSettingsContainerView: NSView {
             .store(in: &cancellables)
     }
 
-    private func makeSettingRow(title: String, subtitle: String? = nil, trailing: NSView, leadingInset: CGFloat = 0) -> NSView {
+    private func makeSettingRow(title: String, iconSystemName: String? = nil, subtitle: String? = nil, trailing: NSView, leadingInset: CGFloat = 0) -> NSView {
         // 标题在左、控件在右，中间留伸缩空白，保持系统设置类页面的稳定对齐。
         let titleLabel = NSTextField(labelWithString: title)
+        titleLabel.font = .systemFont(ofSize: 13, weight: .regular)
         titleLabel.alignment = .left
         titleLabel.lineBreakMode = .byTruncatingTail
         titleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         titleLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
 
-        let leadingView: NSView
+        let textContentView: NSView
         if let subtitle {
             let subtitleLabel = NSTextField(labelWithString: subtitle)
+            subtitleLabel.font = .systemFont(ofSize: 11, weight: .regular)
             subtitleLabel.textColor = .secondaryLabelColor
             let textStack = NSStackView(views: [titleLabel, subtitleLabel])
             textStack.orientation = .vertical
             textStack.alignment = .leading
             textStack.distribution = .gravityAreas
             textStack.spacing = 2
-            leadingView = textStack
+            textContentView = textStack
         } else {
-            leadingView = titleLabel
+            textContentView = titleLabel
         }
+
+        let leadingView = makeLeadingRowContent(iconSystemName: iconSystemName, content: textContentView)
 
         trailing.setContentHuggingPriority(.required, for: .horizontal)
         trailing.setContentCompressionResistancePriority(.required, for: .horizontal)
@@ -622,14 +812,15 @@ final class AppKitSettingsContainerView: NSView {
         rowStack.orientation = .horizontal
         rowStack.alignment = .centerY
         rowStack.distribution = .fill
-        rowStack.spacing = 12
+        rowStack.spacing = 6
         rowStack.translatesAutoresizingMaskIntoConstraints = false
 
         let container = NSView()
         container.translatesAutoresizingMaskIntoConstraints = false
+        container.identifier = NSUserInterfaceItemIdentifier("settings.row.\(sanitizedIdentifierComponent(from: title))")
         container.addSubview(rowStack)
-        let topInset: CGFloat = 8
-        let bottomInset: CGFloat = 8
+        let topInset: CGFloat = 9
+        let bottomInset: CGFloat = 9
         NSLayoutConstraint.activate([
             rowStack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 14 + leadingInset),
             rowStack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -14),
@@ -637,6 +828,110 @@ final class AppKitSettingsContainerView: NSView {
             rowStack.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -bottomInset)
         ])
         return container
+    }
+
+    private func configureMaintenanceActionButton(_ button: NSButton, tint: NSColor? = nil) {
+        button.isBordered = false
+        button.bezelStyle = .regularSquare
+        button.contentTintColor = tint
+        button.image = nil
+        button.font = .systemFont(ofSize: 13, weight: .regular)
+        button.alignment = .left
+        button.setButtonType(.momentaryPushIn)
+        let foregroundColor = tint ?? .labelColor
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 13, weight: .regular),
+            .foregroundColor: foregroundColor
+        ]
+        button.attributedTitle = NSAttributedString(string: button.title, attributes: attributes)
+        button.contentTintColor = nil
+    }
+
+    private func makeMaintenanceActionRow(button: NSButton, iconSystemName: String) -> NSView {
+        let container = NSView()
+        container.translatesAutoresizingMaskIntoConstraints = false
+
+        let iconView = makeRowIconView(systemName: iconSystemName, tintColor: button.attributedTitle.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor ?? .secondaryLabelColor)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        iconView.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(iconView)
+        container.addSubview(button)
+
+        NSLayoutConstraint.activate([
+            iconView.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 14),
+            iconView.centerYAnchor.constraint(equalTo: button.centerYAnchor),
+            button.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: 10),
+            button.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -14),
+            button.topAnchor.constraint(equalTo: container.topAnchor, constant: 10),
+            button.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -10)
+        ])
+
+        return container
+    }
+
+    private func makeLeadingRowContent(iconSystemName: String?, content: NSView) -> NSView {
+        guard let iconSystemName else { return content }
+
+        let iconView = makeRowIconView(systemName: iconSystemName, tintColor: .secondaryLabelColor)
+        let container = NSView()
+        container.translatesAutoresizingMaskIntoConstraints = false
+        container.identifier = NSUserInterfaceItemIdentifier("settings.leading.\(iconSystemName)")
+        iconView.translatesAutoresizingMaskIntoConstraints = false
+        content.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(iconView)
+        container.addSubview(content)
+
+        NSLayoutConstraint.activate([
+            iconView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            iconView.centerYAnchor.constraint(equalTo: content.centerYAnchor),
+            iconView.topAnchor.constraint(greaterThanOrEqualTo: container.topAnchor),
+            iconView.bottomAnchor.constraint(lessThanOrEqualTo: container.bottomAnchor),
+            content.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: 10),
+            content.topAnchor.constraint(equalTo: container.topAnchor),
+            content.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            content.trailingAnchor.constraint(equalTo: container.trailingAnchor)
+        ])
+
+        return container
+    }
+
+    private func makeRowIconView(systemName: String, tintColor: NSColor) -> NSView {
+        let container = NSView()
+        container.translatesAutoresizingMaskIntoConstraints = false
+        container.identifier = NSUserInterfaceItemIdentifier("settings.icon.\(systemName)")
+
+        let imageView = NSImageView()
+        imageView.translatesAutoresizingMaskIntoConstraints = false
+        imageView.imageScaling = .scaleProportionallyDown
+        if let image = NSImage(
+            systemSymbolName: systemName,
+            accessibilityDescription: nil
+        )?.withSymbolConfiguration(.init(pointSize: 12, weight: .regular)) {
+            image.isTemplate = true
+            imageView.image = image
+        }
+        imageView.contentTintColor = tintColor
+        container.addSubview(imageView)
+
+        NSLayoutConstraint.activate([
+            container.widthAnchor.constraint(equalToConstant: 14),
+            imageView.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+            imageView.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            imageView.widthAnchor.constraint(equalToConstant: 12),
+            imageView.heightAnchor.constraint(equalToConstant: 12),
+            imageView.topAnchor.constraint(greaterThanOrEqualTo: container.topAnchor),
+            imageView.bottomAnchor.constraint(lessThanOrEqualTo: container.bottomAnchor)
+        ])
+
+        return container
+    }
+
+    private func sanitizedIdentifierComponent(from title: String) -> String {
+        let normalized = title
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "-  ", with: "")
+            .replacingOccurrences(of: " ", with: "-")
+        return normalized.isEmpty ? "untitled" : normalized
     }
 
     private func makeEmbeddedRow(content: NSView, centered: Bool = false) -> NSView {
@@ -652,9 +947,9 @@ final class AppKitSettingsContainerView: NSView {
 
         row.orientation = .horizontal
         row.alignment = .centerY
-        row.distribution = .gravityAreas
+        row.distribution = .fill
         row.spacing = 0
-        row.edgeInsets = NSEdgeInsets(top: 8, left: 0, bottom: 8, right: 0)
+        row.edgeInsets = NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)
         return row
     }
 
@@ -673,12 +968,29 @@ final class AppKitSettingsContainerView: NSView {
         return container
     }
 
+    private func makeMaintenanceControlRow(content: NSView) -> NSView {
+        let container = NSView()
+        container.translatesAutoresizingMaskIntoConstraints = false
+        content.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(content)
+
+        NSLayoutConstraint.activate([
+            content.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 14),
+            content.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -14),
+            content.topAnchor.constraint(equalTo: container.topAnchor, constant: 8),
+            content.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -8)
+        ])
+
+        return container
+    }
+
     private func makeInlineSeparator(horizontalInset: CGFloat) -> NSView {
         let container = NSView()
         container.translatesAutoresizingMaskIntoConstraints = false
 
-        let separator = AdaptiveSeparatorLineView()
+        let separator = NSBox()
         separator.translatesAutoresizingMaskIntoConstraints = false
+        separator.boxType = .separator
         container.addSubview(separator)
 
         NSLayoutConstraint.activate([
@@ -743,8 +1055,8 @@ final class AppKitSettingsContainerView: NSView {
 
     @objc private func handlePlaybackRateChange() {
         guard !isUpdatingUI else { return }
-        // 滑块步长 0.25，上限 3.0。
-        let snapped = (playbackRateSlider.doubleValue * 4).rounded() / 4
+        // 以 1x 为中点，步长 0.05，限制在 0.25x 到 2.0x。
+        let snapped = (playbackRateSlider.doubleValue * 20).rounded() / 20
         let clamped = max(0.25, min(2.0, snapped))
         playbackRateValueLabel.stringValue = String(format: "%.2gx", clamped)
         wallpaperManager.settings.playbackRate = clamped
@@ -771,12 +1083,99 @@ final class AppKitSettingsContainerView: NSView {
 
     @objc private func handleSyncSystemWallpaperToggle() {
         guard !isUpdatingUI else { return }
-        wallpaperManager.settings.syncSystemWallpaper = (syncSystemWallpaperSwitch.state == .on)
+        wallpaperManager.setSyncSystemWallpaperEnabled(syncSystemWallpaperSwitch.state == .on)
+    }
+
+    @objc private func handleSystemAudioSpectrumToggle() {
+        guard !isUpdatingUI else { return }
+        wallpaperManager.settings.systemAudioSpectrumEnabled = (systemAudioSpectrumSwitch.state == .on)
+        wallpaperManager.applySystemAudioSpectrumToEngine()
+    }
+
+    @objc private func handleSystemAudioSpectrumStyleChange() {
+        guard !isUpdatingUI else { return }
+        guard let style = systemAudioSpectrumStylePopup.selectedItem?.representedObject as? SystemAudioSpectrumStyle else { return }
+        wallpaperManager.settings.systemAudioSpectrumStyle = style
+        wallpaperManager.applySystemAudioSpectrumToEngine()
+    }
+
+    @objc private func handleSystemAudioSpectrumSensitivityChange() {
+        guard !isUpdatingUI else { return }
+        guard let sensitivity = systemAudioSpectrumSensitivityPopup.selectedItem?.representedObject as? SystemAudioSpectrumSensitivity else { return }
+        wallpaperManager.settings.systemAudioSpectrumSensitivity = sensitivity
+        wallpaperManager.applySystemAudioSpectrumToEngine()
+    }
+
+    @objc private func handleSystemAudioSpectrumBarCountChange() {
+        guard !isUpdatingUI else { return }
+        guard let barCount = systemAudioSpectrumBarCountPopup.selectedItem?.representedObject as? Int else { return }
+        wallpaperManager.settings.systemAudioSpectrumBarCount = barCount
+        wallpaperManager.applySystemAudioSpectrumToEngine()
+    }
+
+    @objc private func handleSystemAudioSpectrumColorChange() {
+        guard !isUpdatingUI else { return }
+        wallpaperManager.settings.systemAudioSpectrumColorHex = hexString(from: systemAudioSpectrumColorWell.color)
+        wallpaperManager.applySystemAudioSpectrumToEngine()
+    }
+
+    @objc private func handleSystemAudioSpectrumOffsetChange() {
+        guard !isUpdatingUI else { return }
+        wallpaperManager.settings.systemAudioSpectrumOffsetX = systemAudioSpectrumOffsetXSlider.doubleValue / 100
+        wallpaperManager.settings.systemAudioSpectrumOffsetY = systemAudioSpectrumOffsetYSlider.doubleValue / 100
+        systemAudioSpectrumOffsetXValueLabel.stringValue = "\(Int(round(systemAudioSpectrumOffsetXSlider.doubleValue)))%"
+        systemAudioSpectrumOffsetYValueLabel.stringValue = "\(Int(round(systemAudioSpectrumOffsetYSlider.doubleValue)))%"
+        wallpaperManager.applySystemAudioSpectrumToEngine()
+    }
+
+    @objc private func handleSystemAudioSpectrumPeakCapsToggle() {
+        guard !isUpdatingUI else { return }
+        wallpaperManager.settings.systemAudioSpectrumPeakCapsEnabled = (systemAudioSpectrumPeakCapsSwitch.state == .on)
+        wallpaperManager.applySystemAudioSpectrumToEngine()
     }
 
     @objc private func handleSystemHotkeysToggle() {
         guard !isUpdatingUI else { return }
         wallpaperManager.settings.systemHotkeysEnabled = (systemHotkeysSwitch.state == .on)
+    }
+
+    private func selectSystemAudioSpectrumStyle(_ style: SystemAudioSpectrumStyle) {
+        if let item = systemAudioSpectrumStylePopup.itemArray.first(where: { ($0.representedObject as? SystemAudioSpectrumStyle) == style }) {
+            systemAudioSpectrumStylePopup.select(item)
+        }
+    }
+
+    private func selectSystemAudioSpectrumSensitivity(_ sensitivity: SystemAudioSpectrumSensitivity) {
+        if let item = systemAudioSpectrumSensitivityPopup.itemArray.first(where: { ($0.representedObject as? SystemAudioSpectrumSensitivity) == sensitivity }) {
+            systemAudioSpectrumSensitivityPopup.select(item)
+        }
+    }
+
+    private func selectSystemAudioSpectrumBarCount(_ barCount: Int) {
+        if let item = systemAudioSpectrumBarCountPopup.itemArray.first(where: { ($0.representedObject as? Int) == barCount }) {
+            systemAudioSpectrumBarCountPopup.select(item)
+        }
+    }
+
+    private func color(fromHex hex: String) -> NSColor? {
+        let trimmed = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+        guard trimmed.count == 6 else { return nil }
+        var value: UInt64 = 0
+        guard Scanner(string: trimmed).scanHexInt64(&value) else { return nil }
+        return NSColor(
+            calibratedRed: CGFloat((value & 0xFF0000) >> 16) / 255,
+            green: CGFloat((value & 0x00FF00) >> 8) / 255,
+            blue: CGFloat(value & 0x0000FF) / 255,
+            alpha: 1
+        )
+    }
+
+    private func hexString(from color: NSColor) -> String {
+        let converted = color.usingColorSpace(.deviceRGB) ?? color
+        let red = Int(round(converted.redComponent * 255))
+        let green = Int(round(converted.greenComponent * 255))
+        let blue = Int(round(converted.blueComponent * 255))
+        return String(format: "#%02X%02X%02X", red, green, blue)
     }
 
     @objc private func handleHotkeyEnableToggle(_ sender: NSSwitch) {
@@ -838,19 +1237,21 @@ final class AppKitSettingsContainerView: NSView {
     }
 
     @objc private func handleClearCache() {
+        let hostWindow = preferredHostWindow()
         let alert = makeAppAlert(
             title: "清空缓存",
-            message: "将删除视频库的所有缩略图和静帧缓存，不会删除已导入的视频/图片和当前设置。图片库无独立缓存。",
+            message: "将删除视频库的所有缩略图和静帧缓存，并重置 Steam 创意工坊的列表/详情缓存与当前浏览状态；不会删除已导入的视频、图片和已下载的工坊文件，也不会清除当前设置。",
             buttons: ["清空", "取消"]
         )
-        presentAppAlert(alert, in: appModalHostWindow()) { [weak self] response in
+        presentAppAlert(alert, in: hostWindow) { [weak self] response in
             guard let self, response == .alertFirstButtonReturn else { return }
             self.wallpaperManager.clearAllCaches()
+            SteamWorkshopService.shared.clearAllCachedState()
             let result = makeAppAlert(
                 title: "缓存已清空",
-                message: "下次浏览或切换壁纸时会重新生成缓存。"
+                message: "下次浏览视频库、图片库或 Steam 创意工坊时会重新生成缓存。"
             )
-            presentAppAlert(result, in: appModalHostWindow())
+            presentAppAlert(result, in: hostWindow)
         }
     }
 
@@ -923,7 +1324,10 @@ final class AppKitSettingsContainerView: NSView {
     }
 
     private func preferredHostWindow() -> NSWindow? {
-        window ?? appModalHostWindow()
+        if let window, window.isVisible {
+            return window
+        }
+        return appModalHostWindow()
     }
 
     private func presentSavePanel(_ panel: NSSavePanel, completion: @escaping (URL?) -> Void) {
@@ -973,12 +1377,13 @@ final class AppKitSettingsContainerView: NSView {
     }
 
     @objc private func handleResetSettings() {
+        let hostWindow = preferredHostWindow()
         let alert = makeAppAlert(
             title: "重置设置",
             message: "将清空视频库和图片库的所有壁纸、标签和最近使用，并恢复所有设置为初次安装状态。此操作不可撤销，确定要继续吗？",
             buttons: ["确定", "取消"]
         )
-        presentAppAlert(alert, in: appModalHostWindow()) { [weak self] response in
+        presentAppAlert(alert, in: hostWindow) { [weak self] response in
             guard let self, response == .alertFirstButtonReturn else { return }
             self.wallpaperManager.resetToFreshInstallState()
         }
