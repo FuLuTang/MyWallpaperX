@@ -166,20 +166,12 @@ extension SteamWorkshopService {
     private func resolvePreviewRelativePath(in directory: URL) -> String? {
         let projectURL = directory.appendingPathComponent("project.json")
         let project = Self.loadWorkshopProject(from: projectURL)
-        if let preview = project?.preview {
-            let candidate = directory.appendingPathComponent(preview)
-            if FileManager.default.fileExists(atPath: candidate.path) {
-                return preview
-            }
-        }
-        let candidates = ["preview.jpg", "preview.jpeg", "preview.png", "preview.gif"]
-        for candidateName in candidates {
-            let candidate = directory.appendingPathComponent(candidateName)
-            if FileManager.default.fileExists(atPath: candidate.path) {
-                return candidateName
-            }
-        }
-        return nil
+        let projectRoot = Self.loadWorkshopProjectRoot(from: projectURL)
+        return Self.preferredPreviewRelativePath(
+            in: directory,
+            project: project,
+            projectRoot: projectRoot
+        )
     }
 
     private func exportPrimaryVideoIfPossible(

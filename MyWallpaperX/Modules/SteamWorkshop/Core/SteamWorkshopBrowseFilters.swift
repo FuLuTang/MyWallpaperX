@@ -4,30 +4,30 @@ enum SteamWorkshopBrowserContentMode: String, CaseIterable, Identifiable {
     case video
     case web
 
-    var id: String { rawValue }
+    nonisolated var id: String { rawValue }
 
-    var displayName: String {
+    nonisolated var displayName: String {
         switch self {
         case .video: return "视频壁纸"
         case .web: return "WEB壁纸"
         }
     }
 
-    var shortDisplayName: String {
+    nonisolated var shortDisplayName: String {
         switch self {
         case .video: return "视频"
         case .web: return "WEB"
         }
     }
 
-    var requiredTagValue: String {
+    nonisolated var requiredTagValue: String {
         switch self {
         case .video: return "Video"
         case .web: return "Web"
         }
     }
 
-    var searchPlaceholder: String {
+    nonisolated var searchPlaceholder: String {
         switch self {
         case .video: return "搜索 Steam 视频"
         case .web: return "搜索 Steam WEB壁纸"
@@ -41,9 +41,9 @@ enum SteamWorkshopSource: String, CaseIterable, Identifiable {
     case subscribed
     case updated
 
-    var id: String { rawValue }
+    nonisolated var id: String { rawValue }
 
-    var displayName: String {
+    nonisolated var displayName: String {
         switch self {
         case .featured: return "最热门"
         case .recent: return "最新发布"
@@ -52,7 +52,7 @@ enum SteamWorkshopSource: String, CaseIterable, Identifiable {
         }
     }
 
-    var browseFilter: String {
+    nonisolated var browseFilter: String {
         switch self {
         case .featured: return "trend"
         case .recent: return "mostrecent"
@@ -61,7 +61,7 @@ enum SteamWorkshopSource: String, CaseIterable, Identifiable {
         }
     }
 
-    var supportsTimeRange: Bool {
+    nonisolated var supportsTimeRange: Bool {
         self == .featured
     }
 }
@@ -75,9 +75,9 @@ enum SteamWorkshopTrendingWindow: String, CaseIterable, Identifiable {
     case year
     case allTime
 
-    var id: String { rawValue }
+    nonisolated var id: String { rawValue }
 
-    var displayName: String {
+    nonisolated var displayName: String {
         switch self {
         case .today: return "今天"
         case .week: return "一周"
@@ -89,7 +89,7 @@ enum SteamWorkshopTrendingWindow: String, CaseIterable, Identifiable {
         }
     }
 
-    var daysValue: String {
+    nonisolated var daysValue: String {
         switch self {
         case .today: return "1"
         case .week: return "7"
@@ -125,9 +125,9 @@ enum SteamWorkshopThemeFilter: String, CaseIterable, Identifiable {
     case vehicle = "Vehicle"
     case girls = "Girls"
 
-    var id: String { rawValue }
+    nonisolated var id: String { rawValue }
 
-    var displayName: String {
+    nonisolated var displayName: String {
         switch self {
         case .all: return "全部"
         case .abstract: return "抽象"
@@ -153,7 +153,7 @@ enum SteamWorkshopThemeFilter: String, CaseIterable, Identifiable {
         }
     }
 
-    var tagValue: String? {
+    nonisolated var tagValue: String? {
         self == .all ? nil : rawValue
     }
 }
@@ -164,9 +164,9 @@ enum SteamWorkshopAgeRatingFilter: String, CaseIterable, Identifiable {
     case mature = "Mature"
     case unspecified = "Unspecified"
 
-    var id: String { rawValue }
+    nonisolated var id: String { rawValue }
 
-    var displayName: String {
+    nonisolated var displayName: String {
         switch self {
         case .all: return "全部年龄"
         case .everyone: return "大众级"
@@ -175,7 +175,7 @@ enum SteamWorkshopAgeRatingFilter: String, CaseIterable, Identifiable {
         }
     }
 
-    var tagValue: String? {
+    nonisolated var tagValue: String? {
         self == .all ? nil : rawValue
     }
 }
@@ -188,16 +188,16 @@ enum SteamWorkshopResolutionFilter: String, CaseIterable, Identifiable {
     case portrait4k = "2160 x 3840"
     case portrait2k = "1440 x 2560"
 
-    var id: String { rawValue }
+    nonisolated var id: String { rawValue }
 
-    var displayName: String {
+    nonisolated var displayName: String {
         switch self {
         case .all: return "全部分辨率"
         default: return rawValue
         }
     }
 
-    var tagValue: String? {
+    nonisolated var tagValue: String? {
         self == .all ? nil : rawValue
     }
 }
@@ -209,9 +209,9 @@ enum SteamWorkshopCategoryFilter: String, CaseIterable, Identifiable {
     case web = "Web"
     case application = "Application"
 
-    var id: String { rawValue }
+    nonisolated var id: String { rawValue }
 
-    var displayName: String {
+    nonisolated var displayName: String {
         switch self {
         case .all: return "全部分类"
         case .wallpaper: return "壁纸"
@@ -221,7 +221,7 @@ enum SteamWorkshopCategoryFilter: String, CaseIterable, Identifiable {
         }
     }
 
-    var tagValue: String? {
+    nonisolated var tagValue: String? {
         self == .all ? nil : rawValue
     }
 }

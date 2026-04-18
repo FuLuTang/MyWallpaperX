@@ -294,7 +294,7 @@ extension SteamWorkshopToolbarController {
 
     func controlTextDidChange(_ obj: Notification) {
         guard let field = obj.object as? NSSearchField else { return }
-        if field === downloadsSearchItem.searchField {
+        if field === downloadsSearchField {
             SteamWorkshopService.shared.downloadsQuery = field.stringValue.trimmingCharacters(in: .whitespaces)
         } else {
             SteamWorkshopService.shared.browserQuery = field.stringValue.trimmingCharacters(in: .whitespaces)

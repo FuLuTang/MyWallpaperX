@@ -9,9 +9,9 @@ extension SteamWorkshopToolbarController {
     func focusSearch() {
         guard isSteamWorkshopMode else { return }
         if isDownloadsMode {
-            window?.makeFirstResponder(downloadsSearchItem.searchField)
+            window?.makeFirstResponder(downloadsSearchField)
         } else {
-            window?.makeFirstResponder(searchToolbarItem.searchField)
+            window?.makeFirstResponder(searchField)
         }
     }
 
@@ -133,11 +133,11 @@ extension SteamWorkshopToolbarController {
     }
 
     func syncSearchField() {
-        searchToolbarItem.searchField.stringValue = SteamWorkshopService.shared.browserQuery
+        searchField.stringValue = SteamWorkshopService.shared.browserQuery
         let isBrowsingAuthorWorkshop = SteamWorkshopService.shared.isBrowsingAuthorWorkshop
         searchToolbarItem.isEnabled = true
-        searchToolbarItem.searchField.isEnabled = true
-        searchToolbarItem.searchField.placeholderString = isBrowsingAuthorWorkshop
+        searchField.isEnabled = true
+        searchField.placeholderString = isBrowsingAuthorWorkshop
             ? "搜索当前作者作品"
             : SteamWorkshopService.shared.browserContentMode.searchPlaceholder
     }
@@ -161,12 +161,11 @@ extension SteamWorkshopToolbarController {
             sortPopupButton,
             trendingWindowPopupButton,
             filterButton,
-            searchToolbarItem.searchField
+            searchField
         ]
         views.forEach {
             $0.needsLayout = true
             $0.needsDisplay = true
-            $0.displayIfNeeded()
         }
         toolbar?.items.forEach { item in
             item.view?.needsLayout = true
@@ -175,7 +174,7 @@ extension SteamWorkshopToolbarController {
     }
 
     func syncDownloadsSearchField() {
-        downloadsSearchItem.searchField.stringValue = SteamWorkshopService.shared.downloadsQuery
+        downloadsSearchField.stringValue = SteamWorkshopService.shared.downloadsQuery
     }
 
     func configureDownloadsTitleItem() {

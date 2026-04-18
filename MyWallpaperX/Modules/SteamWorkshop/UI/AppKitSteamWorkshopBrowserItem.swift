@@ -4,6 +4,7 @@
 //
 
 import AppKit
+import ImageIO
 import QuartzCore
 
 final class AppKitSteamWorkshopBrowserItem: NSCollectionViewItem {
@@ -178,6 +179,7 @@ final class AppKitSteamWorkshopBrowserItem: NSCollectionViewItem {
         currentPreviewSourceURL = item.previewImageURL
         currentDebugID = item.id
         prefersCircularPlayBadge = false
+        previewImageView.animates = true
         applyContent(
             item: item,
             downloadRecord: downloadRecord,
@@ -213,6 +215,7 @@ final class AppKitSteamWorkshopBrowserItem: NSCollectionViewItem {
         currentPreviewSourceURL = item.previewImageURL
         currentDebugID = item.id
         prefersCircularPlayBadge = false
+        previewImageView.animates = true
         applyContent(
             item: item,
             downloadRecord: downloadRecord,
@@ -863,7 +866,7 @@ final class AppKitSteamWorkshopBrowserItem: NSCollectionViewItem {
 
         let cacheKey = steamWorkshopPreviewCacheKey(for: url)
         if !SteamWorkshopPreviewRequestCoordinator.shared.shouldBypassCachedImage(forKey: cacheKey),
-           let cached = SteamWorkshopPreviewImageCache.shared.cachedOrDiskImage(forKey: cacheKey),
+           let cached = SteamWorkshopPreviewImageCache.shared.cachedImage(forKey: cacheKey),
            !steamWorkshopPreviewImageLooksSuspicious(cached) {
             previewImageView.image = cached
             previewPlaceholderView.setState(.hidden)
@@ -871,7 +874,7 @@ final class AppKitSteamWorkshopBrowserItem: NSCollectionViewItem {
             updatePreviewImageFrame()
             return
         }
-        if let cached = SteamWorkshopPreviewImageCache.shared.cachedOrDiskImage(forKey: cacheKey),
+        if let cached = SteamWorkshopPreviewImageCache.shared.cachedImage(forKey: cacheKey),
            steamWorkshopPreviewImageLooksSuspicious(cached) {
             SteamWorkshopPreviewRequestCoordinator.shared.markCachedImageSuspicious(forKey: cacheKey)
         }
@@ -884,8 +887,7 @@ final class AppKitSteamWorkshopBrowserItem: NSCollectionViewItem {
 
     private func loadLocalPreview(from localURL: URL, fallbackVideoURL: URL?) {
         if FileManager.default.fileExists(atPath: localURL.path),
-           let image = NSImage(contentsOf: localURL),
-           !steamWorkshopPreviewImageLooksSuspicious(image) {
+           let image = NSImage(contentsOf: localURL) {
             previewImageView.image = image
             previewPlaceholderView.setState(.hidden)
             updatePreviewImageFrame()
@@ -900,6 +902,52 @@ final class AppKitSteamWorkshopBrowserItem: NSCollectionViewItem {
         previewImageView.image = nil
         previewPlaceholderView.setState(.unavailable)
         updatePreviewImageFrame()
+    }
+
+    private func loadStaticLocalAnimatedPreview(from localURL: URL, fallbackVideoURL: URL?) {
+        let cacheKey = steamWorkshopPreviewCacheKey(for: localURL)
+        if let cached = SteamWorkshopPreviewImageCache.shared.cachedImage(forKey: cacheKey),
+           !steamWorkshopPreviewImageLooksSuspicious(cached) {
+            previewImageView.image = cached
+            previewPlaceholderView.setState(.hidden)
+            updatePreviewImageFrame()
+            return
+        }
+
+        previewImageView.image = nil
+        previewPlaceholderView.setState(.loading)
+        updatePreviewImageFrame()
+
+        SteamWorkshopPreviewImageCache.shared.load(forKey: cacheKey, loader: {
+            Self.staticPreviewImage(fromAnimatedFileAt: localURL, maxPixelSize: 720)
+        }) { [weak self] image in
+            guard let self, self.currentPreviewURL == localURL else { return }
+            if let image {
+                self.previewImageView.image = image
+                self.previewPlaceholderView.setState(.hidden)
+            } else if let fallbackVideoURL {
+                self.loadGeneratedDownloadPreview(from: fallbackVideoURL)
+                return
+            } else {
+                self.previewImageView.image = nil
+                self.previewPlaceholderView.setState(.unavailable)
+            }
+            self.updatePreviewImageFrame()
+        }
+    }
+
+    private static func staticPreviewImage(fromAnimatedFileAt url: URL, maxPixelSize: CGFloat) -> NSImage? {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: Int(maxPixelSize),
+            kCGImageSourceShouldCacheImmediately: true
+        ]
+        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
+            return nil
+        }
+        return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
     }
 
     private func loadGeneratedDownloadPreview(from videoURL: URL) {

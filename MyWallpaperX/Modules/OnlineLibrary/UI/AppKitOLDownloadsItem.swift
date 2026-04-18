@@ -304,13 +304,17 @@ final class AppKitOLDownloadsItem: NSCollectionViewItem {
 
         let id = entry.id
         let url = entry.localURL
-        thumbnailTask = Task { @MainActor in
+        weak var item = self
+        thumbnailTask = Task.detached(priority: .utility) {
             let image = await Self.generateThumbnail(from: url)
-            guard !Task.isCancelled, currentEntryID == id else { return }
-            if let image {
-                OLDownloadedThumbnailCache.shared.store(image, for: id)
-                thumbnailView.image = image
-                placeholderLabel.isHidden = true
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                guard let item, item.currentEntryID == id else { return }
+                if let image {
+                    OLDownloadedThumbnailCache.shared.store(image, for: id)
+                    item.thumbnailView.image = image
+                    item.placeholderLabel.isHidden = true
+                }
             }
         }
     }

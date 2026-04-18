@@ -24,7 +24,7 @@ extension NSToolbarItem.Identifier {
 }
 
 // MARK: - SILToolbarController
-final class SILToolbarController: NSObject {
+final class SILToolbarController: NSObject, NSSearchFieldDelegate {
     weak var toolbar: NSToolbar?
     weak var window: NSWindow?
     var localModeIdentifiers: [NSToolbarItem.Identifier] = []
@@ -153,8 +153,7 @@ final class SILToolbarController: NSObject {
 
     func focusSearch() {
         guard isSILMode else { return }
-        guard let searchItem = toolbar?.items.first(where: { $0.itemIdentifier == .silSearch }) as? NSSearchToolbarItem else { return }
-        window?.makeFirstResponder(searchItem.searchField)
+        window?.makeFirstResponder(searchField)
     }
 
     func performZoom(delta: Int) {
@@ -196,6 +195,34 @@ final class SILToolbarController: NSObject {
         c.setWidth(28, forSegment: 1)
         c.toolTip = "调整缩略图大小"
         return c
+    }()
+
+    private lazy var searchField: NSSearchField = {
+        let field = NSSearchField(frame: .zero)
+        field.delegate = self
+        field.placeholderString = "搜索图片壁纸..."
+        field.sendsSearchStringImmediately = true
+        field.sendsWholeSearchString = false
+        field.target = self
+        field.action = #selector(handleSearch(_:))
+        field.translatesAutoresizingMaskIntoConstraints = false
+        field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        field.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        return field
+    }()
+
+    private lazy var searchContainerView: NSView = {
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 165, height: 28))
+        container.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(searchField)
+        NSLayoutConstraint.activate([
+            searchField.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            searchField.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            searchField.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            container.widthAnchor.constraint(equalToConstant: 165),
+            container.heightAnchor.constraint(equalToConstant: 28)
+        ])
+        return container
     }()
 
     @objc private func handleZoom(_ s: NSSegmentedControl) {
@@ -301,14 +328,13 @@ private extension SILToolbarController {
         item.view = zoomControl
         return item
     }
-    func makeSearchItem() -> NSSearchToolbarItem {
-        let item = NSSearchToolbarItem(itemIdentifier: .silSearch)
-        item.searchField.placeholderString = "搜索图片壁纸..."
-        item.searchField.sendsSearchStringImmediately = true
-        item.searchField.target = self
-        item.searchField.action = #selector(handleSearch(_:))
-        item.resignsFirstResponderWithCancel = true
-        item.preferredWidthForSearchField = 165
+    func makeSearchItem() -> NSToolbarItem {
+        let item = NSToolbarItem(itemIdentifier: .silSearch)
+        item.label = "搜索"
+        item.paletteLabel = "搜索图片"
+        item.toolTip = "搜索图片壁纸"
+        item.autovalidates = false
+        item.view = searchContainerView
         return item
     }
 }

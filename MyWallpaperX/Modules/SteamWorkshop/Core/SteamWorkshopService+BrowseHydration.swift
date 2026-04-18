@@ -9,6 +9,28 @@ extension SteamWorkshopService {
         }
     }
 
+    func mergeBrowserItems(_ items: [SteamWorkshopBrowserItem]) {
+        guard !items.isEmpty else { return }
+        var mergedItems = browserItems
+        var indexByID = Dictionary(uniqueKeysWithValues: mergedItems.enumerated().map { ($0.element.id, $0.offset) })
+        var didChange = false
+
+        for item in items {
+            if let index = indexByID[item.id] {
+                guard mergedItems[index] != item else { continue }
+                mergedItems[index] = item
+                didChange = true
+            } else {
+                indexByID[item.id] = mergedItems.count
+                mergedItems.append(item)
+                didChange = true
+            }
+        }
+
+        guard didChange else { return }
+        browserItems = mergedItems
+    }
+
     func detailHydrationDelayNanoseconds(remainingCount: Int) -> UInt64 {
         switch remainingCount {
         case 12...:
@@ -71,7 +93,7 @@ extension SteamWorkshopService {
         let nextIDSet = Set(limitedCandidates.map(\.0))
         let deltaCandidates = limitedCandidates.filter { id, url in
             let cacheKey = steamWorkshopPreviewCacheKey(for: url)
-            let hasCachedImage = SteamWorkshopPreviewImageCache.shared.cachedOrDiskImage(forKey: cacheKey) != nil
+            let hasCachedImage = SteamWorkshopPreviewImageCache.shared.cachedImage(forKey: cacheKey) != nil
             return !lastPreviewPrefetchIDSet.contains(id) || !hasCachedImage
         }
         guard !deltaCandidates.isEmpty else { return }

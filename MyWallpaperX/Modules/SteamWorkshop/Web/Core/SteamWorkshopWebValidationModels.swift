@@ -100,6 +100,10 @@ struct SteamWorkshopWebValidationReport: Codable, Equatable, Hashable {
     var fatalIssue: SteamWorkshopWebValidationIssue? {
         issues.first(where: { $0.level == .fatal })
     }
+
+    var blockingIssue: SteamWorkshopWebValidationIssue? {
+        issues.first(where: { $0.level == .fatal || $0.level == .runtimeBlocking })
+    }
 }
 
 enum SteamWorkshopWebDependencyStatus: Equatable {

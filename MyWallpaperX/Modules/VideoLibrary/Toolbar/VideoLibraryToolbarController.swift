@@ -232,15 +232,39 @@ final class VideoLibraryToolbarController: NSObject, NSToolbarDelegate, NSSearch
     }()
 
 
-    lazy var searchItem: NSSearchToolbarItem = {
-        // NSSearchToolbarItem 是系统专用搜索工具栏 item：
-        // 自动处理胶囊边框、弹性宽度、折叠展开动画，无需手动约束。
-        let item = NSSearchToolbarItem(itemIdentifier: IDs.search)
-        item.searchField.delegate = self
-        item.searchField.placeholderString = "搜索"
-        item.searchField.sendsSearchStringImmediately = true
-        item.resignsFirstResponderWithCancel = true
-        item.preferredWidthForSearchField = 165
+    lazy var searchField: NSSearchField = {
+        let field = NSSearchField(frame: .zero)
+        field.delegate = self
+        field.placeholderString = "搜索"
+        field.sendsSearchStringImmediately = true
+        field.sendsWholeSearchString = false
+        field.translatesAutoresizingMaskIntoConstraints = false
+        field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        field.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        return field
+    }()
+
+    lazy var searchContainerView: NSView = {
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 180, height: 28))
+        container.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(searchField)
+        NSLayoutConstraint.activate([
+            searchField.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            searchField.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            searchField.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            container.widthAnchor.constraint(equalToConstant: 180),
+            container.heightAnchor.constraint(equalToConstant: 28)
+        ])
+        return container
+    }()
+
+    lazy var searchItem: NSToolbarItem = {
+        let item = NSToolbarItem(itemIdentifier: IDs.search)
+        item.label = "搜索"
+        item.paletteLabel = "搜索"
+        item.toolTip = "搜索壁纸"
+        item.autovalidates = false
+        item.view = searchContainerView
         return item
     }()
 
@@ -290,21 +314,42 @@ final class VideoLibraryToolbarController: NSObject, NSToolbarDelegate, NSSearch
     func observeModuleChanges() {
         let staticModeObserver = NotificationCenter.default.addObserver(forName: .staticImageLibraryModeDidChange, object: nil, queue: .main) { [weak self] n in
             guard let enabled = n.userInfo?["enabled"] as? Bool else { return }
-            self?.handleModuleLayoutSwitch(to: enabled ? .staticImageLibrary : .videoLibrary)
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                if enabled {
+                    self.handleModuleLayoutSwitch(to: .staticImageLibrary)
+                } else if self.currentLayoutModule == .staticImageLibrary {
+                    self.handleModuleLayoutSwitch(to: .videoLibrary)
+                }
+            }
         }
         observerTokens.append(staticModeObserver)
 
         let onlineModeObserver = NotificationCenter.default.addObserver(forName: .onlineLibraryModeDidChange, object: nil, queue: .main) { [weak self] n in
             guard let enabled = n.userInfo?["enabled"] as? Bool else { return }
             let isDownloads = n.userInfo?["isDownloads"] as? Bool ?? false
-            self?.handleModuleLayoutSwitch(to: enabled ? (isDownloads ? .onlineDownloads : .onlineLibrary) : .videoLibrary)
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                if enabled {
+                    self.handleModuleLayoutSwitch(to: isDownloads ? .onlineDownloads : .onlineLibrary)
+                } else if self.currentLayoutModule == .onlineLibrary || self.currentLayoutModule == .onlineDownloads {
+                    self.handleModuleLayoutSwitch(to: .videoLibrary)
+                }
+            }
         }
         observerTokens.append(onlineModeObserver)
 
         let steamModeObserver = NotificationCenter.default.addObserver(forName: .steamWorkshopModeDidChange, object: nil, queue: .main) { [weak self] n in
             guard let enabled = n.userInfo?["enabled"] as? Bool else { return }
             let isDownloads = n.userInfo?["isDownloads"] as? Bool ?? false
-            self?.handleModuleLayoutSwitch(to: enabled ? (isDownloads ? .steamDownloads : .steamWorkshop) : .videoLibrary)
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                if enabled {
+                    self.handleModuleLayoutSwitch(to: isDownloads ? .steamDownloads : .steamWorkshop)
+                } else if self.currentLayoutModule == .steamWorkshop || self.currentLayoutModule == .steamDownloads {
+                    self.handleModuleLayoutSwitch(to: .videoLibrary)
+                }
+            }
         }
         observerTokens.append(steamModeObserver)
 
@@ -513,15 +558,15 @@ final class VideoLibraryToolbarController: NSObject, NSToolbarDelegate, NSSearch
 
     func refreshSearchField(isSettingsSelection: Bool) {
         // 搜索框启用状态跟随当前选区，不让 settings 页保留误导性的可编辑状态。
-        if searchItem.searchField.stringValue != wallpaperManager.searchQuery {
-            searchItem.searchField.stringValue = wallpaperManager.searchQuery
+        if searchField.stringValue != wallpaperManager.searchQuery {
+            searchField.stringValue = wallpaperManager.searchQuery
         }
         let shouldEnable = !isSettingsSelection
         if searchItem.isEnabled != shouldEnable {
             searchItem.isEnabled = shouldEnable
         }
-        if searchItem.searchField.isEnabled != shouldEnable {
-            searchItem.searchField.isEnabled = shouldEnable
+        if searchField.isEnabled != shouldEnable {
+            searchField.isEnabled = shouldEnable
         }
     }
 
@@ -730,7 +775,7 @@ extension VideoLibraryToolbarController {
 
     func controlTextDidChange(_ obj: Notification) {
         // 直接把输入值写回 manager，工具栏不保留自己的搜索缓存。
-        wallpaperManager.searchQuery = searchItem.searchField.stringValue
+        wallpaperManager.searchQuery = searchField.stringValue
     }
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
@@ -744,7 +789,7 @@ extension VideoLibraryToolbarController {
          .olCategory, .olRefresh, .olZoom, .olSearch, .olOrder, .olSettings,
          .olDownloadsTitle, .olDownloadsSelect, .olDownloadsDelete, .olDownloadsInfo, .olDownloadsSort, .olDownloadsReveal, .olDownloadsSearch,
          .steamSort, .steamTrendingWindow, .steamFilter, .steamAccount, .steamRefresh, .steamZoom, .steamSearch, .steamDownloadsTitle, .steamDownloadsReveal, .steamDownloadsSearch,
-         .silImport, .silSelect, .silDelete, .silInfo, .silSort, .silZoom, .silSearch]
+         .silImport, .silSelect, .silDelete, .silTag, .silInfo, .silSort, .silZoom, .silSearch]
     }
 
     func toolbar(
@@ -814,7 +859,7 @@ extension VideoLibraryToolbarController {
             staticImageLibraryToolbarController.focusSearch()
             return
         }
-        window?.makeFirstResponder(searchItem.searchField)
+        window?.makeFirstResponder(searchField)
     }
 
     /// 外部（快捷键）触发缩放，同时产生工具栏按钮的视觉反馈。

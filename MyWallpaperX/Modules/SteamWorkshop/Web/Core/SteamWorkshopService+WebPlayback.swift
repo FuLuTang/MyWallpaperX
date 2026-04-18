@@ -27,6 +27,13 @@ extension SteamWorkshopService {
     }
 
     func setAsWallpaper(_ record: SteamWorkshopDownloadRecord) {
+        guard canLaunchDownloadRecord(record) else {
+            downloadError = record.contentType == .web
+                ? "当前 WEB 样本仍存在运行阻断问题，暂时不能直接播放。"
+                : "当前项目暂时不可播放。"
+            return
+        }
+
         if case let .missing(itemID) = record.dependencyStatus {
             let alert = makeAppAlert(
                 title: "缺少依赖项",

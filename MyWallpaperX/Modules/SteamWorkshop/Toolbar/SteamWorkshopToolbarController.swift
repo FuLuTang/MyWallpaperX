@@ -388,13 +388,44 @@ final class SteamWorkshopToolbarController: NSObject, NSSearchFieldDelegate {
         return item
     }()
 
-    lazy var downloadsSearchItem: NSSearchToolbarItem = {
-        let item = NSSearchToolbarItem(itemIdentifier: .steamDownloadsSearch)
-        item.searchField.delegate = self
-        item.searchField.placeholderString = "搜索下载项"
-        item.searchField.sendsSearchStringImmediately = true
-        item.resignsFirstResponderWithCancel = true
-        item.preferredWidthForSearchField = 165
+    lazy var downloadsSearchField: NSSearchField = {
+        let field = NSSearchField(frame: .zero)
+        field.delegate = self
+        field.placeholderString = "搜索下载项"
+        field.sendsSearchStringImmediately = true
+        field.sendsWholeSearchString = false
+        field.recentsAutosaveName = nil
+        field.maximumRecents = 0
+        field.cell?.usesSingleLineMode = true
+        field.cell?.wraps = false
+        field.cell?.isScrollable = true
+        field.translatesAutoresizingMaskIntoConstraints = false
+        field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        field.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        return field
+    }()
+
+    lazy var downloadsSearchContainerView: NSView = {
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 165, height: 28))
+        container.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(downloadsSearchField)
+        NSLayoutConstraint.activate([
+            downloadsSearchField.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            downloadsSearchField.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            downloadsSearchField.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            container.widthAnchor.constraint(equalToConstant: 165),
+            container.heightAnchor.constraint(equalToConstant: 28)
+        ])
+        return container
+    }()
+
+    lazy var downloadsSearchItem: NSToolbarItem = {
+        let item = NSToolbarItem(itemIdentifier: .steamDownloadsSearch)
+        item.label = "搜索下载项"
+        item.paletteLabel = "搜索下载项"
+        item.toolTip = "搜索下载项"
+        item.autovalidates = false
+        item.view = downloadsSearchContainerView
         return item
     }()
 
@@ -561,13 +592,44 @@ final class SteamWorkshopToolbarController: NSObject, NSSearchFieldDelegate {
         return item
     }()
 
-    lazy var searchToolbarItem: NSSearchToolbarItem = {
-        let item = NSSearchToolbarItem(itemIdentifier: .steamSearch)
-        item.searchField.delegate = self
-        item.searchField.placeholderString = "搜索 Steam 视频"
-        item.searchField.sendsSearchStringImmediately = true
-        item.resignsFirstResponderWithCancel = true
-        item.preferredWidthForSearchField = 180
+    lazy var searchField: NSSearchField = {
+        let field = NSSearchField(frame: .zero)
+        field.delegate = self
+        field.placeholderString = "搜索 Steam 视频"
+        field.sendsSearchStringImmediately = true
+        field.sendsWholeSearchString = false
+        field.recentsAutosaveName = nil
+        field.maximumRecents = 0
+        field.cell?.usesSingleLineMode = true
+        field.cell?.wraps = false
+        field.cell?.isScrollable = true
+        field.translatesAutoresizingMaskIntoConstraints = false
+        field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        field.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        return field
+    }()
+
+    lazy var searchContainerView: NSView = {
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 180, height: 28))
+        container.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(searchField)
+        NSLayoutConstraint.activate([
+            searchField.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            searchField.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            searchField.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            container.widthAnchor.constraint(equalToConstant: 180),
+            container.heightAnchor.constraint(equalToConstant: 28)
+        ])
+        return container
+    }()
+
+    lazy var searchToolbarItem: NSToolbarItem = {
+        let item = NSToolbarItem(itemIdentifier: .steamSearch)
+        item.label = "搜索 Steam 视频"
+        item.paletteLabel = "搜索 Steam 视频"
+        item.toolTip = "搜索 Steam 视频"
+        item.autovalidates = false
+        item.view = searchContainerView
         return item
     }()
 

@@ -24,25 +24,31 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
             screenLocation = event.locationInWindow
         }
 
-        guard shouldForwardMouseEventToWallpaper(event, screenLocation: screenLocation) else {
-            if let lastHoveredScreenID,
-               let previousSurface = surfaces[lastHoveredScreenID] {
-                previousSurface.webView.evaluateJavaScript(
-                    "window.__myWallpaperSetPassiveMouseState(false, 0, 0, 0);",
-                    completionHandler: nil
-                )
+        let destinationSurface: HostSurface
+        if let capturedSurface = activeTransientCaptureSurface(for: event) {
+            destinationSurface = capturedSurface
+        } else {
+            guard shouldForwardMouseEventToWallpaper(event, screenLocation: screenLocation) else {
+                if let lastHoveredScreenID,
+                   let previousSurface = surfaces[lastHoveredScreenID] {
+                    previousSurface.webView.evaluateJavaScript(
+                        "window.__myWallpaperSetPassiveMouseState(false, 0, 0, 0);",
+                        completionHandler: nil
+                    )
+                }
+                lastHoveredScreenID = nil
+                return
             }
-            lastHoveredScreenID = nil
-            return
-        }
 
-        guard let targetSurface = targetSurface(at: screenLocation) else {
-            lastHoveredScreenID = nil
-            return
+            guard let resolvedSurface = targetSurface(at: screenLocation) else {
+                lastHoveredScreenID = nil
+                return
+            }
+            destinationSurface = resolvedSurface
         }
 
         if let lastHoveredScreenID,
-           targetSurface.screenID != lastHoveredScreenID,
+           destinationSurface.screenID != lastHoveredScreenID,
            let previousSurface = surfaces[lastHoveredScreenID] {
             previousSurface.webView.evaluateJavaScript(
                 "window.__myWallpaperSetPassiveMouseState(false, 0, 0, 0);",
@@ -50,21 +56,21 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
             )
         }
 
-        let normalizedPoint = normalizedPoint(for: screenLocation, in: targetSurface)
+        let normalizedPoint = normalizedPoint(for: screenLocation, in: destinationSurface)
         let interactionRegion = interactiveRegionHit(
             normalizedX: normalizedPoint.x,
             normalizedY: normalizedPoint.y,
-            screenID: targetSurface.screenID
+            screenID: destinationSurface.screenID
         )
         let preheatedRegion = interactiveRegionPreheatHit(
             normalizedX: normalizedPoint.x,
             normalizedY: normalizedPoint.y,
-            screenID: targetSurface.screenID
+            screenID: destinationSurface.screenID
         )
 
         if event.type == .mouseMoved {
             updateHoverPreheat(
-                for: targetSurface,
+                for: destinationSurface,
                 preheatedRegion: preheatedRegion,
                 normalizedPoint: normalizedPoint
             )
@@ -73,29 +79,39 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
         if shouldHandleViaTransientCapture(event, interactionRegion: interactionRegion) {
             handleTransientCaptureEvent(
                 event,
-                on: targetSurface,
+                on: destinationSurface,
                 normalizedPoint: normalizedPoint
             )
         } else {
             forwardPassiveMouseEvent(
                 event,
-                to: targetSurface,
+                to: destinationSurface,
                 normalizedPoint: normalizedPoint
             )
         }
 
-        lastHoveredScreenID = targetSurface.screenID
+        lastHoveredScreenID = destinationSurface.screenID
     }
 
     func shouldHandleViaTransientCapture(_ event: NSEvent, interactionRegion: InteractiveRegion?) -> Bool {
         guard let interactionRegion else { return false }
         switch event.type {
-        case .leftMouseDown, .leftMouseUp:
+        case .leftMouseDown, .leftMouseUp, .rightMouseDown, .rightMouseUp, .otherMouseDown, .otherMouseUp:
             return interactionRegion.allowsClick
-        case .leftMouseDragged:
+        case .leftMouseDragged, .rightMouseDragged, .otherMouseDragged:
             return interactionRegion.allowsDrag || transientCaptureActiveScreenID != nil
         default:
             return false
+        }
+    }
+
+    func activeTransientCaptureSurface(for event: NSEvent) -> HostSurface? {
+        guard let transientCaptureActiveScreenID else { return nil }
+        switch event.type {
+        case .leftMouseDragged, .rightMouseDragged, .otherMouseDragged, .leftMouseUp, .rightMouseUp, .otherMouseUp:
+            return surfaces[transientCaptureActiveScreenID]
+        default:
+            return nil
         }
     }
 
@@ -131,7 +147,7 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
         forwardPassiveMouseEvent(event, to: surface, normalizedPoint: normalizedPoint)
         let releaseDelay: TimeInterval
         switch event.type {
-        case .leftMouseDragged:
+        case .leftMouseDragged, .rightMouseDragged, .otherMouseDragged:
             releaseDelay = Self.dragCaptureDuration
         default:
             releaseDelay = Self.transientCaptureDuration
@@ -197,7 +213,9 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
         case .rightMouseDown:
             return pressedButtons | 2
         case .otherMouseDown:
-            return pressedButtons | 4
+            let buttonNumber = max(0, Int(event.buttonNumber))
+            let buttonMask = buttonNumber < Int.bitWidth ? (1 << buttonNumber) : 0
+            return pressedButtons | buttonMask
         case .leftMouseDragged, .rightMouseDragged, .otherMouseDragged, .leftMouseUp, .rightMouseUp, .otherMouseUp, .mouseMoved, .scrollWheel:
             return pressedButtons
         default:
@@ -236,7 +254,7 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
         case .rightMouseDown, .rightMouseUp, .rightMouseDragged:
             return 2
         case .otherMouseDown, .otherMouseUp, .otherMouseDragged:
-            return 1
+            return max(1, Int(event.buttonNumber))
         default:
             return 0
         }

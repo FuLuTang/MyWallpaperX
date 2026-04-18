@@ -8,6 +8,14 @@ import AppKit
 import WebKit
 
 extension DedicatedWebWallpaperHostPlaceholderAdapter {
+    func failCurrentLaunch(message: String) {
+        phase = .failed
+        teardownHostSurfaces()
+        removeLifecycleObservers()
+        currentRequest = nil
+        eventHandler?(.failed(message: message))
+    }
+
     func beginHostActivity() {
         guard hostActivityToken == nil else { return }
         hostActivityToken = ProcessInfo.processInfo.beginActivity(
@@ -47,8 +55,7 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
 
         let availableScreens = NSScreen.screens
         guard !availableScreens.isEmpty else {
-            phase = .failed
-            eventHandler?(.failed(message: "dedicated_web_host_no_screens"))
+            failCurrentLaunch(message: "dedicated_web_host_no_screens")
             return
         }
 
@@ -85,8 +92,7 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
         }
 
         guard createdSurface else {
-            phase = .failed
-            eventHandler?(.failed(message: "dedicated_web_host_no_surface"))
+            failCurrentLaunch(message: "dedicated_web_host_no_surface")
             return
         }
     }
@@ -127,6 +133,7 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
                         source: request.source
                     )
                 }
+                syncFetchAllDirectoryProperties(using: propertiesJSON)
                 forEachWebView { self.applyProperties(propertiesJSON, to: $0) }
             case .stop:
                 teardownHostSurfaces()

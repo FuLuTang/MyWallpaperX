@@ -69,11 +69,12 @@ extension SteamWorkshopService {
                     guard self.navigationVersion == navigationVersion, self.browseContext == context else { return }
                     for item in items {
                         self.browserDetailRetryCounts[item.id] = nil
-                        self.mergeBrowserItem(item)
-                        if self.selectedBrowserItem?.id == item.id {
-                            self.selectedBrowserItem = item
-                            self.selectedBrowserItemError = nil
-                        }
+                    }
+                    self.mergeBrowserItems(items)
+                    if let selectedID = self.selectedBrowserItem?.id,
+                       let refreshedSelected = items.first(where: { $0.id == selectedID }) {
+                        self.selectedBrowserItem = refreshedSelected
+                        self.selectedBrowserItemError = nil
                     }
                     self.logBrowserDebug(
                         "detail hydration success batchCount=\(items.count) remainingQueue=\(self.pendingBrowserDetailStubs.count)"

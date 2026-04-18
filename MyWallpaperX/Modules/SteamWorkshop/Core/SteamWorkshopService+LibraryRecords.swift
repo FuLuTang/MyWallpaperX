@@ -6,7 +6,7 @@
 import Foundation
 
 extension SteamWorkshopService {
-    static func loadWorkshopProject(from projectFileURL: URL?) -> SteamWorkshopProject? {
+    nonisolated static func loadWorkshopProject(from projectFileURL: URL?) -> SteamWorkshopProject? {
         guard let projectFileURL,
               FileManager.default.fileExists(atPath: projectFileURL.path),
               let data = try? Data(contentsOf: projectFileURL) else {
@@ -15,7 +15,18 @@ extension SteamWorkshopService {
         return try? JSONDecoder().decode(SteamWorkshopProject.self, from: data)
     }
 
-    static func detailCacheDirectoryURL() -> URL {
+    nonisolated static func loadWorkshopProjectRoot(from projectFileURL: URL?) -> [String: Any]? {
+        guard let projectFileURL,
+              FileManager.default.fileExists(atPath: projectFileURL.path),
+              let data = try? Data(contentsOf: projectFileURL),
+              let object = try? JSONSerialization.jsonObject(with: data),
+              let root = object as? [String: Any] else {
+            return nil
+        }
+        return root
+    }
+
+    nonisolated static func detailCacheDirectoryURL() -> URL {
         FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library", isDirectory: true)
             .appendingPathComponent("Caches", isDirectory: true)
@@ -24,12 +35,99 @@ extension SteamWorkshopService {
             .appendingPathComponent("ItemDetails", isDirectory: true)
     }
 
-    static func detailCacheFileURL(id: String) -> URL {
+    nonisolated static func detailCacheFileURL(id: String) -> URL {
         detailCacheDirectoryURL().appendingPathComponent("\(id).json")
     }
 
-    static func legacyDownloadMetadataFileURL(for directory: URL) -> URL {
+    nonisolated static func legacyDownloadMetadataFileURL(for directory: URL) -> URL {
         directory.appendingPathComponent(".mywallpaperx-steam-metadata.json")
+    }
+
+    nonisolated static func preferredPreviewRelativePath(
+        in directory: URL,
+        project: SteamWorkshopProject?,
+        projectRoot: [String: Any]?
+    ) -> String? {
+        let fileManager = FileManager.default
+
+        func normalizedRelativePath(_ rawPath: String?) -> String? {
+            guard let rawPath else { return nil }
+            let normalized = rawPath
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .replacingOccurrences(of: "\\", with: "/")
+            return normalized.isEmpty ? nil : normalized
+        }
+
+        func existingRelativePath(_ rawPath: String?) -> String? {
+            guard let relativePath = normalizedRelativePath(rawPath) else { return nil }
+            let candidate = directory.appendingPathComponent(relativePath)
+            return fileManager.fileExists(atPath: candidate.path) ? relativePath : nil
+        }
+
+        func staticSiblingPath(for relativePath: String) -> String? {
+            let baseURL = URL(fileURLWithPath: relativePath)
+            let directoryPath = baseURL.deletingLastPathComponent().path == "."
+                ? ""
+                : baseURL.deletingLastPathComponent().path
+            let baseName = baseURL.deletingPathExtension().lastPathComponent
+            let extensions = ["png", "jpg", "jpeg", "webp"]
+            for pathExtension in extensions {
+                let fileName = "\(baseName).\(pathExtension)"
+                let sibling = directoryPath.isEmpty ? fileName : "\(directoryPath)/\(fileName)"
+                if let existing = existingRelativePath(sibling) {
+                    return existing
+                }
+            }
+            return nil
+        }
+
+        func firstStaticPresetImagePath() -> String? {
+            guard let preset = projectRoot?["preset"] as? [String: Any] else { return nil }
+            let preferredKeys = [
+                "backgroundimageb",
+                "backgroundimage",
+                "background_image",
+                "foreground_image",
+                "image",
+                "bgimage"
+            ]
+            for key in preferredKeys {
+                guard let rawValue = preset[key] else { continue }
+                let path: String?
+                if let stringValue = rawValue as? String {
+                    path = stringValue
+                } else {
+                    path = nil
+                }
+                guard let relativePath = existingRelativePath(path) else { continue }
+                let pathExtension = URL(fileURLWithPath: relativePath).pathExtension.lowercased()
+                if pathExtension != "gif" {
+                    return relativePath
+                }
+            }
+            return nil
+        }
+
+        if let declaredPreview = existingRelativePath(project?.preview) {
+            return declaredPreview
+        }
+
+        let stillCandidates = ["preview.png", "preview.jpg", "preview.jpeg", "preview.webp"]
+        for candidate in stillCandidates {
+            if let existing = existingRelativePath(candidate) {
+                return existing
+            }
+        }
+
+        if let presetImage = firstStaticPresetImagePath() {
+            return presetImage
+        }
+
+        if let animatedFallback = existingRelativePath("preview.gif") {
+            return animatedFallback
+        }
+
+        return nil
     }
 
     func downloadMetadataIndexDirectoryURL() -> URL {
@@ -40,7 +138,7 @@ extension SteamWorkshopService {
         downloadMetadataIndexDirectoryURL().appendingPathComponent("\(itemID).json")
     }
 
-    static func loadDetailCache(id: String) -> SteamWorkshopBrowserItem? {
+    nonisolated static func loadDetailCache(id: String) -> SteamWorkshopBrowserItem? {
         let url = detailCacheFileURL(id: id)
         guard let data = try? Data(contentsOf: url),
               let snapshot = try? JSONDecoder().decode(SteamWorkshopDetailCacheSnapshot.self, from: data),
@@ -50,7 +148,7 @@ extension SteamWorkshopService {
         return snapshot.item
     }
 
-    static func saveDetailCache(item: SteamWorkshopBrowserItem) {
+    nonisolated static func saveDetailCache(item: SteamWorkshopBrowserItem) {
         let snapshot = SteamWorkshopDetailCacheSnapshot(fetchedAt: Date(), item: item)
         guard let data = try? JSONEncoder().encode(snapshot) else { return }
         let directory = detailCacheDirectoryURL()
@@ -335,8 +433,24 @@ extension SteamWorkshopService {
             }
             return Self.loadWorkshopProject(from: projectFileURL)
         }()
+        let projectRoot = Self.loadWorkshopProjectRoot(from: projectFileURL)
+        let preferredPreviewRelativePath: String? = {
+            guard let resolvedLegacyDirectory else { return nil }
+            return Self.preferredPreviewRelativePath(
+                in: resolvedLegacyDirectory,
+                project: resolvedProject,
+                projectRoot: projectRoot
+            )
+        }()
 
         let previewURL: URL? = {
+            if let preferredPreviewRelativePath,
+               let resolvedLegacyDirectory {
+                let candidate = resolvedLegacyDirectory.appendingPathComponent(preferredPreviewRelativePath)
+                if FileManager.default.fileExists(atPath: candidate.path) {
+                    return candidate
+                }
+            }
             if let previewRelativePath = metadata?.previewRelativePath,
                let resolvedLegacyDirectory {
                 let candidate = resolvedLegacyDirectory.appendingPathComponent(previewRelativePath)
@@ -453,7 +567,6 @@ extension SteamWorkshopService {
             ?? "未知大小"
 
         let browserTitle = browserItem?.title.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-
         return SteamWorkshopDownloadRecord(
             id: identifier,
             title: title?.isEmpty == false ? title! : (browserTitle.isEmpty ? "Workshop #\(identifier)" : browserTitle),
@@ -489,11 +602,11 @@ extension SteamWorkshopService {
         return Self.loadDetailCache(id: id)
     }
 
-    static func cachedItemNeedsHydration(for stub: SteamWorkshopBrowseStub) -> Bool {
+    nonisolated static func cachedItemNeedsHydration(for stub: SteamWorkshopBrowseStub) -> Bool {
         SteamWorkshopDetailRefreshSupport.cachedItemNeedsHydration(for: stub)
     }
 
-    static func applyingCachedAuthorNameIfPossible(to item: SteamWorkshopBrowserItem) async -> SteamWorkshopBrowserItem {
+    nonisolated static func applyingCachedAuthorNameIfPossible(to item: SteamWorkshopBrowserItem) async -> SteamWorkshopBrowserItem {
         guard item.author == "未知作者" else { return item }
         let keys = authorCacheKeys(
             creatorID: creatorID(from: item.authorProfileURL) ?? creatorID(from: item.authorWorkshopURL),
@@ -535,7 +648,7 @@ extension SteamWorkshopService {
         )
     }
 
-    static func resolvedAuthorName(
+    nonisolated static func resolvedAuthorName(
         creatorID: String?,
         stub: SteamWorkshopBrowseStub,
         authorProfileURL: URL?,
@@ -575,7 +688,7 @@ extension SteamWorkshopService {
         return stubAuthor
     }
 
-    static func saveAuthorNameIfPossible(
+    nonisolated static func saveAuthorNameIfPossible(
         _ authorName: String?,
         creatorID: String?,
         authorProfileURL: URL?,
@@ -591,7 +704,7 @@ extension SteamWorkshopService {
         await Self.authorNameStore.store(name: normalizedName, for: keys)
     }
 
-    static func authorCacheKeys(
+    nonisolated static func authorCacheKeys(
         creatorID explicitCreatorID: String?,
         authorProfileURL: URL?,
         authorWorkshopURL: URL?
@@ -615,7 +728,7 @@ extension SteamWorkshopService {
         return Array(NSOrderedSet(array: keys)) as? [String] ?? keys
     }
 
-    static func creatorID(from url: URL?) -> String? {
+    nonisolated static func creatorID(from url: URL?) -> String? {
         guard let url else { return nil }
         let components = url.absoluteURL.pathComponents
         guard let profilesIndex = components.firstIndex(of: "profiles"),

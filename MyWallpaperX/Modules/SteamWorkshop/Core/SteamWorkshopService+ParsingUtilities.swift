@@ -1,17 +1,17 @@
 import Foundation
 
 extension SteamWorkshopService {
-    static func normalizedStubTitle(_ stub: SteamWorkshopBrowseStub) -> String {
+    nonisolated static func normalizedStubTitle(_ stub: SteamWorkshopBrowseStub) -> String {
         let title = stub.title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return title.isEmpty ? "Workshop #\(stub.id)" : title
     }
 
-    static func normalizedStubAuthor(_ stub: SteamWorkshopBrowseStub) -> String {
+    nonisolated static func normalizedStubAuthor(_ stub: SteamWorkshopBrowseStub) -> String {
         let author = normalizeAuthorName(stub.author ?? "")
         return author.isEmpty ? "未知作者" : author
     }
 
-    static func formatSteamTimestamp(_ timestamp: Int64?) -> String? {
+    nonisolated static func formatSteamTimestamp(_ timestamp: Int64?) -> String? {
         guard let timestamp, timestamp > 0 else { return nil }
         return DateFormatter.localizedString(
             from: Date(timeIntervalSince1970: TimeInterval(timestamp)),
@@ -20,13 +20,13 @@ extension SteamWorkshopService {
         )
     }
 
-    static func formatCount(_ value: Int) -> String {
+    nonisolated static func formatCount(_ value: Int) -> String {
         let formatter = NumberFormatter()
         formatter.numberStyle = .decimal
         return formatter.string(from: NSNumber(value: value)) ?? "\(value)"
     }
 
-    static func appendDetailField(
+    nonisolated static func appendDetailField(
         _ label: String,
         value: String?,
         to fields: inout [SteamWorkshopDetailField]
@@ -35,7 +35,7 @@ extension SteamWorkshopService {
         fields.append(SteamWorkshopDetailField(label: label, value: value))
     }
 
-    static func appendNormalizedDetailField(
+    nonisolated static func appendNormalizedDetailField(
         label: String,
         value: String,
         to fields: inout [SteamWorkshopDetailField],
@@ -49,7 +49,7 @@ extension SteamWorkshopService {
         fields.append(SteamWorkshopDetailField(label: normalizedLabel, value: normalizedValue))
     }
 
-    static func buildOfficialDetailFields(
+    nonisolated static func buildOfficialDetailFields(
         fileSizeText: String?,
         resolutionText: String?,
         postedText: String?,
@@ -80,7 +80,7 @@ extension SteamWorkshopService {
         return fields
     }
 
-    static func visibilityText(for visibility: Int?) -> String? {
+    nonisolated static func visibilityText(for visibility: Int?) -> String? {
         guard let visibility else { return nil }
         switch visibility {
         case 0: return "公开"
@@ -91,7 +91,7 @@ extension SteamWorkshopService {
         }
     }
 
-    static func moderationText(banned: Int?, banReason: String?) -> String? {
+    nonisolated static func moderationText(banned: Int?, banReason: String?) -> String? {
         guard let banned else { return nil }
         if banned == 0 {
             return "正常"
@@ -100,7 +100,7 @@ extension SteamWorkshopService {
         return reason.isEmpty ? "已封禁" : "已封禁 · \(reason)"
     }
 
-    static func preferredTag(in tags: [String], matching candidates: [String]) -> String? {
+    nonisolated static func preferredTag(in tags: [String], matching candidates: [String]) -> String? {
         tags.first { tag in
             candidates.contains { candidate in
                 tag.compare(candidate, options: .caseInsensitive) == .orderedSame
@@ -108,12 +108,12 @@ extension SteamWorkshopService {
         }
     }
 
-    static func isResolutionTag(_ tag: String) -> Bool {
+    nonisolated static func isResolutionTag(_ tag: String) -> Bool {
         tag.range(of: #"\d{3,5}\s*x\s*\d{3,5}"#, options: [.regularExpression, .caseInsensitive]) != nil
             || tag.range(of: #"\d{3,5}\s*×\s*\d{3,5}"#, options: [.regularExpression, .caseInsensitive]) != nil
     }
 
-    static func isSystemWorkshopTag(_ tag: String) -> Bool {
+    nonisolated static func isSystemWorkshopTag(_ tag: String) -> Bool {
         if preferredTag(in: [tag], matching: ["Video", "Web"]) != nil {
             return true
         }
@@ -126,7 +126,7 @@ extension SteamWorkshopService {
         return isResolutionTag(tag)
     }
 
-    static func normalizeAuthorName(_ text: String) -> String {
+    nonisolated static func normalizeAuthorName(_ text: String) -> String {
         let normalized = normalizeText(text)
         guard !normalized.isEmpty else { return "" }
         let statusTokens = ["在线", "离线", "游戏中", "正在游戏", "当前离线"]
@@ -138,7 +138,7 @@ extension SteamWorkshopService {
         return normalized
     }
 
-    static func firstCapture(pattern: String, in html: String) -> String? {
+    nonisolated static func firstCapture(pattern: String, in html: String) -> String? {
         guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive, .dotMatchesLineSeparators]) else {
             return nil
         }
@@ -151,7 +151,7 @@ extension SteamWorkshopService {
         return String(html[swiftRange])
     }
 
-    static func firstCaptureMatches(pattern: String, in html: String) -> [String] {
+    nonisolated static func firstCaptureMatches(pattern: String, in html: String) -> [String] {
         guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive, .dotMatchesLineSeparators]) else {
             return []
         }
@@ -163,7 +163,7 @@ extension SteamWorkshopService {
         }
     }
 
-    static func normalizeText(_ text: String) -> String {
+    nonisolated static func normalizeText(_ text: String) -> String {
         let noBreaks = text
             .replacingOccurrences(of: "<br>", with: "\n")
             .replacingOccurrences(of: "<br/>", with: "\n")
@@ -182,7 +182,7 @@ extension SteamWorkshopService {
         return compacted.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    static func htmlDecode(_ text: String) -> String {
+    nonisolated static func htmlDecode(_ text: String) -> String {
         var decoded = text
         let entities: [String: String] = [
             "&amp;": "&",
@@ -202,7 +202,7 @@ extension SteamWorkshopService {
         return decoded
     }
 
-    static func fileSizeText(forBytes bytes: Int64) -> String {
+    nonisolated static func fileSizeText(forBytes bytes: Int64) -> String {
         let mb = Double(bytes) / (1024 * 1024)
         if mb >= 1024 {
             return String(format: "%.1fGB", mb / 1024)
@@ -216,7 +216,7 @@ extension SteamWorkshopService {
         return String(format: "%.2fMB", mb)
     }
 
-    static func parseByteCount(from text: String?) -> Int64? {
+    nonisolated static func parseByteCount(from text: String?) -> Int64? {
         guard let text else { return nil }
         let normalized = text.replacingOccurrences(of: " ", with: "").uppercased()
         guard let value = Double(firstCapture(pattern: #"([0-9]+(?:\.[0-9]+)?)"#, in: normalized) ?? "") else {

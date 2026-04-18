@@ -296,11 +296,11 @@ extension SteamWorkshopService {
         }
     }
 
-    static func shouldEagerlyResolvePreviewKind(for requestPriority: SteamWorkshopDetailRequestPriority) -> Bool {
+    nonisolated static func shouldEagerlyResolvePreviewKind(for requestPriority: SteamWorkshopDetailRequestPriority) -> Bool {
         requestPriority == .userInitiated
     }
 
-    static func maybeEnrichPreviewKind(
+    nonisolated static func maybeEnrichPreviewKind(
         for item: SteamWorkshopBrowserItem,
         requestPriority: SteamWorkshopDetailRequestPriority
     ) async throws -> SteamWorkshopBrowserItem {
@@ -310,7 +310,7 @@ extension SteamWorkshopService {
         return try await enrichPreviewKind(for: item, requestPriority: requestPriority)
     }
 
-    static func fetchWorkshopStubPage(
+    nonisolated static func fetchWorkshopStubPage(
         context: SteamWorkshopBrowseContext,
         browserContentMode: SteamWorkshopBrowserContentMode,
         source: SteamWorkshopSource,
@@ -376,7 +376,7 @@ extension SteamWorkshopService {
         return SteamWorkshopBrowseStubPage(stubs: ordered, hasMore: hasMore)
     }
 
-    static func fetchWorkshopItems(
+    nonisolated static func fetchWorkshopItems(
         stubs: [SteamWorkshopBrowseStub],
         browserContentMode: SteamWorkshopBrowserContentMode,
         requestPriority: SteamWorkshopDetailRequestPriority = .background
@@ -449,7 +449,7 @@ extension SteamWorkshopService {
         return stubs.compactMap { itemsByID[$0.id] }
     }
 
-    static func prewarmDetailCache(
+    nonisolated static func prewarmDetailCache(
         for stubs: [SteamWorkshopBrowseStub],
         browserContentMode: SteamWorkshopBrowserContentMode
     ) async throws {
@@ -477,7 +477,7 @@ extension SteamWorkshopService {
         }
     }
 
-    static func fetchWorkshopItem(
+    nonisolated static func fetchWorkshopItem(
         stub: SteamWorkshopBrowseStub,
         browserContentMode: SteamWorkshopBrowserContentMode,
         officialDetail: SteamWorkshopPublishedFileDetail? = nil,
@@ -543,7 +543,7 @@ extension SteamWorkshopService {
         return enriched
     }
 
-    static func fetchWorkshopItemFromHTML(
+    nonisolated static func fetchWorkshopItemFromHTML(
         stub: SteamWorkshopBrowseStub,
         browserContentMode: SteamWorkshopBrowserContentMode,
         requestPriority: SteamWorkshopDetailRequestPriority = .background
@@ -600,7 +600,7 @@ extension SteamWorkshopService {
         )
     }
 
-    static func fetchPublishedFileDetails(
+    nonisolated static func fetchPublishedFileDetails(
         ids: [String],
         requestPriority: SteamWorkshopDetailRequestPriority = .background
     ) async throws -> [String: SteamWorkshopPublishedFileDetail] {
@@ -644,7 +644,7 @@ extension SteamWorkshopService {
         return result
     }
 
-    static func item(from detail: SteamWorkshopPublishedFileDetail, stub: SteamWorkshopBrowseStub) async -> SteamWorkshopBrowserItem {
+    nonisolated static func item(from detail: SteamWorkshopPublishedFileDetail, stub: SteamWorkshopBrowseStub) async -> SteamWorkshopBrowserItem {
         let tags = detail.tags.map(\.tag).map(normalizeText).filter { !$0.isEmpty }
         let authorProfileURL = detail.creator.flatMap { creator in
             URL(string: "https://steamcommunity.com/profiles/\(creator)/")
@@ -722,7 +722,7 @@ extension SteamWorkshopService {
         )
     }
 
-    static func detailRepresentsContent(
+    nonisolated static func detailRepresentsContent(
         _ detail: SteamWorkshopPublishedFileDetail,
         browserContentMode: SteamWorkshopBrowserContentMode
     ) -> Bool {
@@ -731,14 +731,14 @@ extension SteamWorkshopService {
         }
     }
 
-    static func workshopTypeMatches(
+    nonisolated static func workshopTypeMatches(
         browserContentMode: SteamWorkshopBrowserContentMode,
         workshopTypeText: String
     ) -> Bool {
         workshopTypeText.compare(browserContentMode.requiredTagValue, options: .caseInsensitive) == .orderedSame
     }
 
-    static func browserItemMatchesContentMode(
+    nonisolated static func browserItemMatchesContentMode(
         _ item: SteamWorkshopBrowserItem,
         browserContentMode: SteamWorkshopBrowserContentMode
     ) -> Bool {
@@ -751,7 +751,7 @@ extension SteamWorkshopService {
         }
     }
 
-    static func shouldSupplementWithHTML(item: SteamWorkshopBrowserItem) -> Bool {
+    nonisolated static func shouldSupplementWithHTML(item: SteamWorkshopBrowserItem) -> Bool {
         item.author == "未知作者"
             || item.descriptionText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || item.previewImageURL == nil
@@ -759,7 +759,7 @@ extension SteamWorkshopService {
             || item.dependencyIDs.isEmpty
     }
 
-    static func mergeDetailedItem(
+    nonisolated static func mergeDetailedItem(
         preferred: SteamWorkshopBrowserItem,
         fallback: SteamWorkshopBrowserItem
     ) -> SteamWorkshopBrowserItem {
@@ -798,7 +798,7 @@ extension SteamWorkshopService {
         )
     }
 
-    static func fetchHTML(
+    nonisolated static func fetchHTML(
         url: URL,
         requestPriority: SteamWorkshopDetailRequestPriority = .background
     ) async throws -> String {
@@ -830,7 +830,7 @@ extension SteamWorkshopService {
         return html
     }
 
-    static func enrichPreviewKind(
+    nonisolated static func enrichPreviewKind(
         for item: SteamWorkshopBrowserItem,
         requestPriority: SteamWorkshopDetailRequestPriority = .background
     ) async throws -> SteamWorkshopBrowserItem {
@@ -854,7 +854,7 @@ extension SteamWorkshopService {
         return withPreviewKind(previewKind, item: item)
     }
 
-    static func fetchPreviewMimeType(
+    nonisolated static func fetchPreviewMimeType(
         url: URL,
         requestPriority: SteamWorkshopDetailRequestPriority = .background
     ) async throws -> String? {
@@ -872,7 +872,7 @@ extension SteamWorkshopService {
         return http.value(forHTTPHeaderField: "Content-Type")
     }
 
-    static func withPreviewKind(_ previewKind: SteamWorkshopPreviewAssetKind, item: SteamWorkshopBrowserItem) -> SteamWorkshopBrowserItem {
+    nonisolated static func withPreviewKind(_ previewKind: SteamWorkshopPreviewAssetKind, item: SteamWorkshopBrowserItem) -> SteamWorkshopBrowserItem {
         SteamWorkshopBrowserItem(
             id: item.id,
             title: item.title,
@@ -907,7 +907,7 @@ extension SteamWorkshopService {
         )
     }
 
-    static func fallbackBrowserItem(from stub: SteamWorkshopBrowseStub) -> SteamWorkshopBrowserItem {
+    nonisolated static func fallbackBrowserItem(from stub: SteamWorkshopBrowseStub) -> SteamWorkshopBrowserItem {
         SteamWorkshopBrowserItem(
             id: stub.id,
             title: normalizedStubTitle(stub),
@@ -942,14 +942,14 @@ extension SteamWorkshopService {
         )
     }
 
-    static func seededBrowserItem(from stub: SteamWorkshopBrowseStub) -> SteamWorkshopBrowserItem {
+    nonisolated static func seededBrowserItem(from stub: SteamWorkshopBrowseStub) -> SteamWorkshopBrowserItem {
         guard let cached = loadDetailCache(id: stub.id) else {
             return fallbackBrowserItem(from: stub)
         }
         return mergeStub(stub, into: cached)
     }
 
-    static func mergeStub(_ stub: SteamWorkshopBrowseStub, into item: SteamWorkshopBrowserItem) -> SteamWorkshopBrowserItem {
+    nonisolated static func mergeStub(_ stub: SteamWorkshopBrowseStub, into item: SteamWorkshopBrowserItem) -> SteamWorkshopBrowserItem {
         SteamWorkshopBrowserItem(
             id: item.id,
             title: item.title.isEmpty ? normalizedStubTitle(stub) : item.title,

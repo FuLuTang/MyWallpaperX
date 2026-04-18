@@ -75,6 +75,8 @@ let webCompatibilityScriptBootstrapResourceRewriting = #"""
   patchURLBackedProperty(window.HTMLMediaElement && window.HTMLMediaElement.prototype, 'src');
   patchURLBackedProperty(window.HTMLSourceElement && window.HTMLSourceElement.prototype, 'src');
   patchURLBackedProperty(window.HTMLAnchorElement && window.HTMLAnchorElement.prototype, 'href');
+  patchURLBackedProperty(window.HTMLLinkElement && window.HTMLLinkElement.prototype, 'href');
+  patchURLBackedProperty(window.HTMLVideoElement && window.HTMLVideoElement.prototype, 'poster');
   patchStyleProperty('background');
   patchStyleProperty('backgroundImage');
   try {
@@ -95,23 +97,34 @@ let webCompatibilityScriptBootstrapResourceRewriting = #"""
   } catch (_) {}
   try {
     const sanitizePlaceholderMediaSources = () => {
-      const nodes = Array.from(document.querySelectorAll('audio,video,source'));
+      const nodes = Array.from(document.querySelectorAll('audio,video,source,link'));
       nodes.forEach((node) => {
         try {
-          const current = typeof node.getAttribute === 'function' ? node.getAttribute('src') : null;
-          if (current == null) return;
-          const rewritten = window.__myWallpaperRewriteLocalFileURL(current);
-          if (rewritten === current) return;
-          if (!rewritten) {
-            node.removeAttribute('src');
-            if ('src' in node) {
-              try { node.src = ''; } catch (_) {}
+          const attributesToNormalize = [];
+          if (typeof node.getAttribute === 'function') {
+            if (node.hasAttribute && node.hasAttribute('src')) {
+              attributesToNormalize.push('src');
             }
-            return;
+            if (node.hasAttribute && node.hasAttribute('poster')) {
+              attributesToNormalize.push('poster');
+            }
           }
-          if (typeof node.setAttribute === 'function') {
-            node.setAttribute('src', rewritten);
-          }
+          attributesToNormalize.forEach((attributeName) => {
+            const current = node.getAttribute(attributeName);
+            if (current == null) return;
+            const rewritten = window.__myWallpaperRewriteLocalFileURL(current);
+            if (rewritten === current) return;
+            if (!rewritten) {
+              node.removeAttribute(attributeName);
+              if (attributeName in node) {
+                try { node[attributeName] = ''; } catch (_) {}
+              }
+              return;
+            }
+            if (typeof node.setAttribute === 'function') {
+              node.setAttribute(attributeName, rewritten);
+            }
+          });
         } catch (_) {}
       });
     };

@@ -122,58 +122,65 @@ struct ContentView: View {
         if lastPostedModuleID != newModule {
             NotificationCenter.default.post(name: .inspectorHostCloseRequested, object: nil)
             lastPostedModuleID = newModule
-            // silTag 上下文附加到通知中，供 SILToolbarController 更新工具栏标题
-            var silUserInfo: [String: Any] = ["enabled": isSIL]
-            if case .silTag(let tag) = item { silUserInfo["silTag"] = tag }
-            NotificationCenter.default.post(
-                name: .staticImageLibraryModeDidChange,
-                object: nil,
-                userInfo: silUserInfo
-            )
-            NotificationCenter.default.post(
-                name: .onlineLibraryModeDidChange,
-                object: nil,
-                userInfo: [
-                    "enabled": isOnline,
-                    "isDownloads": item == .onlineDownloads
-                ]
-            )
-            NotificationCenter.default.post(
-                name: .steamWorkshopModeDidChange,
-                object: nil,
-                userInfo: [
-                    "enabled": isSteam,
-                    "isDownloads": item == .steamDownloads
-                ]
-            )
+            let silUserInfo = makeStaticImageLibraryModeUserInfo(for: item, enabled: isSIL)
+            let onlineUserInfo: [String: Any] = [
+                "enabled": isOnline,
+                "isDownloads": item == .onlineDownloads
+            ]
+            let steamUserInfo: [String: Any] = [
+                "enabled": isSteam,
+                "isDownloads": item == .steamDownloads
+            ]
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(
+                    name: .staticImageLibraryModeDidChange,
+                    object: nil,
+                    userInfo: silUserInfo
+                )
+                NotificationCenter.default.post(
+                    name: .onlineLibraryModeDidChange,
+                    object: nil,
+                    userInfo: onlineUserInfo
+                )
+                NotificationCenter.default.post(
+                    name: .steamWorkshopModeDidChange,
+                    object: nil,
+                    userInfo: steamUserInfo
+                )
+            }
         } else if isSIL {
-            // 模块未切换但在 SIL 内部从全库切到 silTag（或反向），需单独更新标题
-            var silUserInfo: [String: Any] = ["enabled": true]
-            if case .silTag(let tag) = item { silUserInfo["silTag"] = tag }
-            NotificationCenter.default.post(
-                name: .staticImageLibraryModeDidChange,
-                object: nil,
-                userInfo: silUserInfo
-            )
+            let silUserInfo = makeStaticImageLibraryModeUserInfo(for: item, enabled: true)
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(
+                    name: .staticImageLibraryModeDidChange,
+                    object: nil,
+                    userInfo: silUserInfo
+                )
+            }
         } else if isOnline {
-            // 在线库内部页面切换（浏览页 / 已下载项）时，同步在线工具栏布局
-            NotificationCenter.default.post(
-                name: .onlineLibraryModeDidChange,
-                object: nil,
-                userInfo: [
-                    "enabled": true,
-                    "isDownloads": item == .onlineDownloads
-                ]
-            )
+            let onlineUserInfo: [String: Any] = [
+                "enabled": true,
+                "isDownloads": item == .onlineDownloads
+            ]
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(
+                    name: .onlineLibraryModeDidChange,
+                    object: nil,
+                    userInfo: onlineUserInfo
+                )
+            }
         } else if isSteam {
-            NotificationCenter.default.post(
-                name: .steamWorkshopModeDidChange,
-                object: nil,
-                userInfo: [
-                    "enabled": true,
-                    "isDownloads": item == .steamDownloads
-                ]
-            )
+            let steamUserInfo: [String: Any] = [
+                "enabled": true,
+                "isDownloads": item == .steamDownloads
+            ]
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(
+                    name: .steamWorkshopModeDidChange,
+                    object: nil,
+                    userInfo: steamUserInfo
+                )
+            }
         }
         // 通知目标模块容器视图接管键盘焦点
         // 工具栏重建需要时间，延迟适当增加到 120ms 确保 CollectionView 已可见
@@ -184,6 +191,17 @@ struct ContentView: View {
                 userInfo: ["module": newModule.rawValue]
             )
         }
+    }
+
+    private func makeStaticImageLibraryModeUserInfo(
+        for item: SelectedItem,
+        enabled: Bool
+    ) -> [String: Any] {
+        var userInfo: [String: Any] = ["enabled": enabled]
+        if case .silTag(let tag) = item {
+            userInfo["silTag"] = tag
+        }
+        return userInfo
     }
 
     private func syncQuickLookPreviewIfNeeded() {

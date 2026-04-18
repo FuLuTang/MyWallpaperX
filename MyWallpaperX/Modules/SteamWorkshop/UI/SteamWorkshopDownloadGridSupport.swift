@@ -48,10 +48,10 @@ enum SteamWorkshopDownloadGridSupport {
         )
     }
 
-    static func primaryAction(for record: SteamWorkshopDownloadRecord) -> PrimaryAction {
+    static func primaryAction(for record: SteamWorkshopDownloadRecord, service: SteamWorkshopService) -> PrimaryAction {
         switch record.status {
         case .ready:
-            return record.isPlayableOrLaunchable ? .setAsWallpaper : .none
+            return service.cachedCanLaunchDownloadRecord(record) ? .setAsWallpaper : .none
         case .failed:
             return .retryDownload
         case .queued, .downloading:
@@ -64,7 +64,7 @@ enum SteamWorkshopDownloadGridSupport {
         service: SteamWorkshopService,
         onSetAsWallpaper: (SteamWorkshopDownloadRecord) -> Void
     ) {
-        switch primaryAction(for: record) {
+        switch primaryAction(for: record, service: service) {
         case .none:
             break
         case .setAsWallpaper:

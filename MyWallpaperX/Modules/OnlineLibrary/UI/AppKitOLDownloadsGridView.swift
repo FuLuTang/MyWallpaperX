@@ -246,6 +246,8 @@ final class AppKitOLDownloadsContainerView: NSView, ModuleFocusable {
     private var lastAppliedSnapshotIDs: [Int] = []
     private var suppressDownloadedIDsReload = false
     private var pendingPostDeletionSelectionIndex: Int?
+    private var reloadEntriesTask: Task<Void, Never>?
+    private var reloadEntriesGeneration: Int = 0
     private var sortMode: WallpaperSortMode = {
         let raw = UserDefaults.standard.string(forKey: "OLDownloadsSortMode") ?? ""
         return WallpaperSortMode(rawValue: raw) ?? .none
@@ -371,6 +373,7 @@ final class AppKitOLDownloadsContainerView: NSView, ModuleFocusable {
     }
 
     deinit {
+        reloadEntriesTask?.cancel()
         observers.forEach { NotificationCenter.default.removeObserver($0) }
         observers.removeAll()
     }
@@ -525,49 +528,21 @@ final class AppKitOLDownloadsContainerView: NSView, ModuleFocusable {
 
     private func reloadEntries() {
         let dir = OnlineLibraryService.downloadDirectory
-        guard let files = try? FileManager.default.contentsOfDirectory(
-            at: dir,
-            includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey, .creationDateKey],
-            options: .skipsHiddenFiles
-        ) else {
-            entries = []
-            applyFilterAndSnapshot()
-            return
-        }
-        var loaded: [OLDownloadedEntry] = files.compactMap { url in
-            let name = url.lastPathComponent
-            guard name.hasPrefix("online_"), name.hasSuffix(".mp4"),
-                  let id = Int(name.dropFirst("online_".count).dropLast(".mp4".count))
-            else { return nil }
-            return Self.makeEntry(id: id, localURL: url)
-        }
+        let sortMode = self.sortMode
+        let sortAscending = self.sortAscending
 
-        loaded.sort { lhs, rhs in
-            switch sortMode {
-            case .none:
-                let lDate = (try? lhs.localURL.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
-                let rDate = (try? rhs.localURL.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
-                return sortAscending ? (lDate < rDate) : (lDate > rDate)
-            case .name:
-                let compare = lhs.localURL.lastPathComponent.localizedStandardCompare(rhs.localURL.lastPathComponent)
-                return sortAscending ? (compare == .orderedAscending) : (compare == .orderedDescending)
-            case .size:
-                let lSize = (try? lhs.localURL.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? Int.max
-                let rSize = (try? rhs.localURL.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? Int.max
-                return sortAscending ? (lSize < rSize) : (lSize > rSize)
-            case .dateAdded:
-                let lDate = (try? lhs.localURL.resourceValues(forKeys: [.creationDateKey]))?.creationDate
-                    ?? (try? lhs.localURL.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
-                    ?? .distantPast
-                let rDate = (try? rhs.localURL.resourceValues(forKeys: [.creationDateKey]))?.creationDate
-                    ?? (try? rhs.localURL.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
-                    ?? .distantPast
-                return sortAscending ? (lDate < rDate) : (lDate > rDate)
+        reloadEntriesTask?.cancel()
+        reloadEntriesGeneration += 1
+        let generation = reloadEntriesGeneration
+        reloadEntriesTask = Task.detached(priority: .userInitiated) {
+            let loaded = Self.loadEntries(in: dir, sortMode: sortMode, sortAscending: sortAscending)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                guard self.reloadEntriesGeneration == generation else { return }
+                self.entries = loaded
+                self.applyFilterAndSnapshot()
             }
         }
-
-        entries = loaded
-        applyFilterAndSnapshot()
     }
 
     @objc private func handleSearchFieldChanged(_ sender: NSSearchField) {
@@ -1039,7 +1014,7 @@ final class AppKitOLDownloadsContainerView: NSView, ModuleFocusable {
         URL(fileURLWithPath: path).resolvingSymlinksInPath().standardizedFileURL.path
     }
 
-    private static func makeEntry(id: Int, localURL: URL) -> OLDownloadedEntry {
+    nonisolated private static func makeEntry(id: Int, localURL: URL) -> OLDownloadedEntry {
         let asset = AVURLAsset(url: localURL)
         let durationSeconds = max(0, Int(asset.duration.seconds.rounded()))
         var resolution: String?
@@ -1058,6 +1033,54 @@ final class AppKitOLDownloadsContainerView: NSView, ModuleFocusable {
             duration: durationSeconds,
             resolutionString: resolution
         )
+    }
+
+    nonisolated private static func loadEntries(
+        in directory: URL,
+        sortMode: WallpaperSortMode,
+        sortAscending: Bool
+    ) -> [OLDownloadedEntry] {
+        guard let files = try? FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey, .creationDateKey],
+            options: .skipsHiddenFiles
+        ) else {
+            return []
+        }
+
+        var loaded: [OLDownloadedEntry] = files.compactMap { url in
+            let name = url.lastPathComponent
+            guard name.hasPrefix("online_"), name.hasSuffix(".mp4"),
+                  let id = Int(name.dropFirst("online_".count).dropLast(".mp4".count))
+            else { return nil }
+            return makeEntry(id: id, localURL: url)
+        }
+
+        loaded.sort { lhs, rhs in
+            switch sortMode {
+            case .none:
+                let lDate = (try? lhs.localURL.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
+                let rDate = (try? rhs.localURL.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
+                return sortAscending ? (lDate < rDate) : (lDate > rDate)
+            case .name:
+                let compare = lhs.localURL.lastPathComponent.localizedStandardCompare(rhs.localURL.lastPathComponent)
+                return sortAscending ? (compare == .orderedAscending) : (compare == .orderedDescending)
+            case .size:
+                let lSize = (try? lhs.localURL.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? Int.max
+                let rSize = (try? rhs.localURL.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? Int.max
+                return sortAscending ? (lSize < rSize) : (lSize > rSize)
+            case .dateAdded:
+                let lDate = (try? lhs.localURL.resourceValues(forKeys: [.creationDateKey]))?.creationDate
+                    ?? (try? lhs.localURL.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+                    ?? .distantPast
+                let rDate = (try? rhs.localURL.resourceValues(forKeys: [.creationDateKey]))?.creationDate
+                    ?? (try? rhs.localURL.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+                    ?? .distantPast
+                return sortAscending ? (lDate < rDate) : (lDate > rDate)
+            }
+        }
+
+        return loaded
     }
 }
 

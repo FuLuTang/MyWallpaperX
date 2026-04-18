@@ -8,7 +8,7 @@ struct SteamWorkshopDependencyParseDiagnostics {
 }
 
 extension SteamWorkshopService {
-    static func parseDetailPage(html: String, fallbackID: String) -> SteamWorkshopDetailParseResult {
+    nonisolated static func parseDetailPage(html: String, fallbackID: String) -> SteamWorkshopDetailParseResult {
         let title = firstCapture(
             pattern: #"<div[^>]*class="workshopItemTitle"[^>]*>\s*(.*?)\s*</div>"#,
             in: html
@@ -84,7 +84,7 @@ extension SteamWorkshopService {
         )
     }
 
-    static func parseStatsMap(from html: String) -> [String: String] {
+    nonisolated static func parseStatsMap(from html: String) -> [String: String] {
         let labels = firstCaptureMatches(
             pattern: #"<div[^>]*class="detailsStatLeft"[^>]*>\s*(.*?)\s*</div>"#,
             in: html
@@ -104,7 +104,7 @@ extension SteamWorkshopService {
         return map
     }
 
-    static func normalizedStatValue(forKey key: String, in stats: [String: String]) -> String? {
+    nonisolated static func normalizedStatValue(forKey key: String, in stats: [String: String]) -> String? {
         if let direct = stats[key], !direct.isEmpty {
             return direct
         }
@@ -113,7 +113,7 @@ extension SteamWorkshopService {
         }?.value
     }
 
-    static func parseWorkshopTags(from html: String) -> [(key: String, values: [String])] {
+    nonisolated static func parseWorkshopTags(from html: String) -> [(key: String, values: [String])] {
         let pattern = #"<div[^>]*class="workshopTags"[^>]*>\s*<span[^>]*class="workshopTagsTitle"[^>]*>(.*?)</span>(.*?)</div>"#
         guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive, .dotMatchesLineSeparators]) else {
             return []
@@ -141,7 +141,7 @@ extension SteamWorkshopService {
         return result
     }
 
-    static func normalizedWorkshopTagValue(
+    nonisolated static func normalizedWorkshopTagValue(
         forKey key: String,
         in workshopTags: [(key: String, values: [String])]
     ) -> String? {
@@ -154,11 +154,11 @@ extension SteamWorkshopService {
         return nil
     }
 
-    static func parseDependencyIDs(from html: String) -> [String] {
+    nonisolated static func parseDependencyIDs(from html: String) -> [String] {
         dependencyParseDiagnostics(from: html).dependencyIDs
     }
 
-    static func dependencyParseDiagnostics(from html: String) -> SteamWorkshopDependencyParseDiagnostics {
+    nonisolated static func dependencyParseDiagnostics(from html: String) -> SteamWorkshopDependencyParseDiagnostics {
         let sectionPatterns = [
             #"(?is)<div[^>]*class=\"requiredItemsContainer\"[^>]*>(.*?)</div>\s*</div>"#,
             #"(?is)<div[^>]*id=\"RequiredItems\"[^>]*>(.*?)</div>\s*</div>"#,
@@ -259,7 +259,7 @@ extension SteamWorkshopService {
         )
     }
 
-    static func dependencyAnchoredWindows(from html: String) -> [String] {
+    nonisolated static func dependencyAnchoredWindows(from html: String) -> [String] {
         let anchorPatterns = [
             #"requiredItemsContainer"#,
             #"RequiredItems"#,
@@ -288,7 +288,7 @@ extension SteamWorkshopService {
         return windows
     }
 
-    static func buildDetailFields(
+    nonisolated static func buildDetailFields(
         stats: [String: String],
         workshopTags: [(key: String, values: [String])]
     ) -> [SteamWorkshopDetailField] {
@@ -318,7 +318,7 @@ extension SteamWorkshopService {
         return fields
     }
 
-    static func resolutionFallback(in html: String) -> String? {
+    nonisolated static func resolutionFallback(in html: String) -> String? {
         guard let match = firstCapture(
             pattern: #"(\d{3,5}\s*[xX×]\s*\d{3,5})"#,
             in: html
@@ -328,24 +328,24 @@ extension SteamWorkshopService {
         return normalizeText(match.replacingOccurrences(of: "x", with: "×"))
     }
 
-    static func metaContent(property: String, in html: String) -> String? {
+    nonisolated static func metaContent(property: String, in html: String) -> String? {
         firstCapture(
             pattern: #"<meta[^>]+property="\#(property)"[^>]+content="([^"]+)""#,
             in: html
         )
     }
 
-    static func metaURL(property: String, in html: String) -> URL? {
+    nonisolated static func metaURL(property: String, in html: String) -> URL? {
         guard let value = metaContent(property: property, in: html) else { return nil }
         return URL(string: htmlDecode(value))
     }
 
-    static func firstURLMatch(pattern: String, in html: String) -> URL? {
+    nonisolated static func firstURLMatch(pattern: String, in html: String) -> URL? {
         guard let value = firstCapture(pattern: pattern, in: html) else { return nil }
         return URL(string: htmlDecode(value))
     }
 
-    static func normalizeSteamCommunityURL(_ rawValue: String?) -> URL? {
+    nonisolated static func normalizeSteamCommunityURL(_ rawValue: String?) -> URL? {
         guard let rawValue else { return nil }
         let decoded = htmlDecode(rawValue)
         if decoded.hasPrefix("//") {
@@ -357,7 +357,7 @@ extension SteamWorkshopService {
         return URL(string: decoded)
     }
 
-    static func normalizedAuthorWorkshopURL(_ url: URL?) -> URL? {
+    nonisolated static func normalizedAuthorWorkshopURL(_ url: URL?) -> URL? {
         guard let url else { return nil }
         let absoluteURL = url.absoluteURL
         guard absoluteURL.path.contains("/myworkshopfiles") else { return absoluteURL }
@@ -389,13 +389,13 @@ extension SteamWorkshopService {
         return components.url ?? authorProfileURL
     }
 
-    static func browsePageHasMore(html: String, currentPage: Int) -> Bool {
+    nonisolated static func browsePageHasMore(html: String, currentPage: Int) -> Bool {
         let nextPage = currentPage + 1
         let pattern = #"href\s*=\s*["'][^"']*[?&]p=\#(nextPage)(?:[&#][^"']*|[^"']*)?["']"#
         return firstCapture(pattern: pattern, in: html) != nil
     }
 
-    static func parseBrowsePage(html: String) -> [SteamWorkshopBrowseStub] {
+    nonisolated static func parseBrowsePage(html: String) -> [SteamWorkshopBrowseStub] {
         var results: [SteamWorkshopBrowseStub] = []
         var seen = Set<String>()
         let browseSummaries = parseBrowseSummaries(from: html)
@@ -454,7 +454,7 @@ extension SteamWorkshopService {
         return results
     }
 
-    static func parseBrowseSummaries(from html: String) -> [String: String] {
+    nonisolated static func parseBrowseSummaries(from html: String) -> [String: String] {
         let pattern = #"SharedFileBindMouseHover\(\s*"sharedfile_(\d+)"\s*,\s*false\s*,\s*(\{.*?\})\s*\);"#
         guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive, .dotMatchesLineSeparators]) else {
             return [:]

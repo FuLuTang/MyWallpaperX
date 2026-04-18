@@ -1,7 +1,7 @@
 import Foundation
 
 extension SteamWorkshopService {
-    static func makeBrowseURL(
+    nonisolated static func makeBrowseURL(
         browserContentMode: SteamWorkshopBrowserContentMode,
         source: SteamWorkshopSource,
         query: String,
@@ -43,7 +43,7 @@ extension SteamWorkshopService {
         return components.url!
     }
 
-    static func makeDetailURL(id: String) -> URL {
+    nonisolated static func makeDetailURL(id: String) -> URL {
         var components = URLComponents(string: Constants.detailBase)!
         components.queryItems = [
             URLQueryItem(name: "id", value: id),
@@ -52,7 +52,7 @@ extension SteamWorkshopService {
         return components.url!
     }
 
-    static func makeAuthorWorkshopURL(baseURL: URL, page: Int) -> URL {
+    nonisolated static func makeAuthorWorkshopURL(baseURL: URL, page: Int) -> URL {
         let normalizedURL = normalizedAuthorWorkshopURL(baseURL) ?? baseURL
         guard var components = URLComponents(url: normalizedURL, resolvingAgainstBaseURL: false) else {
             return normalizedURL

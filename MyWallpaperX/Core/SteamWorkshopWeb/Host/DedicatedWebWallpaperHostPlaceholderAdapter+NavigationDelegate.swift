@@ -2,6 +2,10 @@ import Foundation
 import WebKit
 
 extension DedicatedWebWallpaperHostPlaceholderAdapter {
+    private var ignoredNavigationFailureCodes: Set<Int> {
+        [NSURLErrorCancelled]
+    }
+
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {}
 
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {}
@@ -19,9 +23,7 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
     }
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
-        phase = .failed
-        teardownHostSurfaces()
-        eventHandler?(.failed(message: "dedicated_web_host_webcontent_terminated"))
+        failCurrentLaunch(message: "dedicated_web_host_webcontent_terminated")
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
@@ -33,9 +35,15 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
     }
 
     func handleNavigationFailure(_ error: Error) {
-        phase = .failed
-        teardownHostSurfaces()
-        removeLifecycleObservers()
-        eventHandler?(.failed(message: error.localizedDescription))
+        let nsError = error as NSError
+        if nsError.domain == NSURLErrorDomain,
+           ignoredNavigationFailureCodes.contains(nsError.code) {
+            return
+        }
+        if nsError.domain == WKError.errorDomain,
+           ignoredNavigationFailureCodes.contains(nsError.code) {
+            return
+        }
+        failCurrentLaunch(message: error.localizedDescription)
     }
 }

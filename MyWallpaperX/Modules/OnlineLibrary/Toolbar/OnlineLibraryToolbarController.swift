@@ -309,14 +309,40 @@ final class OnlineLibraryToolbarController: NSObject, NSSearchFieldDelegate {
         return SortState(mode: mode, ascending: ascending)
     }()
 
-    lazy var downloadsSearchItem: NSSearchToolbarItem = {
-        let item = NSSearchToolbarItem(itemIdentifier: .olDownloadsSearch)
-        item.searchField.placeholderString = "搜索 Pixabay 下载"
-        item.searchField.sendsSearchStringImmediately = true
-        item.searchField.target = self
-        item.searchField.action = #selector(handleDownloadsSearchChanged(_:))
-        item.resignsFirstResponderWithCancel = true
-        item.preferredWidthForSearchField = 165
+    lazy var downloadsSearchField: NSSearchField = {
+        let field = NSSearchField(frame: .zero)
+        field.placeholderString = "搜索 Pixabay 下载"
+        field.sendsSearchStringImmediately = true
+        field.sendsWholeSearchString = false
+        field.target = self
+        field.action = #selector(handleDownloadsSearchChanged(_:))
+        field.translatesAutoresizingMaskIntoConstraints = false
+        field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        field.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        return field
+    }()
+
+    lazy var downloadsSearchContainerView: NSView = {
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 165, height: 28))
+        container.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(downloadsSearchField)
+        NSLayoutConstraint.activate([
+            downloadsSearchField.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            downloadsSearchField.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            downloadsSearchField.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            container.widthAnchor.constraint(equalToConstant: 165),
+            container.heightAnchor.constraint(equalToConstant: 28)
+        ])
+        return container
+    }()
+
+    lazy var downloadsSearchItem: NSToolbarItem = {
+        let item = NSToolbarItem(itemIdentifier: .olDownloadsSearch)
+        item.label = "搜索下载项"
+        item.paletteLabel = "搜索下载项"
+        item.toolTip = "搜索 Pixabay 下载"
+        item.autovalidates = false
+        item.view = downloadsSearchContainerView
         return item
     }()
 
@@ -421,18 +447,41 @@ final class OnlineLibraryToolbarController: NSObject, NSSearchFieldDelegate {
 
     // MARK: - 搜索框（NSSearchToolbarItem，与视频库实现对齐）
 
-    lazy var searchToolbarItem: NSSearchToolbarItem = {
-        let item = NSSearchToolbarItem(itemIdentifier: .olSearch)
-        item.searchField.delegate         = self
-        item.searchField.placeholderString = "探索 Pixabay"
-        item.searchField.sendsSearchStringImmediately = true
-        item.resignsFirstResponderWithCancel = true
-        item.preferredWidthForSearchField    = 165
-        return item
+    lazy var searchField: NSSearchField = {
+        let field = NSSearchField(frame: .zero)
+        field.delegate = self
+        field.placeholderString = "探索 Pixabay"
+        field.sendsSearchStringImmediately = true
+        field.sendsWholeSearchString = false
+        field.translatesAutoresizingMaskIntoConstraints = false
+        field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        field.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        return field
     }()
 
-    /// 便捷访问内部 searchField
-    var searchField: NSSearchField { searchToolbarItem.searchField }
+    lazy var searchContainerView: NSView = {
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 165, height: 28))
+        container.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(searchField)
+        NSLayoutConstraint.activate([
+            searchField.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            searchField.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            searchField.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            container.widthAnchor.constraint(equalToConstant: 165),
+            container.heightAnchor.constraint(equalToConstant: 28)
+        ])
+        return container
+    }()
+
+    lazy var searchToolbarItem: NSToolbarItem = {
+        let item = NSToolbarItem(itemIdentifier: .olSearch)
+        item.label = "搜索"
+        item.paletteLabel = "搜索 Pixabay"
+        item.toolTip = "探索 Pixabay"
+        item.autovalidates = false
+        item.view = searchContainerView
+        return item
+    }()
 
     // MARK: - 刷新按钮（image-based，与视频库风格一致）
 
@@ -523,7 +572,7 @@ extension OnlineLibraryToolbarController {
     func focusSearch() {
         guard isOnlineLibraryMode else { return }
         if isOnlineDownloadsMode {
-            window?.makeFirstResponder(downloadsSearchItem.searchField)
+            window?.makeFirstResponder(downloadsSearchField)
         } else {
             window?.makeFirstResponder(searchField)
         }

@@ -15,14 +15,7 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
 
     func installDefaultInteractiveRegionsIfNeeded() {
         for screenID in surfaces.keys where interactiveRegionsByScreen[screenID] == nil {
-            interactiveRegionsByScreen[screenID] = [
-                InteractiveRegion(
-                    id: "default-center-click-zone",
-                    normalizedRect: CGRect(x: 0.4, y: 0.4, width: 0.2, height: 0.2),
-                    allowsClick: true,
-                    allowsDrag: true
-                )
-            ]
+            interactiveRegionsByScreen[screenID] = []
         }
     }
 

@@ -6,6 +6,33 @@
 import Foundation
 
 extension SteamWorkshopService {
+    func canLaunchDownloadRecord(_ record: SteamWorkshopDownloadRecord) -> Bool {
+        guard record.status == .ready else { return false }
+        if record.contentType == .web {
+            guard record.isPlayableOrLaunchable else { return false }
+            if let report = webValidationReport(for: record),
+               report.blockingIssue != nil {
+                return false
+            }
+            return true
+        }
+        return record.isPlayableOrLaunchable
+    }
+
+    func cachedCanLaunchDownloadRecord(_ record: SteamWorkshopDownloadRecord) -> Bool {
+        guard record.status == .ready else { return false }
+        if record.contentType == .web {
+            guard record.isPlayableOrLaunchable else { return false }
+            let signature = webValidationSignature(for: record)
+            if let cached = webValidationReportCache[record.id],
+               cached.signature == signature {
+                return cached.report.blockingIssue == nil
+            }
+            return true
+        }
+        return record.isPlayableOrLaunchable
+    }
+
     var filteredDownloads: [SteamWorkshopDownloadRecord] {
         displayedDownloads
     }
@@ -119,13 +146,7 @@ extension SteamWorkshopService {
 
     func playableDownloadRecord(for itemID: String) -> SteamWorkshopDownloadRecord? {
         guard let record = latestDownloadRecord(for: itemID),
-              record.status == .ready,
-              record.isPlayableOrLaunchable else {
-            return nil
-        }
-        if record.contentType == .web,
-           let report = webValidationReport(for: record),
-           report.fatalIssue != nil {
+              canLaunchDownloadRecord(record) else {
             return nil
         }
         return record

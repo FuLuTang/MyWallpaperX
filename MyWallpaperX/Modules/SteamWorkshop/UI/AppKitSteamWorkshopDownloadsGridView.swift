@@ -216,7 +216,8 @@ final class AppKitSteamWorkshopDownloadsContainerView: NSView, ModuleFocusable {
     }
 
     var hasPreviewableSelection: Bool {
-        !service.isDownloadsMultiSelectMode && (service.selectedDownloadRecord?.isPlayableOrLaunchable ?? false)
+        !service.isDownloadsMultiSelectMode
+            && service.selectedDownloadRecord.map(service.cachedCanLaunchDownloadRecord(_:)) == true
     }
 
     override func layout() {
@@ -333,12 +334,13 @@ final class AppKitSteamWorkshopDownloadsContainerView: NSView, ModuleFocusable {
 
     private func configureDownloadItem(_ item: AppKitSteamWorkshopBrowserItem, for record: SteamWorkshopDownloadRecord) {
         let displayItem = record.displayItem ?? SteamWorkshopDownloadGridSupport.fallbackDisplayItem(for: record)
+        let canLaunchRecord = service.cachedCanLaunchDownloadRecord(record)
         item.configure(
             displayContext: .downloads,
             item: displayItem,
             downloadRecord: record,
             isDownloading: record.status == .downloading,
-            isDownloaded: record.status == .ready && record.isPlayableOrLaunchable,
+            isDownloaded: canLaunchRecord,
             isMultiSelectMode: service.isDownloadsMultiSelectMode,
             isKeyboardFocused: service.effectiveSelectedDownloadIDs.contains(record.id),
             onOpen: { [weak self] in
@@ -358,7 +360,7 @@ final class AppKitSteamWorkshopDownloadsContainerView: NSView, ModuleFocusable {
             onSetAsWallpaper: { [weak self] in self?.onSetAsWallpaper(record) },
             onCancelDownload: { [weak self] in self?.service.cancelDownload(itemID: record.id) }
         )
-        item.setPrefersCircularPlayBadge(record.status == .ready && record.isPlayableOrLaunchable)
+        item.setPrefersCircularPlayBadge(canLaunchRecord)
     }
 
     private func refreshVisibleDownloadItems() {
@@ -673,7 +675,7 @@ extension AppKitSteamWorkshopDownloadsContainerView: NSCollectionViewDelegateFlo
 
 extension AppKitSteamWorkshopDownloadsContainerView {
     private func makePrimaryActionMenuItem(for record: SteamWorkshopDownloadRecord) -> NSMenuItem? {
-        let action = SteamWorkshopDownloadGridSupport.primaryAction(for: record)
+        let action = SteamWorkshopDownloadGridSupport.primaryAction(for: record, service: service)
         let config: (title: String, symbolName: String)?
         switch action {
         case .setAsWallpaper:
