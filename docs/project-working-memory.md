@@ -1,6 +1,6 @@
 # Project Working Memory
 
-> 最后更新：2026-04-03
+> 最后更新：2026-05-05
 > 维护范围：当前项目事实、用户偏好、重要路径、当前框架与 Steam Workshop 现状
 
 ## Product Context
@@ -40,12 +40,14 @@
 - 跨模块播放请求统一通过通知中转：
   - `onlineVideoReadyToPlay`
   - `steamWorkshopVideoReadyToPlay`
+  - `steamWorkshopWebWallpaperReadyToPlay`
 
 ## Current Steam Workshop Design
 - 浏览页是原生网格，不直接呈现网页。
 - 浏览网格已切到 AppKit `NSCollectionView`。
 - 卡片点击后进入原生详情面板，不再依赖网页详情页 UI。
 - 浏览页与下载页都已接入工具栏模式切换、侧边栏路由和焦点接管。
+- 下载页详情当前通过统一 `InspectorHost` 展示。
 - 当前浏览工具栏能力包括：
   - Steam 账号入口
   - 排序源切换
@@ -55,10 +57,16 @@
   - 缩放
   - 作者工坊返回入口
 - 当前下载页工具栏能力包括：
-  - 打开下载目录
+  - 进入/退出多选
+  - 删除
+  - 信息
+  - 查看文件
   - 搜索下载项
   - 缩放
-  - 刷新
+  - 排序
+- 当前 Steam 同时维护两条播放主链：
+  - 本地视频通过 `.steamWorkshopVideoReadyToPlay` 中转到视频库
+  - HTML 网页壁纸通过 `.steamWorkshopWebWallpaperReadyToPlay` 中转到当前 Web 壁纸宿主
 
 ## Current Steam Data Strategy
 - 浏览页基础数据仍主要来自 Steam 页面抓取与解析。
@@ -117,12 +125,14 @@
   - 菜单多选
   - 菜单全选
   - 菜单删除
+  - QuickLook
   - 菜单“查看文件”对当前单选下载项执行“在访达中显示”，无选中项或处于多选模式时禁用
   - 菜单“信息”为 toggle 语义：当前单选项 Inspector 已打开时，再次触发同一入口会关闭
 - Steam 模块当前仍不接入：
-  - QuickLook
   - Return 直接设为壁纸
-- Steam 下载页的“设为壁纸”走通知中转到视频库静默导入并播放，不通过视频库菜单命令直接路由。
+- Steam 下载页的“设为壁纸”走通知中转，不通过视频库菜单命令直接路由：
+  - 本地视频 -> 视频库静默导入并播放
+  - HTML 网页壁纸 -> 当前 Web 壁纸宿主接管播放
 
 ## Confirmed Historical Findings
 - 旧版本在 App Sandbox 下运行 SteamCMD 登录时，曾出现：
@@ -138,6 +148,7 @@
 ## Notes For Future Updates
 - 若 Steam 路由、工具栏、菜单、焦点、通知中转任一协作关系变化，需同步更新：
   - `docs/framework-architecture-memo.md`
+  - `docs/web-docs-index.md`
 - 若只是新增一次实验、抓取样本或排障结论，不要继续把本文件写成日志流；应优先整理为：
   - 当前事实
   - 历史结论

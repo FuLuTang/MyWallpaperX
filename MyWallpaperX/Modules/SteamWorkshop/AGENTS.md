@@ -8,10 +8,10 @@
 - 浏览页是原生 AppKit 网格，详情当前通过统一 `InspectorHost` 展示，模块内内容视图为 `SteamWorkshopItemDetailSheet.swift`
 - 当前登录与下载仍围绕 App 内置 `SteamCMDRuntime.bundle` 中的 `steamcmd.sh`
 - 下载成品落地到 `~/Movies/MyWallpaperX/创意工坊`
-- “设为壁纸”必须通过 `.steamWorkshopVideoReadyToPlay` 通知，由 `MainWindowCoordinator` 中转到视频库
+- “设为壁纸”必须通过通知中转；视频内容走 `.steamWorkshopVideoReadyToPlay`，Web 内容走 `.steamWorkshopWebWallpaperReadyToPlay`，均由 `MainWindowCoordinator` 接收后转入对应宿主，不能写成 Steam 对其他模块的直连
 - AppKitSteamWorkshopBrowserContainerView 与 AppKitSteamWorkshopDownloadsContainerView 都实现了 `ModuleFocusable`，在 `.moduleDidBecomeActive` 触发时把 `NSCollectionView` 设为 first responder，旧的 `SteamWorkshopFocusHost.swift` 已撤除以避免悬置的焦点桥接
 - Steam 列表当前使用专门的 `SteamWorkshopKeyboardCollectionView` 处理键盘事件，不应被误判为通用公共协议
-- 当前 Steam 模块只接入搜索、缩放与“查看文件”，未接入菜单多选、全选、删除、QuickLook 与 Return 设为壁纸
+- 下载页当前已接入多选、全选、删除、信息、查看文件、QuickLook 与 Return 主动作；下载项详情仍通过统一 `InspectorHost` 展示 `SteamWorkshopItemDetailSheet`
 
 ## 统一强制规则
 1. 禁止跨模块调用

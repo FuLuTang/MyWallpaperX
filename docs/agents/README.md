@@ -36,6 +36,35 @@
 
 - [collaboration-protocol.md](/Users/songziqiang/Documents/Development/MyWallpaperX/docs/agents/collaboration-protocol.md)
 
+### 默认主流程角色
+
+- `Architect`
+- `Explorer`
+- `Protocol Steward`
+- `Integrator / Rollout Manager`
+- `Verifier / QA Agent`
+- `Gatekeeper`
+
+### 默认模块角色
+
+- `VideoLibrary Module Agent`
+- `StaticImageLibrary Module Agent`
+- `OnlineLibrary Module Agent`
+- `SteamWorkshop Module Agent`
+
+### 扩展 Agent
+
+这些角色不默认进入主执行链路，但在任务类型明确匹配时必须可发现、可引入：
+
+- [macos26-ui-designer/AGENTS.md](/Users/songziqiang/Documents/Development/MyWallpaperX/docs/agents/macos26-ui-designer/AGENTS.md)
+- [steam-web-compat-auditor/AGENTS.md](/Users/songziqiang/Documents/Development/MyWallpaperX/docs/agents/steam-web-compat-auditor/AGENTS.md)
+- [web-development-expert-agent/AGENTS.md](/Users/songziqiang/Documents/Development/MyWallpaperX/docs/agents/web-development-expert-agent/AGENTS.md)
+- [functional-logic-check-agent/AGENTS.md](/Users/songziqiang/Documents/Development/MyWallpaperX/docs/agents/functional-logic-check-agent/AGENTS.md)
+- [code-health-split-agent/AGENTS.md](/Users/songziqiang/Documents/Development/MyWallpaperX/docs/agents/code-health-split-agent/AGENTS.md)
+- [redundancy-cleanup-agent/AGENTS.md](/Users/songziqiang/Documents/Development/MyWallpaperX/docs/agents/redundancy-cleanup-agent/AGENTS.md)
+- [status-menu-monitor-agent/AGENTS.md](/Users/songziqiang/Documents/Development/MyWallpaperX/docs/agents/status-menu-monitor-agent/AGENTS.md)
+- [data-source-script-agent/AGENTS.md](/Users/songziqiang/Documents/Development/MyWallpaperX/docs/agents/data-source-script-agent/AGENTS.md)
+
 ---
 
 ## 3. 先看哪份文档
@@ -56,7 +85,7 @@
 
 看：
 
-- [AGENTS.md](/Users/songziqiang/Documents/Development/MyWallpaperX/docs/agents/AGENTS.md)
+- [Architect/AGENTS.md](/Users/songziqiang/Documents/Development/MyWallpaperX/docs/agents/Architect/AGENTS.md)
 
 这是当前实际使用中的 `Architect` 身份文件。
 
@@ -122,13 +151,13 @@
 
 看：
 
-- [task-dispatch-templates.md](/Users/songziqiang/Documents/Development/MyWallpaperX/docs/agents/task-dispatch-templates.md)
+- [Architect/task-dispatch-templates.md](/Users/songziqiang/Documents/Development/MyWallpaperX/docs/agents/Architect/task-dispatch-templates.md)
 
 ### 如果你要做审查或自查
 
 看：
 
-- [review-checklists.md](/Users/songziqiang/Documents/Development/MyWallpaperX/docs/agents/review-checklists.md)
+- [Architect/review-checklists.md](/Users/songziqiang/Documents/Development/MyWallpaperX/docs/agents/Architect/review-checklists.md)
 
 ### 如果你想知道团队成员之间怎么协作、何时转交、何时上报
 
@@ -188,13 +217,14 @@
 如果是第一次接触这套体系，建议按这个顺序看：
 
 1. [../../AGENTS.md](/Users/songziqiang/Documents/Development/MyWallpaperX/AGENTS.md)
-2. [AGENTS.md](/Users/songziqiang/Documents/Development/MyWallpaperX/docs/agents/AGENTS.md)
-3. [task-dispatch-templates.md](/Users/songziqiang/Documents/Development/MyWallpaperX/docs/agents/task-dispatch-templates.md)
-4. [review-checklists.md](/Users/songziqiang/Documents/Development/MyWallpaperX/docs/agents/review-checklists.md)
+2. [Architect/AGENTS.md](/Users/songziqiang/Documents/Development/MyWallpaperX/docs/agents/Architect/AGENTS.md)
+3. [Architect/task-dispatch-templates.md](/Users/songziqiang/Documents/Development/MyWallpaperX/docs/agents/Architect/task-dispatch-templates.md)
+4. [Architect/review-checklists.md](/Users/songziqiang/Documents/Development/MyWallpaperX/docs/agents/Architect/review-checklists.md)
 5. [collaboration-protocol.md](/Users/songziqiang/Documents/Development/MyWallpaperX/docs/agents/collaboration-protocol.md)
 6. [integrator/AGENTS.md](/Users/songziqiang/Documents/Development/MyWallpaperX/docs/agents/integrator/AGENTS.md)
 7. [verifier/AGENTS.md](/Users/songziqiang/Documents/Development/MyWallpaperX/docs/agents/verifier/AGENTS.md)
-8. 再进入你需要的具体角色文件
+8. [../web-docs-index.md](/Users/songziqiang/Documents/Development/MyWallpaperX/docs/web-docs-index.md)
+9. 再进入你需要的具体角色文件
 
 ---
 

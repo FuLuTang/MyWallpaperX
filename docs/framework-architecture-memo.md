@@ -1,6 +1,6 @@
 # MyWallpaperX 框架架构备忘
 
-> 最后更新：2026-04-04
+> 最后更新：2026-05-05
 > 基准 Git 分支：`dev`
 
 本备忘录作为后续构建唯一参考。如有不合理之处可与用户讨论后修正。
@@ -196,7 +196,7 @@ final class XxxCollectionView: NSCollectionView, GridCollectionViewProtocol {
 
 ⚠️ **特例**（已更新）：OnlineLibrary（Pixabay 在线库）已于 2026-03-31 从纯 SwiftUI `LazyVGrid` 迁移到 AppKit `NSCollectionView`（`AppKitOLBrowserGridView` / `AppKitOLBrowserContainerView`），并已接入 `ModuleFocusable`。当前 Pixabay 在线库浏览页与已下载项页面均通过容器视图监听 `moduleDidBecomeActive` 自动接管焦点。`BoxSelectionState` 和框选功能在线库暂不需要，不视为违规。
 
-⚠️ **Steam 模块当前状态**（2026-04-05）：`SteamWorkshop` 已完成路由、侧边栏、工具栏、菜单、Inspector 与焦点协议接入。浏览页为原生 AppKit 网格，详情通过统一 `InspectorHost` 展示；登录与下载仍围绕 App 内置 `SteamCMDRuntime.bundle` 中的 `steamcmd.sh`。下载成品统一落地到 `~/Movies/MyWallpaperX/创意工坊`，下载页扫描该目录并保留关键元数据。当前 Steam 浏览页的公共能力以搜索、缩放和浏览上下文工具栏控件为主；Steam 下载页的真实公共能力包括：搜索、缩放、进入/退出多选、全选、删除、信息 toggle、查看文件（在访达中显示当前单选项）。QuickLook 仍未接入。更细的 Steam 工具栏形态与数据源说明见后文 §六、§十。
+⚠️ **Steam 模块当前状态**（2026-05-05）：`SteamWorkshop` 已完成路由、侧边栏、工具栏、菜单、Inspector 与焦点协议接入。浏览页为原生 AppKit 网格，详情通过统一 `InspectorHost` 展示；登录与下载仍围绕 App 内置 `SteamCMDRuntime.bundle` 中的 `steamcmd.sh`。下载成品统一落地到 `~/Movies/MyWallpaperX/创意工坊`，下载页扫描该目录并保留关键元数据。当前 Steam 浏览页的公共能力以搜索、缩放和浏览上下文工具栏控件为主；Steam 下载页的真实公共能力包括：搜索、缩放、进入/退出多选、全选、删除、信息 toggle、查看文件（在访达中显示当前单选项）、QuickLook。Steam 当前同时维护两条真实播放主链：本地视频通过 `.steamWorkshopVideoReadyToPlay` 中转到视频库，HTML 网页壁纸通过 `.steamWorkshopWebWallpaperReadyToPlay` 中转到当前 Web 壁纸宿主。更细的 Steam 工具栏形态与数据源说明见后文 §六、§十。
 
 ### 3.6 模块焦点管理（AppKit 模块必须实现）
 
@@ -218,7 +218,7 @@ final class XxxGridContainerView: NSView, ModuleFocusable {
 - 视频库：`QuickLookPreviewController.shared`，Space/ESC 由 `MainWindowController.handleQuickLookKeyDown` 处理
 - 图片库：`SILQuickLookController.shared` + `SILKeyboardHandler.shared`，`activeModule == .staticImageLibrary` 时接管
 - Pixabay 在线库：浏览页**不接入 QuickLook**；已下载项页面通过 `OLDownloadsQuickLookController` 接入本地预览
-- Steam：**当前不接入 QuickLook**（下载骨架阶段无稳定本地视频索引）
+- Steam：浏览页**不接入 QuickLook**；下载页通过 `SteamWorkshopDownloadsQuickLookController` 接入本地预览
 
 `beginPreviewPanelControl` / `endPreviewPanelControl` 根据 `activeModule` 挂载对应控制器。
 
@@ -387,6 +387,7 @@ final class XxxGridContainerView: NSView, ModuleFocusable {
 |--------|--------|--------|----------|------|
 | `onlineVideoReadyToPlay` | OnlineLibraryService | MainWindowCoordinator | `["localURL": URL]` | Pixabay 在线库视频下载完成后，由视频库静默导入并播放 |
 | `steamWorkshopVideoReadyToPlay` | SteamWorkshopService | MainWindowCoordinator | `["localURL": URL]` | Steam 下载页选中本地视频后，由视频库静默导入并播放 |
+| `steamWorkshopWebWallpaperReadyToPlay` | SteamWorkshopService | MainWindowCoordinator | `["recordID": String, "entryURL": URL, "rootURL": URL, "propertiesJSON": String?]` | Steam 下载页选中 HTML 网页壁纸后，由当前 Web 壁纸宿主接管播放 |
 
 **模块内部通知（OnlineLibrary，不外漏到 Shell/Shared）：**
 

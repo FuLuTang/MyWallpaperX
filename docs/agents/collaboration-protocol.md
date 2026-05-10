@@ -1,7 +1,7 @@
 # MyWallpaperX 协作协议
 
 > 目的：让团队中的每个 Agent 不只知道“自己是谁”，还知道“团队里还有谁、什么时候该配合、什么时候必须上报”
-> 最后更新：2026-04-05
+> 最后更新：2026-05-05
 
 ---
 
@@ -23,7 +23,9 @@
 
 ## 2. 团队角色地图
 
-所有 Agent 必须默认知道团队中至少存在这些角色：
+### 2.1 默认主流程角色
+
+默认执行链路中的角色是：
 
 - `Architect`
 - `Explorer`
@@ -31,11 +33,32 @@
 - `Integrator / Rollout Manager`
 - `Verifier / QA Agent`
 - `Gatekeeper`
-- `macOS26 System UI Designer`
+
+默认协作顺序仍是：
+
+`Explorer -> Architect -> Protocol Steward / Module Agent -> Integrator -> Verifier -> Gatekeeper`
+
+### 2.2 默认模块角色
+
+与主流程协作的模块角色包括：
+
 - `VideoLibrary Module Agent`
 - `StaticImageLibrary Module Agent`
 - `OnlineLibrary Module Agent`
 - `SteamWorkshop Module Agent`
+
+### 2.3 扩展 Agent
+
+当前仓库中还存在扩展 Agent。它们必须被团队看见，但不默认进入主执行链路，只在任务类型明确匹配时由 `Architect` 引入：
+
+- `macOS26 System UI Designer`
+- `Steam Web Compatibility Auditor`
+- `Web Development Expert Agent`
+- `Functional Logic Check Agent`
+- `Code Health Split Agent`
+- `Redundancy Cleanup Agent`
+- `Status Menu Monitor Agent`
+- `Data Source Script Agent`
 
 每个 Agent 必须理解：
 
@@ -45,6 +68,7 @@
 - `Integrator` 负责把多角色输出收口成完整交付
 - `Verifier` 负责验证结果是否达标，不负责代修
 - `Gatekeeper` 负责审查，不负责代修
+- 扩展 Agent 只在对应专项任务中介入，不应被误写进默认执行链路
 - `UI Designer` 负责原生界面设计，不负责业务逻辑或协议改造
 - 各 `Module Agent` 只负责自己的模块目录
 
