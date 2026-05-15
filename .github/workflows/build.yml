@@ -122,14 +122,25 @@ jobs:
         run: |
           APP_PATH="$DERIVED_DATA_PATH/Build/Products/$CONFIGURATION/$APP_NAME.app"
 
-          if [ -x "$APP_PATH/Contents/Helpers/${APP_NAME}WallpaperDaemon" ]; then
+          while IFS= read -r -d '' file_path; do
+            if file "$file_path" | grep -q 'Mach-O'; then
+              codesign \
+                --force \
+                --timestamp \
+                --options runtime \
+                --sign "$DEVELOPER_ID_APPLICATION" \
+                "$file_path"
+            fi
+          done < <(find "$APP_PATH" -type f -print0)
+
+          while IFS= read -r bundle_path; do
             codesign \
               --force \
               --timestamp \
               --options runtime \
               --sign "$DEVELOPER_ID_APPLICATION" \
-              "$APP_PATH/Contents/Helpers/${APP_NAME}WallpaperDaemon"
-          fi
+              "$bundle_path"
+          done < <(find "$APP_PATH" -mindepth 1 -type d \( -name '*.app' -o -name '*.framework' -o -name '*.bundle' \) | awk '{ print length, $0 }' | sort -rn | cut -d' ' -f2-)
 
           codesign \
             --force \
@@ -153,12 +164,26 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           ZIP_PATH="$DIST_DIR/$PACKAGE_NAME.zip"
+          SUBMISSION_JSON="$RUNNER_TEMP/notary-submit.json"
 
           xcrun notarytool submit "$ZIP_PATH" \
             --apple-id "$APPLE_ID" \
             --password "$APPLE_APP_SPECIFIC_PASSWORD" \
             --team-id "$APPLE_TEAM_ID" \
-            --wait
+            --wait \
+            --output-format json | tee "$SUBMISSION_JSON"
+
+          SUBMISSION_ID="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' "$SUBMISSION_JSON")"
+          SUBMISSION_STATUS="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["status"])' "$SUBMISSION_JSON")"
+
+          if [ "$SUBMISSION_STATUS" != "Accepted" ]; then
+            echo "::error::Notarization failed with status: $SUBMISSION_STATUS"
+            xcrun notarytool log "$SUBMISSION_ID" \
+              --apple-id "$APPLE_ID" \
+              --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+              --team-id "$APPLE_TEAM_ID" || true
+            exit 1
+          fi
 
       - name: Staple notarization ticket
         run: |
