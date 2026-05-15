@@ -23,9 +23,6 @@ jobs:
       CONFIGURATION: Release
       DERIVED_DATA_PATH: build/DerivedData
       DIST_DIR: dist
-      BASE_MAJOR_VERSION: "1"
-      BASE_MINOR_VERSION: "5"
-      BASE_PATCH_VERSION: "0"
 
     steps:
       - name: Checkout
@@ -36,14 +33,7 @@ jobs:
       - name: Resolve build version
         run: |
           SHORT_SHA="${GITHUB_SHA::7}"
-          VERSION_OFFSET="${GITHUB_RUN_NUMBER}"
-          PATCH_TOTAL=$((BASE_PATCH_VERSION + VERSION_OFFSET))
-          MINOR_TOTAL=$((BASE_MINOR_VERSION + PATCH_TOTAL / 10))
-          MAJOR_TOTAL=$((BASE_MAJOR_VERSION + MINOR_TOTAL / 10))
-          MINOR_VERSION=$((MINOR_TOTAL % 10))
-          PATCH_VERSION=$((PATCH_TOTAL % 10))
-          MARKETING_VERSION="${MAJOR_TOTAL}.${MINOR_VERSION}.${PATCH_VERSION}"
-          BUILD_VERSION="${GITHUB_RUN_NUMBER}"
+          source <("$GITHUB_WORKSPACE/script/resolve_version.sh")
           PACKAGE_NAME="${APP_NAME}-${MARKETING_VERSION}-${SHORT_SHA}"
 
           {
@@ -101,7 +91,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG_NAME="build-${GITHUB_RUN_NUMBER}"
+          TAG_NAME="build-${MARKETING_VERSION}"
           RELEASE_TITLE="${APP_NAME} ${MARKETING_VERSION}"
 
           git config user.name "github-actions[bot]"
