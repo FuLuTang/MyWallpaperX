@@ -304,12 +304,6 @@ jobs:
           TAG_NAME="build-${MARKETING_VERSION}"
           RELEASE_TITLE="${APP_NAME} ${MARKETING_VERSION}"
 
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          git tag -f "$TAG_NAME"
-          git push -f origin "$TAG_NAME"
-
           if gh release view "$TAG_NAME" >/dev/null 2>&1; then
             gh release upload "$TAG_NAME" "$DIST_DIR/$PACKAGE_NAME.dmg" --clobber
             gh release edit "$TAG_NAME" \
@@ -321,7 +315,8 @@ jobs:
               "$DIST_DIR/$PACKAGE_NAME.dmg" \
               --title "$RELEASE_TITLE" \
               --notes-file "$DIST_DIR/release-notes.md" \
-              --prerelease
+              --prerelease \
+              --target "$GITHUB_SHA"
           fi
 
       - name: Clean up signing keychain
