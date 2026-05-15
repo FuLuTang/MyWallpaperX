@@ -1,0 +1,125 @@
+name: Build MyWallpaperX
+
+on:
+  push:
+    branches:
+      - "**"
+    tags-ignore:
+      - "**"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build macOS app
+    runs-on: macos-latest
+
+    env:
+      APP_NAME: MyWallpaperX
+      PROJECT_PATH: MyWallpaperX.xcodeproj
+      SCHEME: MyWallpaperX
+      CONFIGURATION: Release
+      DERIVED_DATA_PATH: build/DerivedData
+      DIST_DIR: dist
+      BASE_MAJOR_VERSION: "1"
+      BASE_MINOR_VERSION: "5"
+      BASE_PATCH_VERSION: "0"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve build version
+        run: |
+          SHORT_SHA="${GITHUB_SHA::7}"
+          VERSION_OFFSET="${GITHUB_RUN_NUMBER}"
+          PATCH_TOTAL=$((BASE_PATCH_VERSION + VERSION_OFFSET))
+          MINOR_TOTAL=$((BASE_MINOR_VERSION + PATCH_TOTAL / 10))
+          MAJOR_TOTAL=$((BASE_MAJOR_VERSION + MINOR_TOTAL / 10))
+          MINOR_VERSION=$((MINOR_TOTAL % 10))
+          PATCH_VERSION=$((PATCH_TOTAL % 10))
+          MARKETING_VERSION="${MAJOR_TOTAL}.${MINOR_VERSION}.${PATCH_VERSION}"
+          BUILD_VERSION="${GITHUB_RUN_NUMBER}"
+          PACKAGE_NAME="${APP_NAME}-${MARKETING_VERSION}-${SHORT_SHA}"
+
+          {
+            echo "MARKETING_VERSION=${MARKETING_VERSION}"
+            echo "BUILD_VERSION=${BUILD_VERSION}"
+            echo "PACKAGE_NAME=${PACKAGE_NAME}"
+          } >> "$GITHUB_ENV"
+
+          echo "Building ${APP_NAME} ${MARKETING_VERSION} (${BUILD_VERSION})"
+
+      - name: Build app
+        run: |
+          xcodebuild \
+            -project "$PROJECT_PATH" \
+            -scheme "$SCHEME" \
+            -configuration "$CONFIGURATION" \
+            -derivedDataPath "$DERIVED_DATA_PATH" \
+            MARKETING_VERSION="$MARKETING_VERSION" \
+            CURRENT_PROJECT_VERSION="$BUILD_VERSION" \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Package app
+        run: |
+          APP_PATH="$DERIVED_DATA_PATH/Build/Products/$CONFIGURATION/$APP_NAME.app"
+          mkdir -p "$DIST_DIR"
+          ditto -c -k --keepParent "$APP_PATH" "$DIST_DIR/$PACKAGE_NAME.zip"
+
+      - name: Upload build package
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.PACKAGE_NAME }}
+          path: ${{ env.DIST_DIR }}/*.zip
+          if-no-files-found: error
+
+      - name: Generate release notes
+        run: |
+          PREVIOUS_TAG="$(git tag --list 'build-*' --sort=-v:refname | head -n 1)"
+          NOTES_FILE="$DIST_DIR/release-notes.md"
+
+          {
+            echo "Automated build for ${GITHUB_SHA}."
+            echo
+            echo "Version: ${MARKETING_VERSION} (${BUILD_VERSION})"
+            echo
+            echo "Changes:"
+            if [ -n "$PREVIOUS_TAG" ]; then
+              git log "${PREVIOUS_TAG}..HEAD" --pretty='- %s (%h)'
+            else
+              git log --pretty='- %s (%h)' -n 20
+            fi
+          } > "$NOTES_FILE"
+
+      - name: Publish GitHub prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG_NAME="build-${GITHUB_RUN_NUMBER}"
+          RELEASE_TITLE="${APP_NAME} ${MARKETING_VERSION}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git tag -f "$TAG_NAME"
+          git push -f origin "$TAG_NAME"
+
+          if gh release view "$TAG_NAME" >/dev/null 2>&1; then
+            gh release upload "$TAG_NAME" "$DIST_DIR/$PACKAGE_NAME.zip" --clobber
+            gh release edit "$TAG_NAME" \
+              --title "$RELEASE_TITLE" \
+              --notes-file "$DIST_DIR/release-notes.md" \
+              --prerelease
+          else
+            gh release create "$TAG_NAME" \
+              "$DIST_DIR/$PACKAGE_NAME.zip" \
+              --title "$RELEASE_TITLE" \
+              --notes-file "$DIST_DIR/release-notes.md" \
+              --prerelease
+          fi
