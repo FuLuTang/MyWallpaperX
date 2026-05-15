@@ -209,15 +209,74 @@ jobs:
           xcrun stapler staple "$APP_PATH"
           xcrun stapler validate "$APP_PATH"
 
-          rm -f "$DIST_DIR/$PACKAGE_NAME.zip"
-          ditto -c -k --keepParent "$APP_PATH" "$DIST_DIR/$PACKAGE_NAME.zip"
           spctl --assess --type execute --verbose=4 "$APP_PATH"
+
+      - name: Create signed DMG
+        env:
+          DEVELOPER_ID_APPLICATION: ${{ secrets.DEVELOPER_ID_APPLICATION }}
+        run: |
+          APP_PATH="$DERIVED_DATA_PATH/Build/Products/$CONFIGURATION/$APP_NAME.app"
+          DMG_ROOT="$RUNNER_TEMP/dmg-root"
+          DMG_PATH="$DIST_DIR/$PACKAGE_NAME.dmg"
+
+          rm -rf "$DMG_ROOT" "$DMG_PATH"
+          mkdir -p "$DMG_ROOT"
+          cp -R "$APP_PATH" "$DMG_ROOT/"
+          ln -s /Applications "$DMG_ROOT/Applications"
+
+          hdiutil create \
+            -volname "$APP_NAME" \
+            -srcfolder "$DMG_ROOT" \
+            -ov \
+            -format UDZO \
+            "$DMG_PATH"
+
+          codesign \
+            --force \
+            --timestamp \
+            --sign "$DEVELOPER_ID_APPLICATION" \
+            "$DMG_PATH"
+
+      - name: Notarize DMG
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          DMG_PATH="$DIST_DIR/$PACKAGE_NAME.dmg"
+          SUBMISSION_JSON="$RUNNER_TEMP/notary-dmg-submit.json"
+
+          xcrun notarytool submit "$DMG_PATH" \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
+            --wait \
+            --output-format json | tee "$SUBMISSION_JSON"
+
+          SUBMISSION_ID="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' "$SUBMISSION_JSON")"
+          SUBMISSION_STATUS="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["status"])' "$SUBMISSION_JSON")"
+
+          if [ "$SUBMISSION_STATUS" != "Accepted" ]; then
+            echo "::error::DMG notarization failed with status: $SUBMISSION_STATUS"
+            xcrun notarytool log "$SUBMISSION_ID" \
+              --apple-id "$APPLE_ID" \
+              --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+              --team-id "$APPLE_TEAM_ID" || true
+            exit 1
+          fi
+
+      - name: Staple DMG
+        run: |
+          DMG_PATH="$DIST_DIR/$PACKAGE_NAME.dmg"
+
+          xcrun stapler staple "$DMG_PATH"
+          xcrun stapler validate "$DMG_PATH"
 
       - name: Upload build package
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.PACKAGE_NAME }}
-          path: ${{ env.DIST_DIR }}/*.zip
+          path: ${{ env.DIST_DIR }}/*.dmg
           if-no-files-found: error
 
       - name: Generate release notes
@@ -252,14 +311,14 @@ jobs:
           git push -f origin "$TAG_NAME"
 
           if gh release view "$TAG_NAME" >/dev/null 2>&1; then
-            gh release upload "$TAG_NAME" "$DIST_DIR/$PACKAGE_NAME.zip" --clobber
+            gh release upload "$TAG_NAME" "$DIST_DIR/$PACKAGE_NAME.dmg" --clobber
             gh release edit "$TAG_NAME" \
               --title "$RELEASE_TITLE" \
               --notes-file "$DIST_DIR/release-notes.md" \
               --prerelease
           else
             gh release create "$TAG_NAME" \
-              "$DIST_DIR/$PACKAGE_NAME.zip" \
+              "$DIST_DIR/$PACKAGE_NAME.dmg" \
               --title "$RELEASE_TITLE" \
               --notes-file "$DIST_DIR/release-notes.md" \
               --prerelease
