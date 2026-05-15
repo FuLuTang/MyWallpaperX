@@ -122,21 +122,21 @@ jobs:
         run: |
           APP_PATH="$DERIVED_DATA_PATH/Build/Products/$CONFIGURATION/$APP_NAME.app"
 
-          while IFS= read -r -d '' file_path; do
-            if file "$file_path" | grep -q 'Mach-O'; then
-              codesign \
-                --force \
-                --timestamp \
-                --options runtime \
-                --sign "$DEVELOPER_ID_APPLICATION" \
-                "$file_path"
-            fi
-          done < <(find "$APP_PATH" -type f -print0)
+          HELPER_PATH="$APP_PATH/Contents/Helpers/${APP_NAME}WallpaperDaemon"
+          if [ -x "$HELPER_PATH" ]; then
+            codesign \
+              --force \
+              --timestamp \
+              --options runtime \
+              --sign "$DEVELOPER_ID_APPLICATION" \
+              "$HELPER_PATH"
+          fi
 
           while IFS= read -r bundle_path; do
             codesign \
               --force \
               --timestamp \
+              --deep \
               --options runtime \
               --sign "$DEVELOPER_ID_APPLICATION" \
               "$bundle_path"
@@ -145,6 +145,7 @@ jobs:
           codesign \
             --force \
             --timestamp \
+            --deep \
             --options runtime \
             --sign "$DEVELOPER_ID_APPLICATION" \
             "$APP_PATH"
