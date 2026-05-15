@@ -33,7 +33,7 @@ jobs:
       - name: Resolve build version
         run: |
           SHORT_SHA="${GITHUB_SHA::7}"
-          source <("$GITHUB_WORKSPACE/script/resolve_version.sh")
+          eval "$("$GITHUB_WORKSPACE/script/resolve_version.sh")"
           PACKAGE_NAME="${APP_NAME}-${MARKETING_VERSION}-${SHORT_SHA}"
 
           {
