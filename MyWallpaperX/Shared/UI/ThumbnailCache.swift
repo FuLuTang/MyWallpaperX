@@ -167,13 +167,13 @@ final class ThumbnailCache {
                 guard let self else { return }
                 guard let data = await loader(),
                       let image = NSImage(data: data) else {
-                    self.finish(key: key, image: nil)
+                    await self.finish(key: key, image: nil)
                     return
                 }
 
-                self.imageCache.setObject(image, forKey: cacheKey)
+                await self.imageCache.setObject(image, forKey: cacheKey)
                 try? data.write(to: diskURL, options: .atomic)
-                self.finish(key: key, image: image)
+                await self.finish(key: key, image: image)
             }
         }
     }
@@ -267,16 +267,16 @@ final class ThumbnailCache {
             Task { [weak self] in
                 guard let self else { return }
                 guard let data = await loader() else {
-                    self.finish(key: key, image: nil)
+                    await self.finish(key: key, image: nil)
                     return
                 }
 
                 let image = NSImage(data: data)
                 if let image {
-                    self.imageCache.setObject(image, forKey: cacheKey)
+                    await self.imageCache.setObject(image, forKey: cacheKey)
                 }
                 try? data.write(to: diskURL, options: .atomic)
-                self.finish(key: key, image: image)
+                await self.finish(key: key, image: image)
             }
         }
     }

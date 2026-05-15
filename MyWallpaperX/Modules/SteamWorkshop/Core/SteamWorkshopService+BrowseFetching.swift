@@ -349,7 +349,7 @@ extension SteamWorkshopService {
                 authorWorkshopURL: stub.authorWorkshopURL
             )
         }
-        let pageSize = context.isAuthorWorkshop ? Constants.authorWorkshopPageSize : Constants.browserPageSize
+        let pageSize = await context.isAuthorWorkshop ? Constants.authorWorkshopPageSize : Constants.browserPageSize
         let hasMore = browsePageHasMore(html: html, currentPage: page) || stubs.count >= pageSize
         if !stubs.isEmpty {
             return SteamWorkshopBrowseStubPage(stubs: stubs, hasMore: hasMore)

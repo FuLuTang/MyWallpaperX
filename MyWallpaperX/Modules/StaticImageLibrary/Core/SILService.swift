@@ -476,7 +476,7 @@ final class SILService: ObservableObject {
             }
         }
         let requestedCount = fileURLs.count
-        let existingPaths = Set(wallpapers.map(\.path))
+        _ = Set(wallpapers.map(\.path))
         var added = 0
         var duplicateCount = 0
         var missingCount = 0

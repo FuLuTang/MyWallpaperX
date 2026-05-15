@@ -256,7 +256,7 @@ final class SystemMonitor {
         // SMCKeyData 结构体（64 字节，与 AppleSMC kext 匹配）
         var inputStruct  = SMCKeyData()
         var outputStruct = SMCKeyData()
-        var inputSize    = MemoryLayout<SMCKeyData>.size
+        let inputSize    = MemoryLayout<SMCKeyData>.size
         var outputSize   = MemoryLayout<SMCKeyData>.size
 
         // 先查询键信息（selector 9 = kSMCGetKeyInfo）

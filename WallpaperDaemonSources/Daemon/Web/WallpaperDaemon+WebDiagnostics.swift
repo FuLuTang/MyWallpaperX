@@ -37,7 +37,7 @@ extension WallpaperDaemon {
         let configuration = WKSnapshotConfiguration()
         configuration.rect = webView.bounds
         webView.takeSnapshot(with: configuration) { [weak self] image, error in
-            guard let self else { return }
+            guard self != nil else { return }
             if let error {
                 daemonLog("webSnapshot[\(reason)] failed \(error.localizedDescription)")
                 return

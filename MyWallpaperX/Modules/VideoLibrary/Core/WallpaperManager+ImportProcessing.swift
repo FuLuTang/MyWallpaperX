@@ -145,7 +145,7 @@ extension WallpaperManager {
             Task {
                 var metadataUpdates: [(path: String, size: Int64, duration: Int?, resolution: String?)] = []
                 for url in normalizedURLs {
-                    guard self.pathExists(url.path) else { continue }
+                    guard await self.pathExists(url.path) else { continue }
                     let asset = AVURLAsset(url: url)
                     let durationSec = (try? await asset.load(.duration))?.seconds
                     let duration = durationSec.map { Int($0.rounded()) }

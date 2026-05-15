@@ -341,7 +341,7 @@ private struct OLThumbnailView: View {
             }
             await MainActor.run { isLoading = true; hasFailed = false }
             guard let data = await OLThumbnailRequestCoordinator.shared.loadData(from: url, priority: .visible),
-                  let img = await Task.detached(priority: .utility) { NSImage(data: data) }.value else {
+                  let img = await Task.detached(priority: .utility, operation: { NSImage(data: data) }).value else {
                 await MainActor.run {
                     isLoading = false
                     retryCount += 1

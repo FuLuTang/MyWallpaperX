@@ -304,7 +304,7 @@ final class AppKitOLDownloadsItem: NSCollectionViewItem {
 
         let id = entry.id
         let url = entry.localURL
-        weak var item = self
+        weak let item = self
         thumbnailTask = Task.detached(priority: .utility) {
             let image = await Self.generateThumbnail(from: url)
             guard !Task.isCancelled else { return }

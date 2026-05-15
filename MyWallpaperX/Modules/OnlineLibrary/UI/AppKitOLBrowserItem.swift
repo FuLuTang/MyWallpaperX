@@ -355,7 +355,7 @@ final class AppKitOLBrowserItem: NSCollectionViewItem {
             }
             guard !Task.isCancelled else { return }
             guard let data = await OLThumbnailRequestCoordinator.shared.loadData(from: url, priority: .visible),
-                  let img = await Task.detached(priority: .utility) { NSImage(data: data) }.value else {
+                  let img = await Task.detached(priority: .utility, operation: { NSImage(data: data) }).value else {
                 await MainActor.run {
                     guard let self, self.currentItemID == id else { return }
                     self.spinner.stopAnimation(nil)
