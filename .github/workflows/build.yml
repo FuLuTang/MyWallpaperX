@@ -14,7 +14,7 @@ permissions:
 jobs:
   build:
     name: Build macOS app
-    runs-on: macos-latest
+    runs-on: macos-26
 
     env:
       APP_NAME: MyWallpaperX
@@ -43,6 +43,11 @@ jobs:
           } >> "$GITHUB_ENV"
 
           echo "Building ${APP_NAME} ${MARKETING_VERSION} (${BUILD_VERSION})"
+
+      - name: Show Xcode environment
+        run: |
+          xcodebuild -version
+          xcodebuild -showsdks
 
       - name: Build app
         run: |
