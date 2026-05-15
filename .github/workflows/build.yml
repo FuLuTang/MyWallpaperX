@@ -23,6 +23,7 @@ jobs:
       CONFIGURATION: Release
       DERIVED_DATA_PATH: build/DerivedData
       DIST_DIR: dist
+      KEYCHAIN_PATH: build/signing.keychain-db
 
     steps:
       - name: Checkout
@@ -49,6 +50,60 @@ jobs:
           xcodebuild -version
           xcodebuild -showsdks
 
+      - name: Validate release signing secrets
+        env:
+          BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
+          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+          DEVELOPER_ID_APPLICATION: ${{ secrets.DEVELOPER_ID_APPLICATION }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          missing=0
+          for name in \
+            BUILD_CERTIFICATE_BASE64 \
+            P12_PASSWORD \
+            KEYCHAIN_PASSWORD \
+            DEVELOPER_ID_APPLICATION \
+            APPLE_ID \
+            APPLE_APP_SPECIFIC_PASSWORD \
+            APPLE_TEAM_ID
+          do
+            if [ -z "${!name}" ]; then
+              echo "::error::Missing GitHub secret: ${name}"
+              missing=1
+            fi
+          done
+          exit "$missing"
+
+      - name: Import Developer ID certificate
+        env:
+          BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
+          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          CERTIFICATE_PATH="$RUNNER_TEMP/developer-id.p12"
+
+          mkdir -p "$(dirname "$KEYCHAIN_PATH")"
+          echo "$BUILD_CERTIFICATE_BASE64" | base64 --decode > "$CERTIFICATE_PATH"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERTIFICATE_PATH" \
+            -P "$P12_PASSWORD" \
+            -A \
+            -t cert \
+            -f pkcs12 \
+            -k "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH" login.keychain-db
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: \
+            -s \
+            -k "$KEYCHAIN_PASSWORD" \
+            "$KEYCHAIN_PATH"
+
       - name: Build app
         run: |
           xcodebuild \
@@ -61,11 +116,60 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             build
 
+      - name: Sign app
+        env:
+          DEVELOPER_ID_APPLICATION: ${{ secrets.DEVELOPER_ID_APPLICATION }}
+        run: |
+          APP_PATH="$DERIVED_DATA_PATH/Build/Products/$CONFIGURATION/$APP_NAME.app"
+
+          if [ -x "$APP_PATH/Contents/Helpers/${APP_NAME}WallpaperDaemon" ]; then
+            codesign \
+              --force \
+              --timestamp \
+              --options runtime \
+              --sign "$DEVELOPER_ID_APPLICATION" \
+              "$APP_PATH/Contents/Helpers/${APP_NAME}WallpaperDaemon"
+          fi
+
+          codesign \
+            --force \
+            --timestamp \
+            --options runtime \
+            --sign "$DEVELOPER_ID_APPLICATION" \
+            "$APP_PATH"
+
+          codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+
       - name: Package app
         run: |
           APP_PATH="$DERIVED_DATA_PATH/Build/Products/$CONFIGURATION/$APP_NAME.app"
           mkdir -p "$DIST_DIR"
           ditto -c -k --keepParent "$APP_PATH" "$DIST_DIR/$PACKAGE_NAME.zip"
+
+      - name: Notarize app package
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          ZIP_PATH="$DIST_DIR/$PACKAGE_NAME.zip"
+
+          xcrun notarytool submit "$ZIP_PATH" \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
+            --wait
+
+      - name: Staple notarization ticket
+        run: |
+          APP_PATH="$DERIVED_DATA_PATH/Build/Products/$CONFIGURATION/$APP_NAME.app"
+
+          xcrun stapler staple "$APP_PATH"
+          xcrun stapler validate "$APP_PATH"
+
+          rm -f "$DIST_DIR/$PACKAGE_NAME.zip"
+          ditto -c -k --keepParent "$APP_PATH" "$DIST_DIR/$PACKAGE_NAME.zip"
+          spctl --assess --type execute --verbose=4 "$APP_PATH"
 
       - name: Upload build package
         uses: actions/upload-artifact@v4
@@ -118,3 +222,8 @@ jobs:
               --notes-file "$DIST_DIR/release-notes.md" \
               --prerelease
           fi
+
+      - name: Clean up signing keychain
+        if: always()
+        run: |
+          security delete-keychain "$KEYCHAIN_PATH" >/dev/null 2>&1 || true
