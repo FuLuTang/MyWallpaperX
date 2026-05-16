@@ -486,7 +486,7 @@ final class AppKitSteamWorkshopBrowserItem: NSCollectionViewItem {
         case .setAsWallpaper:
             symbolName = "play.fill"
             tintColor = .white
-            accessibilityLabel = "播放：\(itemTitle)"
+            accessibilityLabel = "设为壁纸：\(itemTitle)"
         case .retry:
             symbolName = "square.and.arrow.down"
             tintColor = .white

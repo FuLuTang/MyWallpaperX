@@ -282,11 +282,20 @@ extension SteamWorkshopService {
 
     func resolveContentType(
         project: SteamWorkshopProject?,
+        directory: URL?,
         videoURL: URL?,
         htmlURL: URL?,
         dependencyItemID: String?,
         browserItem: SteamWorkshopBrowserItem?
     ) -> SteamWorkshopDownloadContentType {
+        if let sceneContentType = resolveSceneContentType(
+            project: project,
+            directory: directory,
+            browserItem: browserItem
+        ) {
+            return sceneContentType
+        }
+
         let normalizedProjectType = project?.type?
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .localizedLowercase
@@ -308,7 +317,6 @@ extension SteamWorkshopService {
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .localizedCaseInsensitiveCompare("Web") == .orderedSame
             || (browserItem?.tags.contains(where: { $0.localizedCaseInsensitiveCompare("Web") == .orderedSame }) ?? false)
-
         if normalizedProjectType == "web" {
             return .web
         }
@@ -536,12 +544,18 @@ extension SteamWorkshopService {
         let browserItem = metadata?.item ?? browserItemForDownload(id: identifier)
         let contentType = resolveContentType(
             project: resolvedProject,
+            directory: resolvedLegacyDirectory,
             videoURL: effectiveVideoURL,
             htmlURL: entryHTMLURL,
             dependencyItemID: dependencyItemID,
             browserItem: browserItem
         )
-        guard metadata != nil || effectiveVideoURL != nil || entryHTMLURL != nil || dependencyItemID != nil else {
+        let scenePkgURL: URL? = {
+            guard let resolvedLegacyDirectory else { return nil }
+            let candidate = resolvedLegacyDirectory.appendingPathComponent("scene.pkg")
+            return FileManager.default.fileExists(atPath: candidate.path) ? candidate : nil
+        }()
+        guard metadata != nil || effectiveVideoURL != nil || entryHTMLURL != nil || dependencyItemID != nil || scenePkgURL != nil else {
             return nil
         }
 

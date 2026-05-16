@@ -7,16 +7,9 @@ import AppKit
 
 // 集中管理主窗口、Dock 图标和前台激活策略，避免窗口生命周期逻辑散落到多个入口。
 enum MainWindowCoordinator {
-    private enum ActiveWallpaperRuntime {
-        case none
-        case video
-        case web
-    }
-
     private static var mainWindowController: MainWindowController?
     private static var wallpaperManager: WallpaperManager = .shared
     private static var isSteamDownloadsMode = false
-    private static var activeWallpaperRuntime: ActiveWallpaperRuntime = .none
     private static var observerTokens: [NSObjectProtocol] = []
 
     // MARK: - 当前激活模块
@@ -418,6 +411,8 @@ enum MainWindowCoordinator {
         observeOnlineVideoReadyToPlay()
         observeSteamWorkshopVideoReadyToPlay()
         observeSteamWorkshopWebWallpaperReadyToPlay()
+        observeSteamWorkshopSceneReadyToRender()
+        observeStaticImageWallpaperReadyToApply()
         observeSteamWorkshopModeChanges()
     }
 
@@ -447,7 +442,6 @@ enum MainWindowCoordinator {
             queue: .main
         ) { notification in
             guard let localURL = notification.userInfo?["localURL"] as? URL else { return }
-            activeWallpaperRuntime = .video
             wallpaperManager.processImportedVideos(
                 from: [localURL],
                 presentingIn: nil,
@@ -471,9 +465,9 @@ enum MainWindowCoordinator {
             let recordID = notification.userInfo?["recordID"] as? String
             DispatchQueue.main.async {
                 wallpaperManager.clearCurrentWallpaperReference()
+                wallpaperManager.activeWallpaperRuntime = .web
                 wallpaperManager.isPlaying = false
                 wallpaperManager.stopAutoSwitchTimer()
-                activeWallpaperRuntime = .web
                 WallpaperEngine.shared.setWebWallpaper(
                     entryURL: entryURL,
                     rootURL: rootURL,
@@ -481,6 +475,64 @@ enum MainWindowCoordinator {
                     recordID: recordID
                 )
             }
+        }
+        observerTokens.append(observer)
+    }
+
+    /// 监听 Steam Scene 壁纸渲染请求，创建 desktop-level Scene 宿主窗口。
+    /// Scene 链路和 Web/Video 保持独立，切换通过通知中转，不直接跨模块调用。
+    private static func observeSteamWorkshopSceneReadyToRender() {
+        let observer = NotificationCenter.default.addObserver(
+            forName: .steamWorkshopSceneReadyToRender,
+            object: nil,
+            queue: .main
+        ) { notification in
+            guard let rootURL = notification.userInfo?["rootURL"] as? URL,
+                  let cacheDirectory = notification.userInfo?["cacheDirectory"] as? URL else { return }
+
+            // Interpretation file lives in the sample directory (rootURL);
+            // unpacked textures/materials/shaders live in cacheDirectory.
+            let interpretationFileURL = rootURL.appendingPathComponent(SceneInterpretationFile.fileName)
+            guard let file = try? SceneInterpretationFileReader().read(from: interpretationFileURL) else { return }
+
+            let logURL = rootURL.appendingPathComponent(".mywallpaperx-scene-preview-log.txt")
+            guard SceneDesktopWallpaperHost.shared.launch(
+                renderDescriptor: file.renderDescriptor,
+                cacheDirectory: cacheDirectory,
+                logURL: logURL
+            ) else { return }
+
+            postWallpaperRuntimeWillSwitch(to: .scene)
+            wallpaperManager.clearCurrentWallpaperReference()
+            wallpaperManager.activeWallpaperRuntime = .scene
+            wallpaperManager.isPlaying = true
+            wallpaperManager.stopAutoSwitchTimer()
+            WallpaperEngine.shared.stopPlayback()
+        }
+        observerTokens.append(observer)
+    }
+
+    /// 监听图片库发出的「设为壁纸」请求，统一执行系统壁纸应用和动态 runtime 收尾。
+    private static func observeStaticImageWallpaperReadyToApply() {
+        let observer = NotificationCenter.default.addObserver(
+            forName: .staticImageWallpaperReadyToApply,
+            object: nil,
+            queue: .main
+        ) { notification in
+            guard let imageURL = notification.userInfo?["imageURL"] as? URL else { return }
+            guard FileManager.default.fileExists(atPath: imageURL.path) else { return }
+
+            let workspace = NSWorkspace.shared
+            for screen in NSScreen.screens {
+                try? workspace.setDesktopImageURL(imageURL, for: screen, options: [:])
+            }
+
+            postWallpaperRuntimeWillSwitch(to: .systemStill)
+            wallpaperManager.clearCurrentWallpaperReference()
+            wallpaperManager.activeWallpaperRuntime = .systemStill
+            wallpaperManager.isPlaying = false
+            wallpaperManager.stopAutoSwitchTimer()
+            WallpaperEngine.shared.stopPlayback()
         }
         observerTokens.append(observer)
     }

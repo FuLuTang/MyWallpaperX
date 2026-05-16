@@ -15,6 +15,8 @@ extension SteamWorkshopService {
                 return record.contentType == .video
             case .web:
                 return record.contentType == .web
+            case .scene:
+                return record.contentType == .scene
             case .missingDependency:
                 if case .missing = record.dependencyStatus {
                     return true

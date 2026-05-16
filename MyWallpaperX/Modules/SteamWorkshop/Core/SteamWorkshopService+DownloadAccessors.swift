@@ -45,6 +45,10 @@ extension SteamWorkshopService {
         downloads.filter { $0.contentType == .web }.count
     }
 
+    var visibleSceneDownloadsCount: Int {
+        downloads.filter { $0.contentType == .scene }.count
+    }
+
     var visibleMissingDependencyDownloadsCount: Int {
         downloads.filter {
             if case .missing = $0.dependencyStatus {

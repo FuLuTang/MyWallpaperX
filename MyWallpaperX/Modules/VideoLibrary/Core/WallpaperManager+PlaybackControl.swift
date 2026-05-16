@@ -159,6 +159,7 @@ extension WallpaperManager {
     }
 
     func handlePlaybackFailure(forPath path: String) {
+        guard activeWallpaperRuntime == .video else { return }
         let normalizedFailedPath = normalizedPath(path)
         guard normalizedPath(currentWallpaper?.path ?? "") == normalizedFailedPath else {
             return
@@ -177,6 +178,7 @@ extension WallpaperManager {
     }
 
     func handlePlaybackEnded(forPath path: String) {
+        guard activeWallpaperRuntime == .video else { return }
         // 循环模式：引擎循环，永不触发此事件，直接忽略。
         guard isSwitchingPlaybackMode() else { return }
 

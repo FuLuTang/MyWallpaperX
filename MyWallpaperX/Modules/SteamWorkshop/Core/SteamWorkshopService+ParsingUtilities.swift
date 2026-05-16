@@ -114,7 +114,7 @@ extension SteamWorkshopService {
     }
 
     nonisolated static func isSystemWorkshopTag(_ tag: String) -> Bool {
-        if preferredTag(in: [tag], matching: ["Video", "Web"]) != nil {
+        if preferredTag(in: [tag], matching: SteamWorkshopBrowserContentMode.allCases.map(\.requiredTagValue)) != nil {
             return true
         }
         if preferredTag(in: [tag], matching: SteamWorkshopAgeRatingFilter.allCases.map(\.rawValue)) != nil {

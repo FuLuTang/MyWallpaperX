@@ -29,6 +29,7 @@ extension WallpaperManager {
 
         // 更新当前壁纸
         currentWallpaper = wallpaper
+        activeWallpaperRuntime = .video
         NotificationCenter.default.post(
             name: .onlineDownloadsPlaybackPathDidChange,
             object: nil,
@@ -44,6 +45,7 @@ extension WallpaperManager {
         }
 
         // 实际播放逻辑：使用WallpaperEngine设置壁纸
+        postWallpaperRuntimeWillSwitch(to: .video)
         WallpaperEngine.shared.setWallpaper(
             wallpaper,
             multiDisplayEnabled: settings.multiDisplayEnabled,

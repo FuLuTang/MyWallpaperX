@@ -48,6 +48,11 @@ extension SteamWorkshopService {
             return
         }
 
+        if record.contentType == .scene {
+            requestSceneRender(record)
+            return
+        }
+
         if record.contentType == .web {
             guard let playbackContext = resolvedWebPlaybackContext(for: record) else {
                 downloadError = "没有找到可播放的 HTML 入口文件。"

@@ -71,7 +71,7 @@ extension SteamWorkshopDownloadRecord {
         return false
     }
 
-    var isPlayableOrLaunchable: Bool {
+    var isWebPlayableOrLaunchable: Bool {
         isPlayable
             || isStandaloneWebPlayable
             || (isDependencyBackedWeb && hasPlayableDependencyWebHost && webEntryURL != nil)

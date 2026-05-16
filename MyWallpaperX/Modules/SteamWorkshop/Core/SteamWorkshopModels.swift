@@ -20,6 +20,7 @@ enum SteamWorkshopDownloadsSortMode: String, CaseIterable, Equatable {
 enum SteamWorkshopDownloadContentType: String, CaseIterable, Equatable {
     case video
     case web
+    case scene
     case unknown
 
     var displayName: String {
@@ -28,6 +29,8 @@ enum SteamWorkshopDownloadContentType: String, CaseIterable, Equatable {
             return "视频壁纸"
         case .web:
             return "WEB壁纸"
+        case .scene:
+            return "Scene壁纸"
         case .unknown:
             return "未知类型"
         }
@@ -38,6 +41,7 @@ enum SteamWorkshopDownloadsDisplayMode: String, CaseIterable, Equatable {
     case all
     case video
     case web
+    case scene
     case missingDependency
 
     var title: String {
@@ -48,6 +52,8 @@ enum SteamWorkshopDownloadsDisplayMode: String, CaseIterable, Equatable {
             return "视频壁纸"
         case .web:
             return "WEB壁纸"
+        case .scene:
+            return "Scene壁纸"
         case .missingDependency:
             return "缺少依赖"
         }
@@ -61,6 +67,8 @@ enum SteamWorkshopDownloadsDisplayMode: String, CaseIterable, Equatable {
             return "当前 workshop 目录里还没有已下载的视频项目"
         case .web:
             return "当前 workshop 目录里还没有已下载的WEB壁纸项目"
+        case .scene:
+            return "当前 workshop 目录里还没有已下载的Scene项目"
         case .missingDependency:
             return "当前没有缺少依赖的已下载项目"
         }

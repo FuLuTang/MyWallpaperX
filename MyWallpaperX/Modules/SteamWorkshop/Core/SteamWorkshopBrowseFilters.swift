@@ -3,6 +3,7 @@ import Foundation
 enum SteamWorkshopBrowserContentMode: String, CaseIterable, Identifiable {
     case video
     case web
+    case scene
 
     nonisolated var id: String { rawValue }
 
@@ -10,6 +11,7 @@ enum SteamWorkshopBrowserContentMode: String, CaseIterable, Identifiable {
         switch self {
         case .video: return "视频壁纸"
         case .web: return "WEB壁纸"
+        case .scene: return "场景壁纸"
         }
     }
 
@@ -17,6 +19,7 @@ enum SteamWorkshopBrowserContentMode: String, CaseIterable, Identifiable {
         switch self {
         case .video: return "视频"
         case .web: return "WEB"
+        case .scene: return "场景"
         }
     }
 
@@ -24,6 +27,7 @@ enum SteamWorkshopBrowserContentMode: String, CaseIterable, Identifiable {
         switch self {
         case .video: return "Video"
         case .web: return "Web"
+        case .scene: return "Scene"
         }
     }
 
@@ -31,6 +35,7 @@ enum SteamWorkshopBrowserContentMode: String, CaseIterable, Identifiable {
         switch self {
         case .video: return "搜索 Steam 视频"
         case .web: return "搜索 Steam WEB壁纸"
+        case .scene: return "搜索 Steam 场景壁纸"
         }
     }
 }

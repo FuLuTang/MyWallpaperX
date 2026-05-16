@@ -53,6 +53,7 @@ extension WallpaperManager {
 
         // 加载播放状态
         loadPlaybackState()
+        loadActiveWallpaperRuntime()
     }
 
     func loadTags() {
@@ -210,6 +211,7 @@ extension WallpaperManager {
     }
 
     func restorePlaybackState() {
+        guard activeWallpaperRuntime == .video else { return }
         // 恢复播放状态只负责恢复当前播放项，不重新编排最近使用或标签状态。
         if let currentWallpaper = currentWallpaper {
             // 启动恢复只恢复播放，不重排最近使用列表，避免额外写盘和列表抖动。
@@ -339,6 +341,17 @@ extension WallpaperManager {
         defaults.set(isPlaying, forKey: playbackStateKey)
     }
 
+    func loadActiveWallpaperRuntime() {
+        guard let savedRuntime: ActiveWallpaperRuntime = loadCodableValue(forKey: activeWallpaperRuntimeKey) else {
+            return
+        }
+        activeWallpaperRuntime = savedRuntime
+    }
+
+    func saveActiveWallpaperRuntime() {
+        saveCodableValue(activeWallpaperRuntime, forKey: activeWallpaperRuntimeKey)
+    }
+
     func loadFromRecentWallpapers() {
         // 当前壁纸丢失时，从最近使用里按可恢复快照兜底。
         // 从最近播放列表中找第一个可用的壁纸
@@ -367,6 +380,7 @@ extension WallpaperManager {
         saveWallpapers()
         saveRecentWallpapers()
         savePlaybackState()
+        saveActiveWallpaperRuntime()
         persistCurrentWallpaperSnapshot()
     }
 
