@@ -213,6 +213,7 @@ final class InspectorHostViewController: NSViewController {
     private let store: InspectorHostStore
     private let cardView = InspectorHostCardView()
     private var cardWidthConstraint: NSLayoutConstraint?
+    private var cardHeightConstraint: NSLayoutConstraint?
 
     init(store: InspectorHostStore) {
         self.store = store
@@ -243,15 +244,20 @@ final class InspectorHostViewController: NSViewController {
             equalToConstant: InspectorHostRequest.defaultPreferredWidth
         )
         cardWidthConstraint = widthConstraint
+        let safeArea = view.safeAreaLayoutGuide
+        let heightConstraint = cardView.heightAnchor.constraint(equalTo: safeArea.heightAnchor, constant: -36)
+        heightConstraint.priority = .defaultHigh
+        cardHeightConstraint = heightConstraint
 
-        let centerYConstraint = cardView.centerYAnchor.constraint(equalTo: view.centerYAnchor)
+        let centerYConstraint = cardView.centerYAnchor.constraint(equalTo: safeArea.centerYAnchor)
         centerYConstraint.priority = .defaultHigh
 
         NSLayoutConstraint.activate([
-            cardView.topAnchor.constraint(greaterThanOrEqualTo: view.topAnchor),
+            cardView.topAnchor.constraint(greaterThanOrEqualTo: safeArea.topAnchor),
             cardView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -18),
-            cardView.bottomAnchor.constraint(lessThanOrEqualTo: view.bottomAnchor, constant: -18),
+            cardView.bottomAnchor.constraint(lessThanOrEqualTo: safeArea.bottomAnchor, constant: -18),
             centerYConstraint,
+            heightConstraint,
             widthConstraint
         ])
 
@@ -267,6 +273,7 @@ final class InspectorHostViewController: NSViewController {
         }
 
         cardWidthConstraint?.constant = request.preferredWidth
+        cardHeightConstraint?.constant = -36
         cardView.isHidden = false
         cardView.configure(request: request, hostedContentView: store.hostedContentView)
     }
