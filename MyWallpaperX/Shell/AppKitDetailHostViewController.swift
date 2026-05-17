@@ -165,7 +165,7 @@ final class AppKitDetailHostViewController: NSViewController {
         case .steamWorkshop:
             return NSHostingController(rootView: SteamWorkshopEntryView())
         case .steamDownloads:
-            return NSHostingController(rootView: SteamWorkshopDownloadsView())
+            return StaticViewController(contentView: AppKitSteamWorkshopDownloadsView())
         case .staticImageLibrary:
             let container = makeSILGridContainer(silTag: nil)
             return StaticViewController(contentView: container)
