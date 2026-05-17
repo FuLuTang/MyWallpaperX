@@ -224,6 +224,8 @@ extension SteamWorkshopToolbarController {
             title = "视频 \(service.visibleVideoDownloadsCount)"
         case .web:
             title = "HTML \(service.visibleWebDownloadsCount)"
+        case .scene:
+            title = "Scene \(service.visibleSceneDownloadsCount)"
         case .missingDependency:
             title = "缺依赖 \(service.visibleMissingDependencyDownloadsCount)"
         }

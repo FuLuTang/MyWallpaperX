@@ -38,8 +38,8 @@ Packages/
 MyWallpaperX.xcodeproj/project.xcworkspace/xcuserdata/songziqiang.xcuserdatad/UserInterfaceState.xcuserstate
 .build-cache/
 
-# Local Codex workspace state
+# Local tool/runtime artifacts
 .codex/
-
-# Runtime logs
+.cursor/skills/
+docs/agents/data-source-script-agent/outputs/
 MyWallpaperX/Resources/SteamCMDRuntime.bundle/Steam/logs/

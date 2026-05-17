@@ -661,7 +661,7 @@ extension SteamWorkshopService {
         let descriptionText = normalizeText(detail.description ?? "")
         let summaryText = stub.summary?.trimmingCharacters(in: .whitespacesAndNewlines)
         let summary = summaryText?.isEmpty == false ? summaryText! : descriptionText
-        let workshopType = preferredTag(in: tags, matching: ["Video", "Web"])
+        let workshopType = preferredTag(in: tags, matching: SteamWorkshopBrowserContentMode.allCases.map(\.requiredTagValue))
         let ageRating = preferredTag(in: tags, matching: SteamWorkshopAgeRatingFilter.allCases.map(\.rawValue))
         let category = preferredTag(in: tags, matching: SteamWorkshopCategoryFilter.allCases.dropFirst().map(\.rawValue))
         let resolution = tags.first(where: isResolutionTag)

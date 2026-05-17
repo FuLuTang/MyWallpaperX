@@ -36,6 +36,14 @@ struct SteamWorkshopItemDetailSheet: View {
         return latestDownloadRecord
     }
 
+    private var sceneDownloadRecord: SteamWorkshopDownloadRecord? {
+        guard let latestDownloadRecord,
+              latestDownloadRecord.contentType == .scene else {
+            return nil
+        }
+        return latestDownloadRecord
+    }
+
 
     private var webProjectDescriptor: ResolvedWebProjectDescriptor? {
         guard let webDownloadRecord else { return nil }
@@ -46,6 +54,11 @@ struct SteamWorkshopItemDetailSheet: View {
         guard isWebDiagnosticsExpanded,
               let webDownloadRecord else { return nil }
         return service.webValidationReport(for: webDownloadRecord)
+    }
+
+    private var sceneDiagnosticsReport: SceneDiagnosticsReport? {
+        guard let sceneDownloadRecord else { return nil }
+        return service.sceneDiagnosticsReport(for: sceneDownloadRecord)
     }
 
     private var isRefreshingDetail: Bool {
@@ -140,6 +153,7 @@ struct SteamWorkshopItemDetailSheet: View {
                     contentSection
                     webPropertiesSection
                     webDiagnosticsSection
+                    sceneDiagnosticsSection
                     noticeSection
                 }
                 .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -297,6 +311,13 @@ struct SteamWorkshopItemDetailSheet: View {
                 )
             }
 
+            if let record = sceneDownloadRecord {
+                SteamWorkshopInlineNotice(
+                    icon: "square.stack.3d.up",
+                    text: service.sceneDiagnosticsSummary(for: record)
+                )
+            }
+
             if !currentItem.dependencyIDs.isEmpty {
                 SteamWorkshopInlineNotice(
                     icon: "link.badge.plus",
@@ -364,9 +385,17 @@ struct SteamWorkshopItemDetailSheet: View {
         }
     }
 
+    @ViewBuilder
+    private var sceneDiagnosticsSection: some View {
+        if let record = sceneDownloadRecord,
+           let report = sceneDiagnosticsReport {
+            SteamWorkshopSceneDetailSection(record: record, report: report)
+        }
+    }
+
     private var footerActions: some View {
         HStack(spacing: 6) {
-            detailPrimaryActionButton(downloadRecord: downloadRecord)
+            detailPrimaryActionButton(downloadRecord: latestDownloadRecord ?? downloadRecord)
                 .frame(maxWidth: .infinity)
 
             footerTextButton(
@@ -406,8 +435,14 @@ struct SteamWorkshopItemDetailSheet: View {
                 service.cancelDownload(itemID: item.id)
             }
         } else if let downloadRecord {
-            footerTextButton(symbolName: "photo.fill", title: "设为壁纸", kind: .primary) {
-                service.setAsWallpaper(downloadRecord)
+            if downloadRecord.contentType == .scene {
+                footerTextButton(symbolName: "play.circle.fill", title: "设为壁纸", kind: .primary) {
+                    service.setAsWallpaper(downloadRecord)
+                }
+            } else {
+                footerTextButton(symbolName: "photo.fill", title: "设为壁纸", kind: .primary) {
+                    service.setAsWallpaper(downloadRecord)
+                }
             }
         } else if let latestDownloadRecord,
                   latestDownloadRecord.contentType == .web,
@@ -420,9 +455,10 @@ struct SteamWorkshopItemDetailSheet: View {
                 service.setAsWallpaper(latestDownloadRecord)
             }
         } else {
+            let isSceneItem = currentItem.workshopTypeText?.localizedCaseInsensitiveCompare("Scene") == .orderedSame
             footerTextButton(
                 symbolName: latestDownloadFailure != nil ? "arrow.clockwise.circle.fill" : "arrow.down.circle.fill",
-                title: latestDownloadFailure != nil ? "重新下载" : "下载视频",
+                title: latestDownloadFailure != nil ? "重新下载" : (isSceneItem ? "下载 Scene" : "下载视频"),
                 kind: .primary,
                 disabled: !service.canRequestDownload(id: item.id)
             ) {

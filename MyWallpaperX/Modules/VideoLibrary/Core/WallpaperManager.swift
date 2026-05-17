@@ -10,6 +10,13 @@ import Foundation
 import Combine
 
 class WallpaperManager: ObservableObject {
+    enum ActiveWallpaperRuntime: String, Codable {
+        case video
+        case web
+        case scene
+        case systemStill
+    }
+
     static let recentWallpapersLimit: Int = 25
     static let defaultTags: [String] = ["自然景观", "科技未来", "游戏CG", "卡通动漫"]
     struct EnginePauseSettingsSnapshot: Equatable {
@@ -74,6 +81,7 @@ class WallpaperManager: ObservableObject {
     @Published var currentWallpaper: VideoWallpaper? = nil
     @Published var recentlyUsedWallpapers: [VideoWallpaper] = []
     @Published var isPlaying: Bool = true
+    @Published var activeWallpaperRuntime: ActiveWallpaperRuntime = .video
     
     // 标签管理
     @Published var tags: [String] = WallpaperManager.defaultTags
@@ -143,6 +151,7 @@ class WallpaperManager: ObservableObject {
     let currentWallpaperKey = "CurrentWallpaper"
     let recentWallpapersKey = "RecentWallpapers"
     let playbackStateKey = "PlaybackState"
+    let activeWallpaperRuntimeKey = "ActiveWallpaperRuntime"
     let perSelectionSortStatesKey = "PerSelectionSortStates"
     
     // 用于存储 Combine 订阅
@@ -233,6 +242,13 @@ class WallpaperManager: ObservableObject {
         .dropFirst()
         .sink {[weak self] _ in
             self?.savePlaybackState()
+        }
+        .store(in: &cancellables)
+
+        $activeWallpaperRuntime
+        .dropFirst()
+        .sink { [weak self] _ in
+            self?.saveActiveWallpaperRuntime()
         }
         .store(in: &cancellables)
 

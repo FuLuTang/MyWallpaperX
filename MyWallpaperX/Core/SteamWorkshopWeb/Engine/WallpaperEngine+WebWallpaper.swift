@@ -7,6 +7,7 @@ import Foundation
 
 extension WallpaperEngine {
     public func setWebWallpaper(entryURL: URL, rootURL: URL, propertiesJSON: String?, recordID: String? = nil) {
+        postWallpaperRuntimeWillSwitch(to: .web)
         currentWebPropertiesJSON = propertiesJSON ?? "{}"
         currentWebRecordID = recordID
         launchWebWallpaper(

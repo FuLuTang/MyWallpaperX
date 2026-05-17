@@ -452,6 +452,16 @@ extension SILGridContainerView {
 
         menu.addItem(
             makeMenuItem(
+                title: "设为壁纸",
+                symbolName: "photo",
+                accessibilityDescription: "设为壁纸",
+                action: #selector(ctxSetAsWallpaper),
+                isEnabled: singleSelectionEnabled
+            )
+        )
+
+        menu.addItem(
+            makeMenuItem(
                 title: "快速预览",
                 symbolName: "eye",
                 accessibilityDescription: "快速预览",
@@ -521,6 +531,15 @@ extension SILGridContainerView {
             accessibilityDescription: accessibilityDescription
         )
         return item
+    }
+    @objc private func ctxSetAsWallpaper() {
+        guard let id = SILService.shared.singleEffectiveSelectedID,
+              let wallpaper = wallpapersByID[id] else { return }
+        NotificationCenter.default.post(
+            name: .staticImageWallpaperReadyToApply,
+            object: nil,
+            userInfo: ["imageURL": URL(fileURLWithPath: wallpaper.path)]
+        )
     }
     @objc private func ctxQuickLook() {
         guard let id = SILService.shared.singleEffectiveSelectedID, let w = wallpapersByID[id] else { return }

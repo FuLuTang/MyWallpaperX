@@ -43,6 +43,14 @@ extension SteamWorkshopService {
 
     func refreshSelectedDownloadInspectorDetailIfNeeded(forceRefresh: Bool) {
         guard let item = selectedDownloadInspectorItem else { return }
+        if selectedDownloadRecord?.contentType == .scene {
+            selectedItemDetailTask?.cancel()
+            selectedItemDetailTask = nil
+            isRefreshingSelectedDownloadDetailItem = false
+            selectedDownloadDetailError = nil
+            selectedDownloadDetailItem = selectedDownloadInspectorItem
+            return
+        }
         if !forceRefresh && !SteamWorkshopDetailRefreshSupport.needsRefresh(item) {
             return
         }
