@@ -3,32 +3,8 @@
 //  MyWallpaperX
 //
 
-import SwiftUI
 import AppKit
 import Combine
-
-struct AppKitLibraryGridView: NSViewRepresentable {
-    let wallpapers: [VideoWallpaper]
-    var animatesReorder: Bool = false
-    /// 删除/导入时对可见区域内（≤35条变化）做原生 diffable 动画。
-    var animatesInsertDelete: Bool = false
-    @EnvironmentObject var wallpaperManager: WallpaperManager
-
-    func makeNSView(context: Context) -> AppKitLibraryGridContainerView {
-        // 网格容器负责所有 diffable data source 和交互状态，SwiftUI 只传入当前壁纸快照。
-        let container = AppKitLibraryGridContainerView(
-            wallpaperManager: wallpaperManager,
-            animatesReorder: animatesReorder,
-            animatesInsertDelete: animatesInsertDelete
-        )
-        container.update(wallpapers: wallpapers)
-        return container
-    }
-
-    func updateNSView(_ nsView: AppKitLibraryGridContainerView, context: Context) {
-        nsView.update(wallpapers: wallpapers)
-    }
-}
 
 final class AppKitLibraryGridContainerView: NSView, ModuleFocusable {
     private enum Section {

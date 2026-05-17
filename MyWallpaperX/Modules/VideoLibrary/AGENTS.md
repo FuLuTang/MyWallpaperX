@@ -6,7 +6,7 @@
 ## 当前模块事实
 - `WallpaperManager` 是视频库核心服务，也是 Shell 当前唯一直接依赖的模块对象
 - 视频库是当前唯一允许真正发出壁纸播放 / 切换指令的模块
-- 对外入口是 `UI/VideoLibraryEntryView.swift`
+- 视频库列表当前由 Shell 的 `AppKitDetailHostViewController` 直接承载 `UI/AppKitLibraryGridView.swift` 中的 `AppKitLibraryGridContainerView`
 - 在线库与 Steam 的“设为壁纸”最终都通过通知中转到这里，对应 `ImportContext.onlinePlayback` 与 `ImportContext.steamPlayback`
 - 视频库详情当前已通过统一 `InspectorHost` 接入，模块内负责提供 `VideoLibraryInspectorView`
 

@@ -3,53 +3,49 @@
 //  MyWallpaperX
 //
 
-import SwiftUI
 import AppKit
+import Combine
 
-struct VideoLibraryInspectorView: View {
-    let wallpaper: VideoWallpaper
+final class VideoLibraryInspectorView: NSView {
+    private let wallpaperID: String
+    private let initialWallpaper: VideoWallpaper
+    private let wallpaperManager: WallpaperManager
+    private var details: WallpaperInspectorDetails?
+    private var loadingTask: Task<Void, Never>?
+    private var loadedDetailsPath: String?
+    private var contentStack: NSStackView?
+    private weak var favoriteButton: NSButton?
+    private var cancellables = Set<AnyCancellable>()
 
-    @EnvironmentObject private var wallpaperManager: WallpaperManager
-    @State private var details: WallpaperInspectorDetails?
-    @State private var loadingTask: Task<Void, Never>?
-    private let previewHeight: CGFloat = 156
-    private let topScrollFadeHeight: CGFloat = 12
-    private let bottomScrollFadeHeight: CGFloat = 20
+    private var currentWallpaper: VideoWallpaper {
+        wallpaperManager.wallpapers.first { $0.id == wallpaperID } ?? initialWallpaper
+    }
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            ScrollView(.vertical, showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 16) {
-                    previewSection
-                    contentSection
-                    tagsSection
-                    fileLocationSection
-                    noticeSection
-                }
-                .frame(maxWidth: .infinity, alignment: .topLeading)
-                .padding(.horizontal, 2)
-                .padding(.top, 10)
-            }
-            .mask {
-                VideoLibraryScrollFadeMask(
-                    topFadeHeight: topScrollFadeHeight,
-                    bottomFadeHeight: bottomScrollFadeHeight
-                )
-            }
-            footerActions
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .task(id: wallpaper.id) {
-            loadDetails()
-        }
-        .onDisappear {
+    init(wallpaper: VideoWallpaper, wallpaperManager: WallpaperManager) {
+        self.wallpaperID = wallpaper.id
+        self.initialWallpaper = wallpaper
+        self.wallpaperManager = wallpaperManager
+        super.init(frame: .zero)
+        setup()
+        observeManager()
+        loadDetails()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    deinit {
+        loadingTask?.cancel()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window == nil {
             loadingTask?.cancel()
             loadingTask = nil
         }
-    }
-
-    private var currentWallpaper: VideoWallpaper {
-        wallpaperManager.wallpapers.first(where: { $0.id == wallpaper.id }) ?? wallpaper
     }
 
     private var fileExists: Bool {
@@ -69,23 +65,6 @@ struct VideoLibraryInspectorView: View {
         return nil
     }
 
-    private var noticeItems: [(icon: String, text: String)] {
-        var items: [(icon: String, text: String)] = []
-        if !fileExists {
-            items.append((
-                icon: "exclamationmark.triangle.fill",
-                text: "源文件不存在，详情信息可能不是最新状态"
-            ))
-        }
-        if previewImage == nil {
-            items.append((
-                icon: "photo.on.rectangle.angled",
-                text: "当前未找到缩略图，正在使用占位预览"
-            ))
-        }
-        return items
-    }
-
     private var secondaryFactText: String? {
         guard let details else { return nil }
         return [details.fileSizeText, details.formatText, details.durationText]
@@ -100,371 +79,357 @@ struct VideoLibraryInspectorView: View {
             ("编解码器", details.codecText),
             ("分辨率", details.resolutionText),
             ("添加时间", details.addedDateText)
-        ]
-        .filter { !$0.1.isEmpty }
+        ].filter { !$0.1.isEmpty }
     }
 
-    private var previewSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Group {
-                if let previewImage {
-                    Image(nsImage: previewImage)
-                        .resizable()
-                        .scaledToFill()
+    private var noticeItems: [(icon: String, text: String)] {
+        var items: [(icon: String, text: String)] = []
+        if !fileExists {
+            items.append(("exclamationmark.triangle.fill", "源文件不存在，详情信息可能不是最新状态"))
+        }
+        if previewImage == nil {
+            items.append(("photo.on.rectangle.angled", "当前未找到缩略图，正在使用占位预览"))
+        }
+        return items
+    }
+
+    private func setup() {
+        translatesAutoresizingMaskIntoConstraints = false
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.clear.cgColor
+
+        let rootStack = NSStackView()
+        rootStack.orientation = .vertical
+        rootStack.alignment = .leading
+        rootStack.spacing = 12
+        rootStack.translatesAutoresizingMaskIntoConstraints = false
+
+        let scrollView = VideoLibraryInspectorFadingScrollView()
+        scrollView.drawsBackground = false
+        scrollView.hasVerticalScroller = false
+        scrollView.hasHorizontalScroller = false
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+
+        let contentStack = makeContentStack()
+        self.contentStack = contentStack
+        rebuildContent()
+        let documentContainer = NSView()
+        documentContainer.translatesAutoresizingMaskIntoConstraints = false
+        documentContainer.addSubview(contentStack)
+        scrollView.documentView = documentContainer
+
+        let footerActions = makeFooterActions()
+
+        addSubview(rootStack)
+        rootStack.addArrangedSubview(scrollView)
+        rootStack.addArrangedSubview(footerActions)
+
+        NSLayoutConstraint.activate([
+            rootStack.leadingAnchor.constraint(equalTo: leadingAnchor),
+            rootStack.trailingAnchor.constraint(equalTo: trailingAnchor),
+            rootStack.topAnchor.constraint(equalTo: topAnchor),
+            rootStack.bottomAnchor.constraint(equalTo: bottomAnchor),
+            scrollView.widthAnchor.constraint(equalTo: rootStack.widthAnchor),
+            documentContainer.widthAnchor.constraint(equalTo: scrollView.contentView.widthAnchor),
+            documentContainer.heightAnchor.constraint(greaterThanOrEqualTo: scrollView.contentView.heightAnchor),
+            contentStack.leadingAnchor.constraint(equalTo: documentContainer.leadingAnchor),
+            contentStack.trailingAnchor.constraint(equalTo: documentContainer.trailingAnchor),
+            contentStack.centerYAnchor.constraint(equalTo: documentContainer.centerYAnchor),
+            contentStack.topAnchor.constraint(greaterThanOrEqualTo: documentContainer.topAnchor),
+            contentStack.bottomAnchor.constraint(lessThanOrEqualTo: documentContainer.bottomAnchor),
+            footerActions.widthAnchor.constraint(equalTo: rootStack.widthAnchor)
+        ])
+    }
+
+    private func observeManager() {
+        wallpaperManager.$wallpapers
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self else { return }
+                if self.loadedDetailsPath != nil,
+                   self.loadedDetailsPath != self.currentWallpaper.path {
+                    self.loadDetails()
                 } else {
-                    ZStack {
-                        LinearGradient(
-                            colors: [
-                                Color(nsColor: .windowBackgroundColor),
-                                Color(nsColor: .controlBackgroundColor)
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                        Image(systemName: "film")
-                            .font(.system(size: 28, weight: .medium))
-                            .foregroundStyle(.secondary)
-                    }
+                    self.rebuildContent()
+                    self.refreshFooterActions()
                 }
             }
-            .frame(maxWidth: .infinity)
-            .frame(height: previewHeight)
-            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(Color.white.opacity(0.09), lineWidth: 0.45)
-            }
-
-            Text(currentWallpaper.displayTitle)
-                .font(.system(size: 19, weight: .semibold))
-                .foregroundStyle(.primary)
-                .lineLimit(2)
-                .truncationMode(.tail)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-            if let secondaryFactText {
-                Text(secondaryFactText)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-                    .truncationMode(.tail)
-            }
-        }
+            .store(in: &cancellables)
     }
 
-    @ViewBuilder
-    private var contentSection: some View {
+    private func makeContentStack() -> NSStackView {
+        let stack = VideoLibraryInspectorViews.makeVerticalStack(spacing: 16)
+        stack.edgeInsets = NSEdgeInsets(top: 0, left: 2, bottom: 0, right: 2)
+        return stack
+    }
+
+    private func rebuildContent() {
+        guard let contentStack else { return }
+        contentStack.arrangedSubviews.forEach {
+            contentStack.removeArrangedSubview($0)
+            $0.removeFromSuperview()
+        }
+        addContentSection(makePreviewSection())
+        addContentSection(makeContentSection())
+        addContentSection(makeTagsSection())
         if details != nil {
-            VStack(alignment: .leading, spacing: 14) {
-                Divider()
-                    .overlay(Color.white.opacity(0.035))
-
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("原数据")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.secondary)
-
-                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 2), spacing: 12) {
-                        ForEach(Array(metadataFacts.enumerated()), id: \.offset) { _, fact in
-                            inspectorFact(label: fact.0, value: fact.1)
-                        }
-                    }
-                }
-            }
-            .padding(.horizontal, 2)
-        } else {
-            ProgressView("正在读取文件信息…")
-                .controlSize(.small)
+            addContentSection(makeFileLocationSection())
         }
-    }
-
-    private var tagsSection: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Divider()
-                .overlay(Color.white.opacity(0.035))
-
-            VStack(alignment: .leading, spacing: 6) {
-                Text("标签")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.secondary)
-
-                if currentWallpaper.tags.isEmpty {
-                    Text("当前未加入任何标签")
-                        .font(.system(size: 13))
-                        .foregroundStyle(.secondary)
-                } else {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 8) {
-                            ForEach(currentWallpaper.tags, id: \.self) { tag in
-                                tagBadge(tag)
-                            }
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-            }
-        }
-        .padding(.horizontal, 2)
-    }
-
-    @ViewBuilder
-    private var fileLocationSection: some View {
-        if let details {
-            VStack(alignment: .leading, spacing: 14) {
-                Divider()
-                    .overlay(Color.white.opacity(0.035))
-
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("文件位置")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.secondary)
-
-                    Text(details.pathText)
-                        .font(.system(size: 13))
-                        .foregroundStyle(.primary)
-                        .lineLimit(3)
-                        .truncationMode(.middle)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .textSelection(.enabled)
-                }
-            }
-            .padding(.horizontal, 2)
-        }
-    }
-
-    @ViewBuilder
-    private var noticeSection: some View {
         if !noticeItems.isEmpty {
-            VStack(alignment: .leading, spacing: 8) {
-                Divider()
-                    .overlay(Color.white.opacity(0.035))
-
-                ForEach(Array(noticeItems.enumerated()), id: \.offset) { _, item in
-                    VideoLibraryInlineNotice(
-                        icon: item.icon,
-                        text: item.text
-                    )
-                }
-            }
-            .padding(.horizontal, 2)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            addContentSection(makeNoticeSection())
         }
     }
 
-    private var footerActions: some View {
-        HStack(spacing: 6) {
-            Button {
-                wallpaperManager.markCardInteraction()
-                wallpaperManager.requestSetAsWallpaper(currentWallpaper)
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "photo.fill")
-                        .font(.system(size: 14, weight: .semibold))
-                    Text("设为壁纸")
-                        .lineLimit(1)
-                }
-                .frame(maxWidth: .infinity)
-                .frame(height: 38)
-            }
-            .frame(maxWidth: .infinity)
-            .buttonStyle(VideoLibraryFooterButtonStyle(kind: .primary))
+    private func addContentSection(_ section: NSView) {
+        guard let contentStack else { return }
+        contentStack.addArrangedSubview(section)
+        section.widthAnchor.constraint(equalTo: contentStack.widthAnchor).isActive = true
+    }
 
-            Button {
-                NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: currentWallpaper.path)])
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "folder.fill")
-                        .font(.system(size: 14, weight: .semibold))
-                    Text("查看文件")
-                        .lineLimit(1)
-                }
-                .frame(maxWidth: .infinity)
-                .frame(height: 38)
-            }
-            .frame(maxWidth: .infinity)
-            .buttonStyle(VideoLibraryFooterButtonStyle(kind: .secondary))
+    private func makePreviewSection() -> NSView {
+        let stack = VideoLibraryInspectorViews.makeVerticalStack(spacing: 8)
 
-            Button {
-                UIActionHelper.toggleFavoriteSelection(
-                    manager: wallpaperManager,
-                    selection: wallpaperManager.currentSelectionContext
-                )
-            } label: {
-                Image(systemName: currentWallpaper.isFavorite ? "heart.fill" : "heart")
-                    .frame(width: 18, height: 18)
-                    .frame(width: 46, height: 38)
-            }
-            .buttonStyle(VideoLibraryFooterButtonStyle(kind: .secondary))
-            .help(currentWallpaper.isFavorite ? "取消收藏" : "收藏")
-            .accessibilityLabel(currentWallpaper.isFavorite ? "取消收藏" : "收藏")
+        let preview = VideoLibraryInspectorPreviewSurfaceView(image: previewImage)
+        stack.addArrangedSubview(preview)
+        NSLayoutConstraint.activate([
+            preview.heightAnchor.constraint(equalToConstant: 156),
+            preview.widthAnchor.constraint(equalTo: stack.widthAnchor)
+        ])
 
-            Button {
-                UIActionHelper.presentTagPicker(
-                    manager: wallpaperManager,
-                    window: nil
-                ) {
-                }
-            } label: {
-                Image(systemName: "tag")
-                    .frame(width: 18, height: 18)
-                    .frame(width: 46, height: 38)
-            }
-            .buttonStyle(VideoLibraryFooterButtonStyle(kind: .secondary))
-            .help("添加标签")
-            .accessibilityLabel("添加标签")
+        let title = VideoLibraryInspectorViews.makeLabel(
+            currentWallpaper.displayTitle,
+            font: .systemFont(ofSize: 19, weight: .semibold),
+            color: .labelColor
+        )
+        title.maximumNumberOfLines = 2
+        title.lineBreakMode = .byTruncatingTail
+        stack.addArrangedSubview(title)
+
+        if let secondaryFactText {
+            let facts = VideoLibraryInspectorViews.makeLabel(
+                secondaryFactText,
+                font: .systemFont(ofSize: 11, weight: .medium),
+                color: .secondaryLabelColor
+            )
+            facts.maximumNumberOfLines = 2
+            stack.addArrangedSubview(facts)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 2)
+
+        return stack
+    }
+
+    private func makeContentSection() -> NSView {
+        if details == nil {
+            return VideoLibraryInspectorViews.makeLoadingView("正在读取文件信息…")
+        }
+
+        let stack = VideoLibraryInspectorViews.makeVerticalStack(spacing: 14)
+        stack.addArrangedSubview(VideoLibraryInspectorViews.makeDivider())
+        stack.addArrangedSubview(VideoLibraryInspectorViews.makeSectionTitle("原数据"))
+        stack.addArrangedSubview(VideoLibraryInspectorViews.makeFactsGrid(metadataFacts))
+        return stack
+    }
+
+    private func makeTagsSection() -> NSView {
+        let stack = VideoLibraryInspectorViews.makeVerticalStack(spacing: 14)
+        stack.addArrangedSubview(VideoLibraryInspectorViews.makeDivider())
+        stack.addArrangedSubview(VideoLibraryInspectorViews.makeSectionTitle("标签"))
+
+        if currentWallpaper.tags.isEmpty {
+            stack.addArrangedSubview(
+                VideoLibraryInspectorViews.makeLabel("当前未加入任何标签", font: .systemFont(ofSize: 13), color: .secondaryLabelColor)
+            )
+        } else {
+            let row = NSStackView()
+            row.orientation = .horizontal
+            row.alignment = .centerY
+            row.spacing = 8
+            row.translatesAutoresizingMaskIntoConstraints = false
+            currentWallpaper.tags.forEach { row.addArrangedSubview(VideoLibraryInspectorViews.makeBadge($0)) }
+            stack.addArrangedSubview(row)
+        }
+
+        return stack
+    }
+
+    private func makeFileLocationSection() -> NSView {
+        let stack = VideoLibraryInspectorViews.makeVerticalStack(spacing: 14)
+        stack.addArrangedSubview(VideoLibraryInspectorViews.makeDivider())
+        stack.addArrangedSubview(VideoLibraryInspectorViews.makeSectionTitle("文件位置"))
+
+        let path = VideoLibraryInspectorViews.makeLabel(
+            details?.pathText ?? currentWallpaper.path,
+            font: .systemFont(ofSize: 13),
+            color: .labelColor
+        )
+        path.maximumNumberOfLines = 3
+        path.lineBreakMode = .byTruncatingMiddle
+        path.allowsExpansionToolTips = true
+        path.isSelectable = true
+        stack.addArrangedSubview(path)
+
+        return stack
+    }
+
+    private func makeNoticeSection() -> NSView {
+        let stack = VideoLibraryInspectorViews.makeVerticalStack(spacing: 8)
+        stack.addArrangedSubview(VideoLibraryInspectorViews.makeDivider())
+        noticeItems.forEach { item in
+            stack.addArrangedSubview(VideoLibraryInspectorViews.makeNotice(icon: item.icon, text: item.text))
+        }
+        return stack
+    }
+
+    private func makeFooterActions() -> NSStackView {
+        let stack = NSStackView()
+        stack.orientation = .horizontal
+        stack.alignment = .centerY
+        stack.spacing = 6
+        stack.edgeInsets = NSEdgeInsets(top: 0, left: 2, bottom: 0, right: 2)
+        stack.distribution = .fill
+        stack.translatesAutoresizingMaskIntoConstraints = false
+
+        let setButton = VideoLibraryInspectorViews.makeFooterButton(
+            title: "设为壁纸",
+            symbolName: "photo.fill",
+            target: self,
+            action: #selector(setAsWallpaper),
+            kind: .primary
+        )
+        let revealButton = VideoLibraryInspectorViews.makeFooterButton(
+            title: "查看文件",
+            symbolName: "folder.fill",
+            target: self,
+            action: #selector(revealInFinder)
+        )
+        let favoriteButton = VideoLibraryInspectorViews.makeIconButton(
+            symbolName: currentWallpaper.isFavorite ? "heart.fill" : "heart",
+            title: currentWallpaper.isFavorite ? "取消收藏" : "收藏",
+            target: self,
+            action: #selector(toggleFavorite)
+        )
+        self.favoriteButton = favoriteButton
+        let tagButton = VideoLibraryInspectorViews.makeIconButton(
+            symbolName: "tag",
+            title: "添加标签",
+            target: self,
+            action: #selector(presentTagPicker)
+        )
+
+        let textGroup = NSView()
+        textGroup.translatesAutoresizingMaskIntoConstraints = false
+        textGroup.addSubview(setButton)
+        textGroup.addSubview(revealButton)
+
+        let iconGroup = NSView()
+        iconGroup.translatesAutoresizingMaskIntoConstraints = false
+        iconGroup.addSubview(favoriteButton)
+        iconGroup.addSubview(tagButton)
+
+        stack.addArrangedSubview(textGroup)
+        stack.addArrangedSubview(iconGroup)
+
+        [setButton, revealButton].forEach {
+            $0.setContentHuggingPriority(.defaultLow, for: .horizontal)
+            $0.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        }
+        [favoriteButton, tagButton].forEach {
+            $0.setContentHuggingPriority(.required, for: .horizontal)
+            $0.setContentCompressionResistancePriority(.required, for: .horizontal)
+        }
+        [setButton, revealButton, favoriteButton, tagButton].forEach {
+            $0.heightAnchor.constraint(equalToConstant: 38).isActive = true
+        }
+        [favoriteButton, tagButton].forEach {
+            $0.widthAnchor.constraint(equalToConstant: 46).isActive = true
+        }
+
+        NSLayoutConstraint.activate([
+            textGroup.leadingAnchor.constraint(equalTo: stack.leadingAnchor),
+            textGroup.topAnchor.constraint(equalTo: stack.topAnchor),
+            textGroup.bottomAnchor.constraint(equalTo: stack.bottomAnchor),
+
+            setButton.leadingAnchor.constraint(equalTo: textGroup.leadingAnchor),
+            setButton.topAnchor.constraint(equalTo: textGroup.topAnchor),
+            setButton.bottomAnchor.constraint(equalTo: textGroup.bottomAnchor),
+
+            revealButton.leadingAnchor.constraint(equalTo: setButton.trailingAnchor, constant: 6),
+            revealButton.trailingAnchor.constraint(equalTo: textGroup.trailingAnchor),
+            revealButton.topAnchor.constraint(equalTo: textGroup.topAnchor),
+            revealButton.bottomAnchor.constraint(equalTo: textGroup.bottomAnchor),
+            setButton.widthAnchor.constraint(equalTo: revealButton.widthAnchor),
+
+            iconGroup.leadingAnchor.constraint(equalTo: textGroup.trailingAnchor, constant: 6),
+            iconGroup.trailingAnchor.constraint(equalTo: stack.trailingAnchor),
+            iconGroup.topAnchor.constraint(equalTo: stack.topAnchor),
+            iconGroup.bottomAnchor.constraint(equalTo: stack.bottomAnchor),
+
+            favoriteButton.leadingAnchor.constraint(equalTo: iconGroup.leadingAnchor),
+            favoriteButton.topAnchor.constraint(equalTo: iconGroup.topAnchor),
+            favoriteButton.bottomAnchor.constraint(equalTo: iconGroup.bottomAnchor),
+
+            tagButton.leadingAnchor.constraint(equalTo: favoriteButton.trailingAnchor, constant: 6),
+            tagButton.trailingAnchor.constraint(equalTo: iconGroup.trailingAnchor),
+            tagButton.topAnchor.constraint(equalTo: iconGroup.topAnchor),
+            tagButton.bottomAnchor.constraint(equalTo: iconGroup.bottomAnchor)
+        ])
+
+        return stack
+    }
+
+    private func refreshFooterActions() {
+        let title = currentWallpaper.isFavorite ? "取消收藏" : "收藏"
+        favoriteButton?.image = NSImage(
+            systemSymbolName: currentWallpaper.isFavorite ? "heart.fill" : "heart",
+            accessibilityDescription: title
+        )
+        favoriteButton?.toolTip = title
+        favoriteButton?.setAccessibilityLabel(title)
     }
 
     private func loadDetails() {
         loadingTask?.cancel()
         details = nil
-        loadingTask = loadWallpaperInspectorDetails(for: currentWallpaper) { loadedDetails in
-            details = loadedDetails
+        loadedDetailsPath = nil
+        rebuildContent()
+        let wallpaper = currentWallpaper
+        loadedDetailsPath = wallpaper.path
+        loadingTask = loadWallpaperInspectorDetails(for: wallpaper) { [weak self] loadedDetails in
+            self?.details = loadedDetails
+            self?.rebuildContent()
         }
     }
 
-    private func inspectorFact(
-        label: String,
-        value: String
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(label)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(.secondary)
-            Text(value)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(.primary)
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
-                .textSelection(.enabled)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
+    @objc private func setAsWallpaper() {
+        wallpaperManager.markCardInteraction()
+        wallpaperManager.requestSetAsWallpaper(currentWallpaper)
     }
 
-    private func tagBadge(_ tag: String) -> some View {
-        Text(tag)
-            .font(.system(size: 11, weight: .semibold))
-            .foregroundStyle(.primary)
-            .lineLimit(1)
-            .truncationMode(.tail)
-            .frame(maxWidth: 180, alignment: .leading)
-            .padding(.horizontal, 15)
-            .padding(.vertical, 7)
-            .background(
-                Capsule(style: .continuous)
-                    .fill(Color.black.opacity(0.12))
-            )
-            .overlay {
-                Capsule(style: .continuous)
-                    .stroke(Color.white.opacity(0.12), lineWidth: 0.6)
-            }
+    @objc private func revealInFinder() {
+        NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: currentWallpaper.path)])
     }
-}
 
-private struct VideoLibraryInlineNotice: View {
-    let icon: String
-    let text: String
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: icon)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(.secondary)
-            Text(text)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .frame(maxWidth: .infinity, alignment: .center)
+    @objc private func toggleFavorite() {
+        UIActionHelper.toggleFavoriteSelection(
+            manager: wallpaperManager,
+            selection: wallpaperManager.currentSelectionContext
+        )
+        rebuildContent()
+        refreshFooterActions()
     }
-}
 
-private struct VideoLibraryScrollFadeMask: View {
-    let topFadeHeight: CGFloat
-    let bottomFadeHeight: CGFloat
-
-    var body: some View {
-        GeometryReader { proxy in
-            let height = max(proxy.size.height, topFadeHeight + bottomFadeHeight + 1)
-            let topFadeRatio = min(max(topFadeHeight / height, 0.01), 0.18)
-            let bottomFadeRatio = min(max(bottomFadeHeight / height, 0.01), 0.24)
-
-            LinearGradient(
-                stops: [
-                    .init(color: .clear, location: 0),
-                    .init(color: .black, location: topFadeRatio),
-                    .init(color: .black, location: 1 - bottomFadeRatio),
-                    .init(color: .clear, location: 1)
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
+    @objc private func presentTagPicker() {
+        UIActionHelper.presentTagPicker(
+            manager: wallpaperManager,
+            window: window
+        ) { [weak self] in
+            self?.rebuildContent()
         }
-        .allowsHitTesting(false)
     }
 }
 
 private extension String {
     var nilIfEmpty: String? {
         isEmpty ? nil : self
-    }
-}
-
-private enum VideoLibraryFooterButtonKind {
-    case primary
-    case secondary
-}
-
-private struct VideoLibraryFooterButtonStyle: ButtonStyle {
-    var kind: VideoLibraryFooterButtonKind = .secondary
-    @Environment(\.isEnabled) private var isEnabled
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.system(size: 13, weight: .semibold))
-            .foregroundStyle(foregroundColor)
-            .background(backgroundFill(isPressed: configuration.isPressed))
-            .overlay {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .stroke(borderColor.opacity(isEnabled ? 1 : 0.55), lineWidth: 0.7)
-            }
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .opacity(isEnabled ? 1 : 0.45)
-            .scaleEffect(configuration.isPressed ? 0.985 : 1)
-            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
-    }
-
-    private var foregroundColor: Color {
-        switch kind {
-        case .primary:
-            return .white
-        case .secondary:
-            return Color(nsColor: .labelColor)
-        }
-    }
-
-    private var borderColor: Color {
-        switch kind {
-        case .primary:
-            return Color(nsColor: .systemBlue).opacity(0.42)
-        case .secondary:
-            return Color.white.opacity(0.16)
-        }
-    }
-
-    @ViewBuilder
-    private func backgroundFill(isPressed: Bool) -> some View {
-        let opacity = isPressed ? 0.9 : 1.0
-
-        switch kind {
-        case .primary:
-            Color(nsColor: isPressed ? .systemBlue.withSystemEffect(.pressed) : .systemBlue)
-        case .secondary:
-            Color.black.opacity(0.14 * opacity)
-        }
     }
 }

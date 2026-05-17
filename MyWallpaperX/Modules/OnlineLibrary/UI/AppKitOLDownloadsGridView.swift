@@ -7,7 +7,6 @@
 //
 
 import AppKit
-import SwiftUI
 import Combine
 import AVFoundation
 import QuickLook
@@ -210,18 +209,6 @@ final class AppKitOLDownloadsCollectionView: NSCollectionView {
     override func selectAll(_ sender: Any?) {
         // 拦截系统 Cmd+A 分发，走自定义全选路径（不触发 NSCollectionView 默认全选行为）
         selectAllHandler?()
-    }
-}
-
-// MARK: - SwiftUI 桥接
-
-struct AppKitOLDownloadsGridView: NSViewRepresentable {
-    func makeNSView(context: Context) -> AppKitOLDownloadsContainerView {
-        let v = AppKitOLDownloadsContainerView()
-        return v
-    }
-    func updateNSView(_ nsView: AppKitOLDownloadsContainerView, context: Context) {
-        nsView.reloadIfNeeded()
     }
 }
 

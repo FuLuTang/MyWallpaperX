@@ -67,6 +67,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
  func applicationDidFinishLaunching(_ notification: Notification) {
  // 启动时先隐藏 Dock 图标，再按"先播放链路、后主窗口"的顺序把界面拉起来。
+ MainMenuBuilder.installMainMenu()
  MainWindowCoordinator.setDockIconVisible(false)
  // 注册本地 Help Book，确保帮助菜单能找到文档。
  if let helpPath = Bundle.main.path(forResource: "MyWallpaperXHelp", ofType: nil) {
@@ -137,5 +138,77 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
  let firstTry = DispatchWorkItem { tryActivate() }
  pendingInitialWindowOpen = firstTry
  DispatchQueue.main.async(execute: firstTry)
+ }
+
+ @objc func showSettingsMenuAction(_ sender: Any?) {
+ SettingsWindowController.shared.showWindow()
+ }
+
+ @objc func createTagMenuAction(_ sender: Any?) {
+ MainWindowCoordinator.menuCreateTag()
+ }
+
+ @objc func importMenuAction(_ sender: Any?) {
+ MainWindowCoordinator.menuImport()
+ }
+
+ @objc func selectAllMenuAction(_ sender: Any?) {
+ MainWindowCoordinator.menuSelectAll()
+ }
+
+ @objc func toggleMultiSelectMenuAction(_ sender: Any?) {
+ MainWindowCoordinator.menuToggleMultiSelect()
+ }
+
+ @objc func deleteSelectedMenuAction(_ sender: Any?) {
+ MainWindowCoordinator.menuDeleteSelected()
+ }
+
+ @objc func focusSearchMenuAction(_ sender: Any?) {
+ MainWindowCoordinator.menuFocusSearch()
+ }
+
+ @objc func zoomInMenuAction(_ sender: Any?) {
+ MainWindowCoordinator.performZoom(delta: 1)
+ }
+
+ @objc func zoomOutMenuAction(_ sender: Any?) {
+ MainWindowCoordinator.performZoom(delta: -1)
+ }
+
+ @objc func setAsWallpaperMenuAction(_ sender: Any?) {
+ MainWindowCoordinator.menuSetAsWallpaper()
+ }
+
+ @objc func nextWallpaperMenuAction(_ sender: Any?) {
+ MainWindowCoordinator.menuNavigate(.next)
+ }
+
+ @objc func previousWallpaperMenuAction(_ sender: Any?) {
+ MainWindowCoordinator.menuNavigate(.previous)
+ }
+
+ @objc func toggleFavoriteMenuAction(_ sender: Any?) {
+ MainWindowCoordinator.menuToggleFavorite()
+ }
+
+ @objc func addTagMenuAction(_ sender: Any?) {
+ MainWindowCoordinator.menuAddTag()
+ }
+
+ @objc func showInfoMenuAction(_ sender: Any?) {
+ MainWindowCoordinator.menuShowInfo()
+ }
+
+ @objc func previewMenuAction(_ sender: Any?) {
+ MainWindowCoordinator.menuPreview()
+ }
+
+ @objc func revealInFinderMenuAction(_ sender: Any?) {
+ MainWindowCoordinator.menuRevealInFinder()
+ }
+
+ @objc func closeWindowMenuAction(_ sender: Any?) {
+ NSApp.keyWindow?.performClose(nil)
  }
 }

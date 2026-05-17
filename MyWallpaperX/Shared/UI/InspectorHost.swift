@@ -207,12 +207,17 @@ final class InspectorHostStore: ObservableObject {
 
 struct InspectorHost: View {
     @ObservedObject var store: InspectorHostStore
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         Color.clear
             .overlay(alignment: .topTrailing) {
                 if let request = store.currentRequest {
-                    InspectorCardView(request: request, hostedContentView: store.hostedContentView)
+                    InspectorCardView(
+                        request: request,
+                        hostedContentView: store.hostedContentView,
+                        colorScheme: colorScheme
+                    )
                         .frame(width: request.preferredWidth)
                         .padding(.top, 10)
                         .padding(.trailing, 18)
@@ -227,9 +232,43 @@ struct InspectorHost: View {
 private struct InspectorCardView: View {
     let request: InspectorHostRequest
     let hostedContentView: NSView?
+    let colorScheme: ColorScheme
 
     private var isInfoPanel: Bool {
         request.chromeStyle == .infoPanel
+    }
+
+    private var panelOverlayColor: Color {
+        colorScheme == .dark
+            ? Color.black.opacity(0.10)
+            : Color(nsColor: .textBackgroundColor).opacity(0.91)
+    }
+
+    private var panelStroke: some ShapeStyle {
+        LinearGradient(
+            colors: [
+                Color.white.opacity(colorScheme == .dark ? 0.42 : 0.82),
+                Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.10)
+            ],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+    }
+
+    private var panelShadowColor: Color {
+        colorScheme == .dark ? Color.black.opacity(0.4) : Color.black.opacity(0.12)
+    }
+
+    private var closeButtonFill: Color {
+        colorScheme == .dark
+            ? Color.white.opacity(0.16)
+            : Color.black.opacity(0.05)
+    }
+
+    private var closeButtonStroke: Color {
+        colorScheme == .dark
+            ? Color.white.opacity(0.20)
+            : Color.black.opacity(0.07)
     }
 
     private var headerTitle: String {
@@ -281,11 +320,11 @@ private struct InspectorCardView: View {
                             .frame(width: 32, height: 32)
                             .background(
                                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                    .fill(Color.white.opacity(0.16))
+                                    .fill(closeButtonFill)
                             )
                             .overlay {
                                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                    .stroke(Color.white.opacity(0.20), lineWidth: 0.5)
+                                    .stroke(closeButtonStroke, lineWidth: 0.5)
                             }
                     } else {
                         Image(systemName: "xmark.circle.fill")
@@ -309,12 +348,19 @@ private struct InspectorCardView: View {
         }
         .padding(18)
         .frame(maxHeight: .infinity, alignment: .top)
-        .background(SystemGlassPanel(cornerRadius: 22, style: .regular))
-        .overlay {
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .stroke(Color.white.opacity(0.2), lineWidth: 1)
+        .background {
+            SystemGlassPanel(cornerRadius: 22, style: .regular)
+                .overlay {
+                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                        .fill(panelOverlayColor)
+                }
+                .overlay(alignment: .top) {
+                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                        .stroke(panelStroke, lineWidth: 1)
+                        .padding(1)
+                }
         }
-        .shadow(color: Color.black.opacity(0.4), radius: 25, x: 0, y: 16)
+        .shadow(color: panelShadowColor, radius: 25, x: 0, y: 16)
     }
 }
 
@@ -341,14 +387,14 @@ private enum InspectorGlassPalette {
         if view.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua {
             return .windowBackgroundColor.withAlphaComponent(0.18)
         }
-        return .controlBackgroundColor.withAlphaComponent(0.15)
+        return .textBackgroundColor.withAlphaComponent(0.92)
     }
 
     static func innerFill(for view: NSView) -> NSColor {
         if view.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua {
             return .textBackgroundColor.withAlphaComponent(0.06)
         }
-        return .windowBackgroundColor.withAlphaComponent(0.05)
+        return .textBackgroundColor.withAlphaComponent(0.78)
     }
 }
 

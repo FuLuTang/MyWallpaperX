@@ -6,7 +6,7 @@
 ## 当前模块事实
 - 核心服务是 `SILService.shared`
 - 图片标签系统与视频库标签完全独立
-- 对外入口是 `UI/SILEntryView.swift`
+- 图片库列表当前由 Shell 的 `AppKitDetailHostViewController` 直接承载 `UI/SILGridContainerView.swift` 中的 `SILGridContainerView`
 - 当前模块是“纯浏览 / 管理图片库”模块，不负责设置动态壁纸播放
 - 图片库详情当前已通过统一 `InspectorHost` 接入，模块内负责提供 `SILInspectorView`
 

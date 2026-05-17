@@ -1,7 +1,7 @@
 # Project Working Memory
 
-> 最后更新：2026-05-05
-> 维护范围：当前项目事实、用户偏好、重要路径、当前框架与 Steam Workshop 现状
+> 最后更新：2026-05-17
+> 维护范围：当前项目事实、用户偏好、重要路径、AppKit 迁移状态与 Steam Workshop 现状
 
 ## Product Context
 - `MyWallpaperX` 是一个 macOS 动态壁纸软件。
@@ -20,6 +20,8 @@
 - Steam 创意工坊浏览页不要内嵌网页，要原生网格 UI。
 - 登录页需要客户端化，流程直观。
 - 登录状态和网格缓存都要持久化，不能每次返回都丢。
+- 当前迁移目标是 0 SwiftUI、全 AppKit 的 macOS 原生应用；但迁移必须分边界推进，不能为了清零 SwiftUI 一次性重写复杂模块。
+- AppKit 化后的详情面板必须保持原有视觉质量，尤其要参考 Steam 详情面板的玻璃质感、缩略图宽度、内容位置和底部按钮尺寸。
 
 ## Architecture Boundary
 - 按 `AGENTS.md`，默认优先操作公共层：`App/`、`Shell/`、`Core/`、`Shared/`、`docs/`
@@ -30,9 +32,12 @@
 - 当前 Steam Workshop 功能属于用户明确授权可进入的模块。
 
 ## Current Framework Facts
+- App 生命周期已由 AppKit `@main` 接管，入口位于 `MyWallpaperX/App/MyWallpaperXApplication.swift`。
+- 主菜单由 `MainMenuBuilder` 构建，设置窗口由 `SettingsWindowController` 直接承载 AppKit 设置容器。
+- 主窗口根控制器由 `MainWindowController` 直接创建 `AppKitMainSplitViewController`，不再经过 `ContentView`。
 - 主窗口菜单命令统一由 `MainWindowCoordinator` 分发。
 - 菜单动态可用性统一由 `AppDelegate.validateMenuItem(_:)` 管理，不在 SwiftUI Commands 中做动态 `.disabled()`。
-- 路由与模块归并在 `ContentView.syncManagerSelection(from:)` 完成：
+- 路由与模块归并在 `AppKitMainSplitViewController.syncManagerSelection(from:)` 完成：
   - `onlineDownloads` 归并到 `.onlineLibrary`
   - `steamDownloads` 归并到 `.steamWorkshop`
 - 工具栏布局统一由 `VideoLibraryToolbarController` 主控，子模块工具栏控制器只提供 item 和局部状态同步。
@@ -42,12 +47,36 @@
   - `steamWorkshopVideoReadyToPlay`
   - `steamWorkshopWebWallpaperReadyToPlay`
 
+## Current AppKit Migration State
+- 迁移计划文档：`docs/appkit-migration-plan-2026-05-17.md`
+- `MyWallpaperApp.swift`、`ContentView.swift`、`VideoLibraryEntryView.swift`、`SILEntryView.swift`、`OnlineLibraryDownloadsView.swift` 已删除。
+- 左侧 sidebar 已由 `AppKitSidebarViewController` 直接承载 `AppKitSidebarContainerView`。
+- 右侧路由已迁到 `AppKitDetailHostViewController`。
+- 视频库列表、图片库列表、在线库浏览、在线库下载入口已直接由 AppKit `NSView` / 容器承载。
+- 视频库、图片库、在线库下载 inspector 内容已 AppKit 化：
+  - `Modules/VideoLibrary/UI/VideoLibraryInspectorView.swift`
+  - `Modules/StaticImageLibrary/UI/SILInspectorView.swift`
+  - `Modules/OnlineLibrary/UI/OnlineLibraryDownloadsInspectorView.swift`
+- 共享 `InspectorHost` 外壳仍是 SwiftUI，并由 `AppKitMainSplitViewController` 内的 `NSHostingController` 临时承载。
+- Steam 浏览 / 下载入口仍通过 `NSHostingController(rootView: SteamWorkshopEntryView/SteamWorkshopDownloadsView)` 临时承载。
+- 当前残留 SwiftUI 重点仍在：
+  - `Shared/UI/InspectorHost.swift`
+  - `Shared/UI/InspectorHostBridge.swift`
+  - `Shared/UI/InspectorHostActions.swift`
+  - `Shell/AppKitMainSplitView.swift`
+  - `Shell/AppKitDetailHostViewController.swift`
+  - Steam Workshop 入口、详情 sheet 和 Web inspector 相关 SwiftUI 文件
+- 每次迁移小步后必须跑：
+  - `xcodebuild -project MyWallpaperX.xcodeproj -scheme MyWallpaperX -configuration Debug build`
+  - `rg -n "import SwiftUI|NSHostingController|NSHostingView|NSViewRepresentable|ViewModifier|@State|@ObservedObject|@EnvironmentObject|@Binding|some View" MyWallpaperX -S`
+
 ## Current Steam Workshop Design
 - 浏览页是原生网格，不直接呈现网页。
 - 浏览网格已切到 AppKit `NSCollectionView`。
 - 卡片点击后进入原生详情面板，不再依赖网页详情页 UI。
 - 浏览页与下载页都已接入工具栏模式切换、侧边栏路由和焦点接管。
 - 下载页详情当前通过统一 `InspectorHost` 展示。
+- AppKit 迁移中，Steam 浏览 / 下载入口仍是 SwiftUI 承载，后续需要拆分登录 sheet、空态 / 错误态、详情面板和 Web inspector，避免一次性大改。
 - 当前浏览工具栏能力包括：
   - Steam 账号入口
   - 排序源切换

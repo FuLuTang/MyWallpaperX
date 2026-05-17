@@ -306,7 +306,13 @@ final class XxxGridContainerView: NSView, ModuleFocusable {
   - `inspectorHostAutoClose(module:onDisappear:)`
 - 头部样式优先复用 `InspectorHostPresentation.standard(...)` 与 `InspectorHostPresentation.infoPanel(...)` preset，避免模块各自重复拼配置
 
-**新模块默认详情接入基线：**
+**AppKit 迁移期注记（2026-05-17）：**
+- 当前项目正在迁向 0 SwiftUI；上述 `InspectorHostBridge` / `View.inspectorHostBridge(...)` 是迁移前的统一接入基线，不应在新 AppKit 化模块里继续扩散。
+- 视频库、图片库、在线库下载的详情内容已经改为 AppKit `NSView`，由 `AppKitDetailHostViewController` 通过 `InspectorHostActions` 与通知进行 open / mount / close。
+- 共享 `InspectorHost` 外壳仍是 SwiftUI 临时宿主；后续应优先把 `InspectorHost` / `InspectorHostBridge` / `InspectorHostActions` 收敛为 AppKit 宿主与显式通知接入，而不是新增 SwiftUI wrapper。
+- 详情 UI 保真要求优先级高于“快速改成 AppKit”：迁移后的视频库、图片库、在线库下载面板必须保持与既有 Steam 详情面板一致的缩略图宽度、内容位置、玻璃质感、分隔线和底部按钮尺寸。
+
+**迁移前的新模块默认详情接入基线：**
 - `InspectorHost` + `InspectorHostBridge` + `InspectorHostActions` 现在是新模块详情入口的默认公共基线
 - 新接入模块应优先使用：
   - `View.inspectorHostBridge(...)`
