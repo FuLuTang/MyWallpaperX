@@ -4,36 +4,7 @@
 //
 
 import AppKit
-import SwiftUI
 import Combine
-
-struct AppKitSteamWorkshopBrowserGridView: NSViewRepresentable {
-    @ObservedObject var service: SteamWorkshopService
-    let onOpen: (SteamWorkshopBrowserItem) -> Void
-    let onAuthor: (SteamWorkshopBrowserItem) -> Void
-    let onDownload: (SteamWorkshopBrowserItem) -> Void
-    let onSetAsWallpaper: (SteamWorkshopDownloadRecord) -> Void
-    let onCancelDownload: (SteamWorkshopBrowserItem) -> Void
-
-    func makeNSView(context: Context) -> AppKitSteamWorkshopBrowserContainerView {
-        AppKitSteamWorkshopBrowserContainerView(
-            service: service,
-            onOpen: onOpen,
-            onAuthor: onAuthor,
-            onDownload: onDownload,
-            onSetAsWallpaper: onSetAsWallpaper,
-            onCancelDownload: onCancelDownload
-        )
-    }
-
-    func updateNSView(_ nsView: AppKitSteamWorkshopBrowserContainerView, context: Context) {
-        nsView.onOpen = onOpen
-        nsView.onAuthor = onAuthor
-        nsView.onDownload = onDownload
-        nsView.onSetAsWallpaper = onSetAsWallpaper
-        nsView.onCancelDownload = onCancelDownload
-    }
-}
 
 final class AppKitSteamWorkshopBrowserContainerView: NSView, ModuleFocusable, NSCollectionViewDelegateFlowLayout {
     private enum Section {

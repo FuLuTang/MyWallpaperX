@@ -4,7 +4,6 @@
 //
 
 import AppKit
-import SwiftUI
 import Combine
 import QuickLook
 import QuickLookUI
@@ -86,28 +85,6 @@ final class SteamWorkshopDownloadsQuickLookController: NSObject, QLPreviewPanelD
         default:
             return false
         }
-    }
-}
-
-struct AppKitSteamWorkshopDownloadsGridView: NSViewRepresentable {
-    @ObservedObject var service: SteamWorkshopService
-    let onOpen: (SteamWorkshopBrowserItem) -> Void
-    let onSetAsWallpaper: (SteamWorkshopDownloadRecord) -> Void
-    let onReveal: (SteamWorkshopDownloadRecord) -> Void
-
-    func makeNSView(context: Context) -> AppKitSteamWorkshopDownloadsContainerView {
-        AppKitSteamWorkshopDownloadsContainerView(
-            service: service,
-            onOpen: onOpen,
-            onSetAsWallpaper: onSetAsWallpaper,
-            onReveal: onReveal
-        )
-    }
-
-    func updateNSView(_ nsView: AppKitSteamWorkshopDownloadsContainerView, context: Context) {
-        nsView.onOpen = onOpen
-        nsView.onSetAsWallpaper = onSetAsWallpaper
-        nsView.onReveal = onReveal
     }
 }
 
