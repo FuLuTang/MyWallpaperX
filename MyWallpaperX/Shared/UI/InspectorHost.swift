@@ -3,9 +3,7 @@
 //  MyWallpaperX
 //
 
-import SwiftUI
 import AppKit
-import Combine
 
 let inspectorHostAnimationDuration: Double = 0.24
 
@@ -169,9 +167,10 @@ struct InspectorHostMountRequest {
 }
 
 @MainActor
-final class InspectorHostStore: ObservableObject {
-    @Published private(set) var currentRequest: InspectorHostRequest?
-    @Published private(set) var hostedContentView: NSView?
+final class InspectorHostStore {
+    private(set) var currentRequest: InspectorHostRequest?
+    private(set) var hostedContentView: NSView?
+    var onChange: (() -> Void)?
 
     var isPresented: Bool {
         currentRequest != nil
@@ -182,233 +181,384 @@ final class InspectorHostStore: ObservableObject {
             hostedContentView = nil
         }
         currentRequest = request
+        onChange?()
     }
 
     func mountContent(_ request: InspectorHostMountRequest) {
         guard currentRequest?.token == request.token else { return }
         hostedContentView = request.hostedView
+        onChange?()
     }
 
     func unmountContent(for token: InspectorCardToken? = nil) {
         guard token == nil || currentRequest?.token == token else { return }
         hostedContentView = nil
+        onChange?()
     }
 
     func dismiss() {
         hostedContentView = nil
         currentRequest = nil
+        onChange?()
     }
 
     func finalizeDismiss() {
         hostedContentView = nil
         currentRequest = nil
+        onChange?()
     }
 }
 
-struct InspectorHost: View {
-    @ObservedObject var store: InspectorHostStore
-    @Environment(\.colorScheme) private var colorScheme
+final class InspectorHostViewController: NSViewController {
+    private let store: InspectorHostStore
+    private let cardView = InspectorHostCardView()
+    private var cardWidthConstraint: NSLayoutConstraint?
+    private var cardHeightConstraint: NSLayoutConstraint?
 
-    var body: some View {
-        Color.clear
-            .overlay(alignment: .topTrailing) {
-                if let request = store.currentRequest {
-                    InspectorCardView(
-                        request: request,
-                        hostedContentView: store.hostedContentView,
-                        colorScheme: colorScheme
-                    )
-                        .frame(width: request.preferredWidth)
-                        .padding(.top, 10)
-                        .padding(.trailing, 18)
-                        .padding(.bottom, 18)
-                }
-            }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-        .allowsHitTesting(store.isPresented)
-    }
-}
-
-private struct InspectorCardView: View {
-    let request: InspectorHostRequest
-    let hostedContentView: NSView?
-    let colorScheme: ColorScheme
-
-    private var isInfoPanel: Bool {
-        request.chromeStyle == .infoPanel
-    }
-
-    private var panelOverlayColor: Color {
-        colorScheme == .dark
-            ? Color.black.opacity(0.10)
-            : Color(nsColor: .textBackgroundColor).opacity(0.91)
-    }
-
-    private var panelStroke: some ShapeStyle {
-        LinearGradient(
-            colors: [
-                Color.white.opacity(colorScheme == .dark ? 0.42 : 0.82),
-                Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.10)
-            ],
-            startPoint: .top,
-            endPoint: .bottom
-        )
-    }
-
-    private var panelShadowColor: Color {
-        colorScheme == .dark ? Color.black.opacity(0.4) : Color.black.opacity(0.12)
-    }
-
-    private var closeButtonFill: Color {
-        colorScheme == .dark
-            ? Color.white.opacity(0.16)
-            : Color.black.opacity(0.05)
-    }
-
-    private var closeButtonStroke: Color {
-        colorScheme == .dark
-            ? Color.white.opacity(0.20)
-            : Color.black.opacity(0.07)
-    }
-
-    private var headerTitle: String {
-        isInfoPanel ? "详情" : request.title
-    }
-
-    private var headerSubtitle: String? {
-        isInfoPanel ? nil : request.subtitle
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .center, spacing: 12) {
-                if isInfoPanel {
-                    HStack(spacing: 10) {
-                        Image(systemName: "info.circle.fill")
-                            .font(.system(size: 17, weight: .semibold))
-                            .foregroundStyle(.primary)
-
-                        Text(headerTitle)
-                            .font(.system(size: 18, weight: .semibold))
-                            .foregroundStyle(.primary)
-                    }
-                } else {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(headerTitle)
-                            .font(.system(size: 19, weight: .semibold))
-                            .foregroundStyle(.primary)
-                        if let subtitle = headerSubtitle, !subtitle.isEmpty {
-                            Text(subtitle)
-                                .font(.system(size: 12, weight: .regular))
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                }
-
-                Spacer(minLength: 8)
-
-                Button {
-                    InspectorHostActions.postClose(
-                        module: request.token.module,
-                        cardID: request.token.cardID
-                    )
-                } label: {
-                    if isInfoPanel {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(.primary)
-                            .frame(width: 32, height: 32)
-                            .background(
-                                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                    .fill(closeButtonFill)
-                            )
-                            .overlay {
-                                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                    .stroke(closeButtonStroke, lineWidth: 0.5)
-                            }
-                    } else {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 14, weight: .semibold))
-                    }
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
-                .help("关闭详情")
-            }
-
-            if let hostedContentView {
-                InspectorHostedContentSlot(hostedContentView: hostedContentView)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            } else {
-                ProgressView()
-                    .controlSize(.small)
-                    .padding(.top, 4)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            }
+    init(store: InspectorHostStore) {
+        self.store = store
+        super.init(nibName: nil, bundle: nil)
+        store.onChange = { [weak self] in
+            self?.applyStoreState()
         }
-        .padding(18)
-        .frame(maxHeight: .infinity, alignment: .top)
-        .background {
-            SystemGlassPanel(cornerRadius: 22, style: .regular)
-                .overlay {
-                    RoundedRectangle(cornerRadius: 22, style: .continuous)
-                        .fill(panelOverlayColor)
-                }
-                .overlay(alignment: .top) {
-                    RoundedRectangle(cornerRadius: 22, style: .continuous)
-                        .stroke(panelStroke, lineWidth: 1)
-                        .padding(1)
-                }
-        }
-        .shadow(color: panelShadowColor, radius: 25, x: 0, y: 16)
     }
-}
 
-private struct SystemGlassPanel: NSViewRepresentable {
-    let cornerRadius: CGFloat
-    let style: NSGlassEffectView.Style
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        nil
+    }
 
-    func makeNSView(context: Context) -> NSGlassEffectView {
-        let view = NSGlassEffectView()
+    override func loadView() {
+        view = InspectorHostRootView(cardView: cardView)
         view.wantsLayer = true
-        return view
+        view.layer?.backgroundColor = NSColor.clear.cgColor
     }
 
-    func updateNSView(_ nsView: NSGlassEffectView, context: Context) {
-        nsView.cornerRadius = cornerRadius
-        nsView.style = style
-        nsView.tintColor = InspectorGlassPalette.baseTint(for: nsView)
-        nsView.layer?.backgroundColor = InspectorGlassPalette.innerFill(for: nsView).cgColor
+    override func viewDidLoad() {
+        super.viewDidLoad()
+
+        cardView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(cardView)
+
+        let widthConstraint = cardView.widthAnchor.constraint(
+            equalToConstant: InspectorHostRequest.defaultPreferredWidth
+        )
+        cardWidthConstraint = widthConstraint
+        let safeArea = view.safeAreaLayoutGuide
+        let heightConstraint = cardView.heightAnchor.constraint(equalTo: safeArea.heightAnchor, constant: -36)
+        heightConstraint.priority = .defaultHigh
+        cardHeightConstraint = heightConstraint
+
+        let centerYConstraint = cardView.centerYAnchor.constraint(equalTo: safeArea.centerYAnchor)
+        centerYConstraint.priority = .defaultHigh
+
+        NSLayoutConstraint.activate([
+            cardView.topAnchor.constraint(greaterThanOrEqualTo: safeArea.topAnchor),
+            cardView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -18),
+            cardView.bottomAnchor.constraint(lessThanOrEqualTo: safeArea.bottomAnchor, constant: -18),
+            centerYConstraint,
+            heightConstraint,
+            widthConstraint
+        ])
+
+        applyStoreState()
+    }
+
+    private func applyStoreState() {
+        guard isViewLoaded else { return }
+        guard let request = store.currentRequest else {
+            cardView.isHidden = true
+            cardView.configure(request: nil, hostedContentView: nil)
+            return
+        }
+
+        cardWidthConstraint?.constant = request.preferredWidth
+        cardHeightConstraint?.constant = -36
+        cardView.isHidden = false
+        cardView.configure(request: request, hostedContentView: store.hostedContentView)
+    }
+}
+
+private final class InspectorHostRootView: NSView {
+    private weak var cardView: NSView?
+
+    init(cardView: NSView) {
+        self.cardView = cardView
+        super.init(frame: .zero)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        NotificationCenter.default.post(name: .inspectorHostCloseRequested, object: nil)
+    }
+}
+
+private final class InspectorHostCardView: NSView {
+    private let glassView = NSGlassEffectView()
+    private let panelOverlayView = NSView()
+    private let stackView = NSStackView()
+    private let headerRow = NSStackView()
+    private let titleContainer = NSStackView()
+    private let iconView = NSImageView()
+    private let titleLabel = NSTextField(labelWithString: "")
+    private let subtitleLabel = NSTextField(labelWithString: "")
+    private let closeButton = NSButton()
+    private let contentContainer = InspectorHostedContentContainerView()
+    private let progressIndicator = NSProgressIndicator()
+    private var request: InspectorHostRequest?
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        setup()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    func configure(request: InspectorHostRequest?, hostedContentView: NSView?) {
+        self.request = request
+        guard let request else {
+            contentContainer.hostedContentView = nil
+            progressIndicator.stopAnimation(nil)
+            return
+        }
+
+        titleLabel.stringValue = request.chromeStyle == .infoPanel ? "详情" : request.title
+        subtitleLabel.stringValue = request.chromeStyle == .infoPanel ? "" : (request.subtitle ?? "")
+        subtitleLabel.isHidden = subtitleLabel.stringValue.isEmpty
+        iconView.isHidden = request.chromeStyle != .infoPanel
+
+        let closeSymbolName = request.chromeStyle == .infoPanel ? "xmark" : "xmark.circle.fill"
+        closeButton.image = NSImage(systemSymbolName: closeSymbolName, accessibilityDescription: "关闭详情")
+        closeButton.toolTip = "关闭详情"
+
+        contentContainer.hostedContentView = hostedContentView
+        progressIndicator.isHidden = hostedContentView != nil
+        hostedContentView == nil ? progressIndicator.startAnimation(nil) : progressIndicator.stopAnimation(nil)
+        refreshAppearance()
+    }
+
+    func refreshAppearance() {
+        guard isViewLoadedInWindow || window != nil || superview != nil else { return }
+        let isDark = InspectorGlassPalette.isDarkMode(for: self)
+        let forcedAppearance = NSAppearance(named: isDark ? .darkAqua : .aqua)
+        appearance = forcedAppearance
+        glassView.appearance = forcedAppearance
+        panelOverlayView.appearance = forcedAppearance
+
+        glassView.cornerRadius = 22
+        glassView.style = .regular
+        glassView.tintColor = InspectorGlassPalette.baseTint(isDark: isDark)
+        glassView.layer?.backgroundColor = InspectorGlassPalette.innerFill(isDark: isDark).cgColor
+
+        panelOverlayView.layer?.cornerRadius = 22
+        panelOverlayView.layer?.masksToBounds = true
+        panelOverlayView.layer?.backgroundColor = InspectorGlassPalette.panelFill(isDark: isDark).cgColor
+        panelOverlayView.layer?.borderColor = InspectorGlassPalette.panelStroke(isDark: isDark).cgColor
+        panelOverlayView.layer?.borderWidth = 1
+
+        layer?.shadowColor = NSColor.black.cgColor
+        layer?.shadowOpacity = isDark ? 0.40 : 0.12
+        layer?.shadowRadius = 25
+        layer?.shadowOffset = CGSize(width: 0, height: -16)
+
+        titleLabel.textColor = .labelColor
+        subtitleLabel.textColor = .secondaryLabelColor
+        iconView.contentTintColor = .labelColor
+
+        let infoPanel = request?.chromeStyle == .infoPanel
+        closeButton.contentTintColor = .labelColor
+        closeButton.layer?.backgroundColor = infoPanel
+            ? (isDark ? NSColor.white.withAlphaComponent(0.16) : NSColor.black.withAlphaComponent(0.05)).cgColor
+            : NSColor.clear.cgColor
+        closeButton.layer?.borderColor = infoPanel
+            ? (isDark ? NSColor.white.withAlphaComponent(0.20) : NSColor.black.withAlphaComponent(0.07)).cgColor
+            : NSColor.clear.cgColor
+        closeButton.layer?.borderWidth = infoPanel ? 0.5 : 0
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        refreshAppearance()
+    }
+
+    private var isViewLoadedInWindow: Bool {
+        window != nil
+    }
+
+    private func setup() {
+        wantsLayer = true
+        layer?.cornerRadius = 22
+        layer?.masksToBounds = false
+
+        setupGlass()
+        setupPanelOverlay()
+        setupHeader()
+        setupContent()
+        refreshAppearance()
+    }
+
+    private func setupGlass() {
+        glassView.translatesAutoresizingMaskIntoConstraints = false
+        glassView.wantsLayer = true
+        addSubview(glassView)
+
+        NSLayoutConstraint.activate([
+            glassView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            glassView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            glassView.topAnchor.constraint(equalTo: topAnchor),
+            glassView.bottomAnchor.constraint(equalTo: bottomAnchor)
+        ])
+    }
+
+    private func setupPanelOverlay() {
+        panelOverlayView.translatesAutoresizingMaskIntoConstraints = false
+        panelOverlayView.wantsLayer = true
+        addSubview(panelOverlayView)
+
+        NSLayoutConstraint.activate([
+            panelOverlayView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            panelOverlayView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            panelOverlayView.topAnchor.constraint(equalTo: topAnchor),
+            panelOverlayView.bottomAnchor.constraint(equalTo: bottomAnchor)
+        ])
+    }
+
+    private func setupHeader() {
+        stackView.orientation = .vertical
+        stackView.alignment = .leading
+        stackView.spacing = 14
+        stackView.edgeInsets = NSEdgeInsets(top: 18, left: 18, bottom: 18, right: 18)
+        stackView.translatesAutoresizingMaskIntoConstraints = false
+
+        headerRow.orientation = .horizontal
+        headerRow.alignment = .centerY
+        headerRow.spacing = 12
+        headerRow.translatesAutoresizingMaskIntoConstraints = false
+
+        iconView.image = NSImage(systemSymbolName: "info.circle.fill", accessibilityDescription: "详情")
+        iconView.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 17, weight: .semibold)
+        iconView.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            iconView.widthAnchor.constraint(equalToConstant: 18),
+            iconView.heightAnchor.constraint(equalToConstant: 18)
+        ])
+
+        titleLabel.font = .systemFont(ofSize: 18, weight: .semibold)
+        titleLabel.lineBreakMode = .byTruncatingTail
+        subtitleLabel.font = .systemFont(ofSize: 12)
+        subtitleLabel.lineBreakMode = .byTruncatingTail
+
+        titleContainer.orientation = .vertical
+        titleContainer.alignment = .leading
+        titleContainer.spacing = 4
+        titleContainer.addArrangedSubview(titleLabel)
+        titleContainer.addArrangedSubview(subtitleLabel)
+
+        closeButton.isBordered = false
+        closeButton.bezelStyle = .regularSquare
+        closeButton.target = self
+        closeButton.action = #selector(closeInspector)
+        closeButton.wantsLayer = true
+        closeButton.layer?.cornerRadius = 10
+        closeButton.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            closeButton.widthAnchor.constraint(equalToConstant: 32),
+            closeButton.heightAnchor.constraint(equalToConstant: 32)
+        ])
+
+        let spacer = NSView()
+        spacer.translatesAutoresizingMaskIntoConstraints = false
+
+        headerRow.addArrangedSubview(iconView)
+        headerRow.addArrangedSubview(titleContainer)
+        headerRow.addArrangedSubview(spacer)
+        headerRow.addArrangedSubview(closeButton)
+        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+
+        stackView.addArrangedSubview(headerRow)
+        addSubview(stackView)
+
+        NSLayoutConstraint.activate([
+            stackView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            stackView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            stackView.topAnchor.constraint(equalTo: topAnchor),
+            stackView.bottomAnchor.constraint(equalTo: bottomAnchor),
+            headerRow.widthAnchor.constraint(equalTo: stackView.widthAnchor, constant: -36)
+        ])
+    }
+
+    private func setupContent() {
+        contentContainer.translatesAutoresizingMaskIntoConstraints = false
+        progressIndicator.style = .spinning
+        progressIndicator.controlSize = .small
+        progressIndicator.translatesAutoresizingMaskIntoConstraints = false
+
+        let contentHost = NSView()
+        contentHost.translatesAutoresizingMaskIntoConstraints = false
+        contentHost.addSubview(contentContainer)
+        contentHost.addSubview(progressIndicator)
+        stackView.addArrangedSubview(contentHost)
+
+        NSLayoutConstraint.activate([
+            contentHost.widthAnchor.constraint(equalTo: stackView.widthAnchor, constant: -36),
+            contentContainer.leadingAnchor.constraint(equalTo: contentHost.leadingAnchor),
+            contentContainer.trailingAnchor.constraint(equalTo: contentHost.trailingAnchor),
+            contentContainer.topAnchor.constraint(equalTo: contentHost.topAnchor),
+            contentContainer.bottomAnchor.constraint(equalTo: contentHost.bottomAnchor),
+            progressIndicator.leadingAnchor.constraint(equalTo: contentHost.leadingAnchor),
+            progressIndicator.topAnchor.constraint(equalTo: contentHost.topAnchor, constant: 4),
+            contentHost.heightAnchor.constraint(greaterThanOrEqualToConstant: 24)
+        ])
+    }
+
+    @objc private func closeInspector() {
+        guard let request else { return }
+        InspectorHostActions.postClose(module: request.token.module, cardID: request.token.cardID)
     }
 }
 
 private enum InspectorGlassPalette {
-    static func baseTint(for view: NSView) -> NSColor {
-        if view.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua {
+    static func isDarkMode(for view: NSView) -> Bool {
+        let appMatch = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua])
+        if let appMatch {
+            return appMatch == .darkAqua
+        }
+        return view.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+    }
+
+    static func baseTint(isDark: Bool) -> NSColor {
+        if isDark {
             return .windowBackgroundColor.withAlphaComponent(0.18)
         }
-        return .textBackgroundColor.withAlphaComponent(0.92)
+        return .controlBackgroundColor.withAlphaComponent(0.15)
     }
 
-    static func innerFill(for view: NSView) -> NSColor {
-        if view.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua {
+    static func innerFill(isDark: Bool) -> NSColor {
+        if isDark {
             return .textBackgroundColor.withAlphaComponent(0.06)
         }
-        return .textBackgroundColor.withAlphaComponent(0.78)
-    }
-}
-
-private struct InspectorHostedContentSlot: NSViewRepresentable {
-    let hostedContentView: NSView
-
-    func makeNSView(context: Context) -> InspectorHostedContentContainerView {
-        let container = InspectorHostedContentContainerView()
-        container.hostedContentView = hostedContentView
-        return container
+        return .windowBackgroundColor.withAlphaComponent(0.05)
     }
 
-    func updateNSView(_ nsView: InspectorHostedContentContainerView, context: Context) {
-        nsView.hostedContentView = hostedContentView
+    static func panelFill(isDark: Bool) -> NSColor {
+        if isDark {
+            return .black.withAlphaComponent(0.10)
+        }
+        return .white.withAlphaComponent(0.82)
+    }
+
+    static func panelStroke(isDark: Bool) -> NSColor {
+        if isDark {
+            return .white.withAlphaComponent(0.30)
+        }
+        return .white.withAlphaComponent(0.74)
     }
 }
 

@@ -44,7 +44,8 @@ private struct SteamWorkshopBrowserContentView: View {
                 SteamWorkshopItemDetailSheet(item: item)
             }
         )
-        .inspectorHostAutoClose(module: .steamWorkshop) {
+        .onDisappear {
+            InspectorHostActions.postClose(module: .steamWorkshop)
             service.dismissItemDetail()
         }
         .overlay {

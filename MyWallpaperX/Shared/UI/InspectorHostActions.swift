@@ -1,4 +1,3 @@
-import SwiftUI
 import AppKit
 
 enum InspectorHostActions {
@@ -77,26 +76,5 @@ extension InspectorHostPresentation {
             focusPolicy: focusPolicy,
             chromeStyle: .infoPanel
         )
-    }
-}
-
-private struct InspectorHostAutoCloseModifier: ViewModifier {
-    let module: ModuleIdentifier
-    let onDisappearAction: (() -> Void)?
-
-    func body(content: Content) -> some View {
-        content.onDisappear {
-            InspectorHostActions.postClose(module: module)
-            onDisappearAction?()
-        }
-    }
-}
-
-extension View {
-    func inspectorHostAutoClose(
-        module: ModuleIdentifier,
-        onDisappear: (() -> Void)? = nil
-    ) -> some View {
-        modifier(InspectorHostAutoCloseModifier(module: module, onDisappearAction: onDisappear))
     }
 }

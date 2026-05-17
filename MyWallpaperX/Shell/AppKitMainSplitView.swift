@@ -3,7 +3,6 @@
 //  MyWallpaperX
 //
 
-import SwiftUI
 import AppKit
 import Combine
 
@@ -24,9 +23,7 @@ final class AppKitMainSplitViewController: NSSplitViewController {
     )
     private lazy var detailHostController = AppKitDetailHostViewController(wallpaperManager: wallpaperManager)
     private let inspectorStore = InspectorHostStore()
-    private let inspectorController = NSHostingController(
-        rootView: InspectorHost(store: InspectorHostStore())
-    )
+    private lazy var inspectorController = InspectorHostViewController(store: inspectorStore)
     private lazy var detailContainerController = InspectorDetailContainerViewController(
         contentController: detailHostController,
         overlayController: inspectorController
@@ -52,7 +49,6 @@ final class AppKitMainSplitViewController: NSSplitViewController {
     init(wallpaperManager: WallpaperManager) {
         self.wallpaperManager = wallpaperManager
         super.init(nibName: nil, bundle: nil)
-        inspectorController.rootView = InspectorHost(store: inspectorStore)
         selectedItem = SelectedItem(selectionContext: wallpaperManager.currentSelectionContext)
     }
 
@@ -67,19 +63,19 @@ final class AppKitMainSplitViewController: NSSplitViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        update(wallpaperManager: wallpaperManager, selectedItem: selectionBinding())
+        update(wallpaperManager: wallpaperManager, selectedItem: selectedItem)
         syncSelectedItemFromManager()
         syncInitialModuleFocusIfNeeded()
         observeShellState()
     }
 
-    func update(wallpaperManager: WallpaperManager, selectedItem: Binding<SelectedItem>) {
+    func update(wallpaperManager: WallpaperManager, selectedItem: SelectedItem) {
         if !hasConfiguredSplitItems {
             configureSplitItems()
         }
 
         let managerIdentity = ObjectIdentifier(wallpaperManager)
-        let selectedValue = selectedItem.wrappedValue
+        let selectedValue = selectedItem
         // 这里只在 manager 实例变化或首次绑定时重绑，避免选中态变化触发整棵侧边栏/详情树重建。
         let shouldRebindRootViews = currentManagerIdentity != managerIdentity || currentSelectedItem != selectedValue
         guard shouldRebindRootViews else { return }
@@ -91,17 +87,10 @@ final class AppKitMainSplitViewController: NSSplitViewController {
         detailHostController.update(selectedItem: selectedValue)
     }
 
-    private func selectionBinding() -> Binding<SelectedItem> {
-        Binding(
-            get: { [weak self] in self?.selectedItem ?? .category(.myWallpapers) },
-            set: { [weak self] newValue in self?.setSelectedItem(newValue) }
-        )
-    }
-
     private func setSelectedItem(_ newValue: SelectedItem) {
         guard selectedItem != newValue else { return }
         selectedItem = newValue
-        update(wallpaperManager: wallpaperManager, selectedItem: selectionBinding())
+        update(wallpaperManager: wallpaperManager, selectedItem: selectedItem)
         syncManagerSelection(from: newValue)
     }
 
@@ -148,7 +137,7 @@ final class AppKitMainSplitViewController: NSSplitViewController {
         guard selectedItem != managerSelection else { return }
         isSyncingSelectionFromManager = true
         selectedItem = managerSelection
-        update(wallpaperManager: wallpaperManager, selectedItem: selectionBinding())
+        update(wallpaperManager: wallpaperManager, selectedItem: selectedItem)
         isSyncingSelectionFromManager = false
     }
 
@@ -278,7 +267,7 @@ final class AppKitMainSplitViewController: NSSplitViewController {
     private func handleFreshInstallReset() {
         selectedItem = .category(.myWallpapers)
         lastPostedModuleID = .videoLibrary
-        update(wallpaperManager: wallpaperManager, selectedItem: selectionBinding())
+        update(wallpaperManager: wallpaperManager, selectedItem: selectedItem)
         NotificationCenter.default.post(name: .inspectorHostCloseRequested, object: nil)
         syncQuickLookPreviewIfNeeded()
     }
