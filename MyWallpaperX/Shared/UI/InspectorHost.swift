@@ -244,10 +244,14 @@ final class InspectorHostViewController: NSViewController {
         )
         cardWidthConstraint = widthConstraint
 
+        let centerYConstraint = cardView.centerYAnchor.constraint(equalTo: view.centerYAnchor)
+        centerYConstraint.priority = .defaultHigh
+
         NSLayoutConstraint.activate([
-            cardView.topAnchor.constraint(equalTo: view.topAnchor, constant: 10),
+            cardView.topAnchor.constraint(greaterThanOrEqualTo: view.topAnchor),
             cardView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -18),
             cardView.bottomAnchor.constraint(lessThanOrEqualTo: view.bottomAnchor, constant: -18),
+            centerYConstraint,
             widthConstraint
         ])
 
@@ -288,6 +292,7 @@ private final class InspectorHostRootView: NSView {
 
 private final class InspectorHostCardView: NSView {
     private let glassView = NSGlassEffectView()
+    private let panelOverlayView = NSView()
     private let stackView = NSStackView()
     private let headerRow = NSStackView()
     private let titleContainer = NSStackView()
@@ -334,12 +339,22 @@ private final class InspectorHostCardView: NSView {
 
     func refreshAppearance() {
         guard isViewLoadedInWindow || window != nil || superview != nil else { return }
-        let isDark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        let isDark = InspectorGlassPalette.isDarkMode(for: self)
+        let forcedAppearance = NSAppearance(named: isDark ? .darkAqua : .aqua)
+        appearance = forcedAppearance
+        glassView.appearance = forcedAppearance
+        panelOverlayView.appearance = forcedAppearance
 
         glassView.cornerRadius = 22
         glassView.style = .regular
-        glassView.tintColor = InspectorGlassPalette.baseTint(for: self)
-        glassView.layer?.backgroundColor = InspectorGlassPalette.innerFill(for: self).cgColor
+        glassView.tintColor = InspectorGlassPalette.baseTint(isDark: isDark)
+        glassView.layer?.backgroundColor = InspectorGlassPalette.innerFill(isDark: isDark).cgColor
+
+        panelOverlayView.layer?.cornerRadius = 22
+        panelOverlayView.layer?.masksToBounds = true
+        panelOverlayView.layer?.backgroundColor = InspectorGlassPalette.panelFill(isDark: isDark).cgColor
+        panelOverlayView.layer?.borderColor = InspectorGlassPalette.panelStroke(isDark: isDark).cgColor
+        panelOverlayView.layer?.borderWidth = 1
 
         layer?.shadowColor = NSColor.black.cgColor
         layer?.shadowOpacity = isDark ? 0.40 : 0.12
@@ -376,6 +391,7 @@ private final class InspectorHostCardView: NSView {
         layer?.masksToBounds = false
 
         setupGlass()
+        setupPanelOverlay()
         setupHeader()
         setupContent()
         refreshAppearance()
@@ -391,6 +407,19 @@ private final class InspectorHostCardView: NSView {
             glassView.trailingAnchor.constraint(equalTo: trailingAnchor),
             glassView.topAnchor.constraint(equalTo: topAnchor),
             glassView.bottomAnchor.constraint(equalTo: bottomAnchor)
+        ])
+    }
+
+    private func setupPanelOverlay() {
+        panelOverlayView.translatesAutoresizingMaskIntoConstraints = false
+        panelOverlayView.wantsLayer = true
+        addSubview(panelOverlayView)
+
+        NSLayoutConstraint.activate([
+            panelOverlayView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            panelOverlayView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            panelOverlayView.topAnchor.constraint(equalTo: topAnchor),
+            panelOverlayView.bottomAnchor.constraint(equalTo: bottomAnchor)
         ])
     }
 
@@ -489,18 +518,40 @@ private final class InspectorHostCardView: NSView {
 }
 
 private enum InspectorGlassPalette {
-    static func baseTint(for view: NSView) -> NSColor {
-        if view.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua {
-            return .windowBackgroundColor.withAlphaComponent(0.18)
+    static func isDarkMode(for view: NSView) -> Bool {
+        let appMatch = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua])
+        if let appMatch {
+            return appMatch == .darkAqua
         }
-        return .textBackgroundColor.withAlphaComponent(0.92)
+        return view.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
     }
 
-    static func innerFill(for view: NSView) -> NSColor {
-        if view.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua {
+    static func baseTint(isDark: Bool) -> NSColor {
+        if isDark {
+            return .windowBackgroundColor.withAlphaComponent(0.18)
+        }
+        return .controlBackgroundColor.withAlphaComponent(0.15)
+    }
+
+    static func innerFill(isDark: Bool) -> NSColor {
+        if isDark {
             return .textBackgroundColor.withAlphaComponent(0.06)
         }
-        return .textBackgroundColor.withAlphaComponent(0.78)
+        return .windowBackgroundColor.withAlphaComponent(0.05)
+    }
+
+    static func panelFill(isDark: Bool) -> NSColor {
+        if isDark {
+            return .black.withAlphaComponent(0.10)
+        }
+        return .white.withAlphaComponent(0.82)
+    }
+
+    static func panelStroke(isDark: Bool) -> NSColor {
+        if isDark {
+            return .white.withAlphaComponent(0.30)
+        }
+        return .white.withAlphaComponent(0.74)
     }
 }
 
