@@ -3,7 +3,6 @@
 //  MyWallpaperX
 //
 
-import SwiftUI
 import QuickLook
 import QuickLookUI
 import AppKit
@@ -24,7 +23,7 @@ extension Notification.Name {
     static let appKitLibraryGridScrollToTopAnimationWillStart = Notification.Name("AppKitLibraryGridScrollToTopAnimationWillStart")
     static let appKitLibraryGridScrollToTopAnimationDidEnd = Notification.Name("AppKitLibraryGridScrollToTopAnimationDidEnd")
     static let appOpenSettingsRequested = Notification.Name("AppOpenSettingsRequested")
-    /// 在线图库模式切换通知，由 DetailView 发出，OnlineLibrary 模块接收
+    /// 在线图库模式切换通知，由 Shell 发出，OnlineLibrary 模块接收
     static let onlineLibraryModeDidChange = Notification.Name("OnlineLibraryModeDidChange")
     /// 在线库视频下载完成，携带 userInfo["localURL": URL]，由 MainWindowCoordinator 中转给视频库静默导入并播放
     static let onlineVideoReadyToPlay = Notification.Name("OnlineVideoReadyToPlay")
@@ -34,47 +33,12 @@ extension Notification.Name {
     static let steamWorkshopVideoReadyToPlay = Notification.Name("SteamWorkshopVideoReadyToPlay")
     /// Steam 创意工坊 HTML 网页壁纸准备播放，由 Coordinator 中转给 Web 壁纸实验宿主
     static let steamWorkshopWebWallpaperReadyToPlay = Notification.Name("SteamWorkshopWebWallpaperReadyToPlay")
-    /// 图片壁纸库模式切换通知，由 DetailView 发出，StaticImageLibrary 模块接收
+    /// 图片壁纸库模式切换通知，由 Shell 发出，StaticImageLibrary 模块接收
     static let staticImageLibraryModeDidChange = Notification.Name("StaticImageLibraryModeDidChange")
-    /// Steam 创意工坊模式切换通知，由 DetailView 发出，Steam 模块接收
+    /// Steam 创意工坊模式切换通知，由 Shell 发出，Steam 模块接收
     static let steamWorkshopModeDidChange = Notification.Name("SteamWorkshopModeDidChange")
     /// Steam 创意工坊浏览上下文变化通知，用于同步作者工坊返回态与筛选控件状态
     static let steamWorkshopBrowseContextDidChange = Notification.Name("SteamWorkshopBrowseContextDidChange")
-}
-
-struct DetailView: View {
-    @EnvironmentObject var wallpaperManager: WallpaperManager
-    @Binding var selectedItem: SelectedItem
-
-    var body: some View {
-        let selection = selectedItem.selectionContext
-        Group {
-            if case .onlineLibrary = selectedItem {
-                OnlineLibraryEntryView()
-            } else if case .onlineDownloads = selectedItem {
-                OnlineLibraryDownloadsView()
-            } else if case .steamWorkshop = selectedItem {
-                SteamWorkshopEntryView()
-            } else if case .steamDownloads = selectedItem {
-                SteamWorkshopDownloadsView()
-            } else if case .staticImageLibrary = selectedItem {
-                StaticImageLibraryEntryView()
-            } else if case .silTag(let tag) = selectedItem {
-                StaticImageLibraryEntryView(silTag: tag)
-            } else {
-                VideoLibraryEntryView(
-                    wallpapers: wallpaperManager.sortedWallpapers(
-                        selection.sourceWallpapers(from: wallpaperManager),
-                        selectionKey: selection.scrollPersistenceKey
-                    ),
-                    animatesReorder: selection == .category(.recentlyUsed),
-                    animatesInsertDelete: selection != .category(.recentlyUsed)
-                )
-                .id(selection.scrollPersistenceKey)
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
 }
 
 final class QuickLookPreviewController: NSObject, QLPreviewPanelDataSource, QLPreviewPanelDelegate {

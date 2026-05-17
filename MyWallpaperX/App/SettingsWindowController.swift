@@ -1,0 +1,92 @@
+//
+//  SettingsWindowController.swift
+//  MyWallpaperX
+//
+
+import AppKit
+
+@MainActor
+final class SettingsWindowController: NSWindowController, NSWindowDelegate {
+    static let shared = SettingsWindowController()
+
+    private let targetWindowSize = NSSize(width: 500, height: 440)
+    private let contentController = SettingsContentViewController()
+    private var hasShownWindow = false
+
+    private init() {
+        let window = MainAppWindow(contentViewController: contentController)
+        window.identifier = NSUserInterfaceItemIdentifier("SettingsWindow")
+        window.title = "设置"
+        window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
+        window.titleVisibility = .visible
+        window.titlebarAppearsTransparent = false
+        window.titlebarSeparatorStyle = .none
+        window.toolbarStyle = .unified
+        window.isOpaque = true
+        window.backgroundColor = .windowBackgroundColor
+        window.setContentSize(targetWindowSize)
+        window.minSize = targetWindowSize
+        window.maxSize = targetWindowSize
+        window.isReleasedWhenClosed = false
+        window.isRestorable = false
+        window.collectionBehavior.remove(.fullScreenAuxiliary)
+        window.collectionBehavior.remove(.moveToActiveSpace)
+        window.level = .normal
+
+        let toolbar = NSToolbar(identifier: "SettingsWindowToolbar")
+        toolbar.displayMode = .iconOnly
+        toolbar.allowsUserCustomization = false
+        window.toolbar = toolbar
+
+        super.init(window: window)
+        shouldCascadeWindows = false
+        self.window?.delegate = self
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    func showWindow() {
+        contentController.refresh()
+        NSApp.activate(ignoringOtherApps: true)
+        guard let window else { return }
+        if !hasShownWindow {
+            window.center()
+            hasShownWindow = true
+        }
+        window.makeKeyAndOrderFront(nil)
+    }
+}
+
+private final class SettingsContentViewController: NSViewController {
+    private let settingsView = AppKitSettingsContainerView(
+        wallpaperManager: .shared,
+        visibleSections: Set(AppSettingsSection.allCases),
+        topContentInset: 24
+    )
+
+    override func loadView() {
+        let rootView = NSView()
+        rootView.wantsLayer = true
+        rootView.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+        rootView.translatesAutoresizingMaskIntoConstraints = false
+
+        settingsView.translatesAutoresizingMaskIntoConstraints = false
+        rootView.addSubview(settingsView)
+        NSLayoutConstraint.activate([
+            settingsView.leadingAnchor.constraint(equalTo: rootView.leadingAnchor),
+            settingsView.trailingAnchor.constraint(equalTo: rootView.trailingAnchor),
+            settingsView.topAnchor.constraint(equalTo: rootView.topAnchor),
+            settingsView.bottomAnchor.constraint(equalTo: rootView.bottomAnchor)
+        ])
+
+        view = rootView
+    }
+
+    func refresh() {
+        settingsView.updateVisibleSections(Set(AppSettingsSection.allCases))
+        settingsView.refreshFromState()
+    }
+}

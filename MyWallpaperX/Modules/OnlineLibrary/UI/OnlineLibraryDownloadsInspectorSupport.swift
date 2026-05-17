@@ -1,0 +1,326 @@
+//
+//  OnlineLibraryDownloadsInspectorSupport.swift
+//  MyWallpaperX — Modules/OnlineLibrary/UI
+//
+
+import AppKit
+import AVFoundation
+import QuartzCore
+
+struct OnlineLibraryDownloadsInspectorSnapshot {
+    let id: Int
+    let title: String
+    let fileExtension: String
+    let fileSizeText: String
+    let durationText: String
+    let resolutionText: String
+    let creationDateText: String
+    let platformText: String
+    let path: String
+    let fileURL: URL
+    let previewImage: NSImage?
+
+    static func load(itemID: Int) -> OnlineLibraryDownloadsInspectorSnapshot? {
+        let url = OnlineLibraryService.downloadDirectory.appendingPathComponent("online_\(itemID).mp4")
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+
+        let attributes = (try? FileManager.default.attributesOfItem(atPath: url.path)) ?? [:]
+        let fileSize = attributes[.size] as? Int64 ?? 0
+        let creationDate = attributes[.creationDate] as? Date
+
+        let asset = AVURLAsset(url: url)
+        let durationSeconds = max(0, Int(asset.duration.seconds.rounded()))
+
+        var resolutionText = "未知"
+        if let track = asset.tracks(withMediaType: .video).first {
+            let transformed = track.naturalSize.applying(track.preferredTransform)
+            let width = Int(abs(transformed.width).rounded())
+            let height = Int(abs(transformed.height).rounded())
+            if width > 0, height > 0 {
+                resolutionText = "\(width)×\(height)"
+            }
+        }
+
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .medium
+
+        return OnlineLibraryDownloadsInspectorSnapshot(
+            id: itemID,
+            title: url.lastPathComponent,
+            fileExtension: url.pathExtension.uppercased(),
+            fileSizeText: ByteCountFormatter.string(fromByteCount: fileSize, countStyle: .file),
+            durationText: durationSeconds > 0 ? AppKitOLDownloadsItem.formatDuration(durationSeconds) : "未知",
+            resolutionText: resolutionText,
+            creationDateText: creationDate.map(formatter.string(from:)) ?? "未知",
+            platformText: "Pixabay",
+            path: url.path,
+            fileURL: url,
+            previewImage: OLDownloadedThumbnailCache.shared.image(for: itemID)
+        )
+    }
+}
+
+enum OnlineLibraryDownloadsInspectorViews {
+    static func makeFactView(label: String, value: String) -> NSView {
+        let stack = NSStackView()
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 6
+        stack.translatesAutoresizingMaskIntoConstraints = false
+
+        stack.addArrangedSubview(makeLabel(label, font: .systemFont(ofSize: 11, weight: .medium), color: .secondaryLabelColor))
+        let valueLabel = makeLabel(value, font: .systemFont(ofSize: 13, weight: .semibold), color: .labelColor)
+        valueLabel.maximumNumberOfLines = 3
+        valueLabel.isSelectable = true
+        stack.addArrangedSubview(valueLabel)
+
+        return stack
+    }
+
+    static func makeLabel(_ text: String, font: NSFont, color: NSColor) -> NSTextField {
+        let label = NSTextField(wrappingLabelWithString: text)
+        label.font = font
+        label.textColor = color
+        label.backgroundColor = .clear
+        label.isBordered = false
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        return label
+    }
+
+    static func makeBadge(_ text: String) -> NSView {
+        let label = NSTextField(labelWithString: text)
+        label.font = .systemFont(ofSize: 11, weight: .semibold)
+        label.textColor = .labelColor
+        label.alignment = .center
+        label.translatesAutoresizingMaskIntoConstraints = false
+
+        let container = NSView()
+        container.wantsLayer = true
+        container.layer?.cornerRadius = 13
+        container.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.12).cgColor
+        container.layer?.borderColor = NSColor.white.withAlphaComponent(0.12).cgColor
+        container.layer?.borderWidth = 0.6
+        container.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(label)
+
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 15),
+            label.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -15),
+            label.topAnchor.constraint(equalTo: container.topAnchor, constant: 7),
+            label.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -7),
+            container.widthAnchor.constraint(lessThanOrEqualToConstant: 180),
+            container.heightAnchor.constraint(equalToConstant: 28)
+        ])
+
+        return container
+    }
+
+    static func makeDivider() -> NSView {
+        let divider = NSView()
+        divider.wantsLayer = true
+        divider.layer?.backgroundColor = NSColor.separatorColor.cgColor
+        divider.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([divider.heightAnchor.constraint(equalToConstant: 1)])
+        return divider
+    }
+
+    static func makeFooterButton(
+        title: String,
+        symbolName: String,
+        target: AnyObject?,
+        action: Selector,
+        kind: OnlineLibraryDownloadsInspectorFooterButtonKind = .secondary
+    ) -> NSButton {
+        let button = OnlineLibraryDownloadsInspectorFooterButton(
+            title: title,
+            image: NSImage(systemSymbolName: symbolName, accessibilityDescription: title),
+            target: target,
+            action: action,
+            kind: kind
+        )
+        button.translatesAutoresizingMaskIntoConstraints = false
+        return button
+    }
+}
+
+enum OnlineLibraryDownloadsInspectorFooterButtonKind {
+    case primary
+    case secondary
+}
+
+private final class OnlineLibraryDownloadsInspectorFooterButton: NSButton {
+    private let kind: OnlineLibraryDownloadsInspectorFooterButtonKind
+
+    init(title: String, image: NSImage?, target: AnyObject?, action: Selector, kind: OnlineLibraryDownloadsInspectorFooterButtonKind) {
+        self.kind = kind
+        super.init(frame: .zero)
+        self.title = title
+        self.image = image
+        self.target = target
+        self.action = action
+        setup()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    override var isHighlighted: Bool {
+        didSet { updateStyle() }
+    }
+
+    override var isEnabled: Bool {
+        didSet { updateStyle() }
+    }
+
+    private func setup() {
+        isBordered = false
+        imagePosition = .imageLeading
+        imageScaling = .scaleProportionallyDown
+        imageHugsTitle = true
+        font = .systemFont(ofSize: 13, weight: .semibold)
+        wantsLayer = true
+        layer?.cornerRadius = 10
+        layer?.borderWidth = 0.7
+        translatesAutoresizingMaskIntoConstraints = false
+        updateStyle()
+    }
+
+    private func updateStyle() {
+        let enabledAlpha: CGFloat = isEnabled ? 1 : 0.45
+        let pressedFactor: CGFloat = isHighlighted ? 0.9 : 1
+        let isDarkMode = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        let textColor: NSColor
+        let fillColor: NSColor
+        let borderColor: NSColor
+
+        switch kind {
+        case .primary:
+            textColor = .white.withAlphaComponent(enabledAlpha)
+            fillColor = .systemBlue.withAlphaComponent((isDarkMode ? 0.95 : 0.88) * enabledAlpha * pressedFactor)
+            borderColor = .systemBlue.withAlphaComponent(0.42 * enabledAlpha)
+        case .secondary:
+            textColor = .labelColor.withAlphaComponent(enabledAlpha)
+            fillColor = (isDarkMode ? NSColor.black : NSColor.controlBackgroundColor)
+                .withAlphaComponent((isDarkMode ? 0.26 : 0.78) * enabledAlpha * pressedFactor)
+            borderColor = (isDarkMode ? NSColor.white : NSColor.black)
+                .withAlphaComponent((isDarkMode ? 0.16 : 0.10) * enabledAlpha)
+        }
+
+        attributedTitle = NSAttributedString(
+            string: title,
+            attributes: [
+                .font: NSFont.systemFont(ofSize: 13, weight: .semibold),
+                .foregroundColor: textColor
+            ]
+        )
+        contentTintColor = textColor
+        layer?.backgroundColor = fillColor.cgColor
+        layer?.borderColor = borderColor.cgColor
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateStyle()
+    }
+}
+
+final class OnlineLibraryDownloadsInspectorFadingScrollView: NSScrollView {
+    private let fadeMask = CAGradientLayer()
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        setupFadeMask()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    override func layout() {
+        super.layout()
+        fadeMask.frame = bounds
+    }
+
+    private func setupFadeMask() {
+        wantsLayer = true
+        contentView.wantsLayer = true
+        fadeMask.colors = [
+            NSColor.clear.cgColor,
+            NSColor.black.cgColor,
+            NSColor.black.cgColor,
+            NSColor.clear.cgColor
+        ]
+        fadeMask.locations = [0, 0.025, 0.965, 1]
+        fadeMask.startPoint = CGPoint(x: 0.5, y: 0)
+        fadeMask.endPoint = CGPoint(x: 0.5, y: 1)
+        layer?.mask = fadeMask
+    }
+}
+
+final class OnlineLibraryDownloadsPreviewSurfaceView: NSView {
+    private let previewImage: NSImage?
+    private let placeholderView = NSImageView()
+
+    init(itemID: Int, previewImage: NSImage?) {
+        self.previewImage = previewImage
+        super.init(frame: .zero)
+        setup(itemID: itemID)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        NSGradient(
+            starting: NSColor.white.withAlphaComponent(0.22),
+            ending: NSColor(calibratedRed: 0.84, green: 0.91, blue: 1, alpha: 0.20)
+        )?.draw(in: bounds, angle: -45)
+
+        guard let previewImage else { return }
+
+        let imageSize = previewImage.size
+        guard imageSize.width > 0, imageSize.height > 0, bounds.width > 0, bounds.height > 0 else { return }
+
+        let scale = max(bounds.width / imageSize.width, bounds.height / imageSize.height)
+        let targetSize = NSSize(width: imageSize.width * scale, height: imageSize.height * scale)
+        let targetRect = NSRect(
+            x: bounds.midX - targetSize.width / 2,
+            y: bounds.midY - targetSize.height / 2,
+            width: targetSize.width,
+            height: targetSize.height
+        )
+        previewImage.draw(in: targetRect, from: .zero, operation: .sourceOver, fraction: 1)
+    }
+
+    private func setup(itemID: Int) {
+        wantsLayer = true
+        layer?.cornerRadius = 16
+        layer?.masksToBounds = true
+        layer?.borderColor = NSColor.white.withAlphaComponent(0.09).cgColor
+        layer?.borderWidth = 0.45
+        setAccessibilityLabel("在线图库下载项预览 \(itemID)")
+
+        placeholderView.image = NSImage(systemSymbolName: "film.stack", accessibilityDescription: nil)
+        placeholderView.contentTintColor = .secondaryLabelColor
+        placeholderView.symbolConfiguration = .init(pointSize: 28, weight: .medium)
+        placeholderView.translatesAutoresizingMaskIntoConstraints = false
+        placeholderView.isHidden = previewImage != nil
+
+        addSubview(placeholderView)
+
+        NSLayoutConstraint.activate([
+            placeholderView.centerXAnchor.constraint(equalTo: centerXAnchor),
+            placeholderView.centerYAnchor.constraint(equalTo: centerYAnchor),
+            placeholderView.widthAnchor.constraint(equalToConstant: 36),
+            placeholderView.heightAnchor.constraint(equalToConstant: 36)
+        ])
+    }
+}

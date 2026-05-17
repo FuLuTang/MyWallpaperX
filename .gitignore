@@ -37,3 +37,9 @@ Packages/
 .cursor-temp-*.json
 MyWallpaperX.xcodeproj/project.xcworkspace/xcuserdata/songziqiang.xcuserdatad/UserInterfaceState.xcuserstate
 .build-cache/
+
+# Local Codex workspace state
+.codex/
+
+# Runtime logs
+MyWallpaperX/Resources/SteamCMDRuntime.bundle/Steam/logs/

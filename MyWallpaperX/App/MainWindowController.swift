@@ -3,7 +3,6 @@
 //  MyWallpaperX
 //
 
-import SwiftUI
 import AppKit
 import QuickLookUI
 
@@ -12,7 +11,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     let toolbarController: VideoLibraryToolbarController
     private var hasShownWindow = false
     private let quickLookPreviewController = QuickLookPreviewController.shared
-    /// 当前激活的模块，由 ContentView 通过通知更新，供 performZoom 路由使用
+    /// 当前激活的模块，由 Shell 模块切换通知更新，供 performZoom 路由使用
     private var activeModule: ActiveModule = .videoLibrary
     private var observerTokens: [NSObjectProtocol] = []
 
@@ -25,12 +24,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     init(wallpaperManager: WallpaperManager) {
         self.wallpaperManager = wallpaperManager
-        let rootView = ContentView()
-            .environmentObject(wallpaperManager)
-            .frame(minWidth: 900, minHeight: 650)
-        let hostingController = NSHostingController(rootView: rootView)
+        let splitController = AppKitMainSplitViewController(wallpaperManager: wallpaperManager)
 
-        let window = MainAppWindow(contentViewController: hostingController)
+        let window = MainAppWindow(contentViewController: splitController)
         window.identifier = NSUserInterfaceItemIdentifier("MainWindow")
         window.title = "MyWallpaperX"
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]

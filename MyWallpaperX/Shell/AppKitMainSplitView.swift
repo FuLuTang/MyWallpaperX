@@ -5,59 +5,10 @@
 
 import SwiftUI
 import AppKit
+import Combine
 
 private let inspectorHostSlideInTiming = CAMediaTimingFunction(controlPoints: 0.22, 1.12, 0.32, 1.0)
 private let inspectorHostSlideOutTiming = CAMediaTimingFunction(controlPoints: 0.4, 0.0, 0.22, 1.0)
-
-struct AppKitMainSplitView: NSViewControllerRepresentable {
-    @EnvironmentObject var wallpaperManager: WallpaperManager
-    @Binding var selectedItem: SelectedItem
-
-    func makeNSViewController(context: Context) -> AppKitMainSplitViewController {
-        let controller = AppKitMainSplitViewController()
-        controller.update(
-            wallpaperManager: wallpaperManager,
-            selectedItem: bindingForSelection()
-        )
-        return controller
-    }
-
-    func updateNSViewController(_ nsViewController: AppKitMainSplitViewController, context: Context) {
-        nsViewController.update(
-            wallpaperManager: wallpaperManager,
-            selectedItem: bindingForSelection()
-        )
-    }
-
-    private func bindingForSelection() -> Binding<SelectedItem> {
-        Binding(
-            get: { selectedItem },
-            set: { selectedItem = $0 }
-        )
-    }
-}
-
-private struct SidebarRootView: View {
-    @ObservedObject var wallpaperManager: WallpaperManager
-    @Binding var selectedItem: SelectedItem
-
-    var body: some View {
-        AppKitSidebarView(selectedItem: $selectedItem)
-            .environmentObject(wallpaperManager)
-            .ignoresSafeArea(.container, edges: .top)
-    }
-}
-
-private struct DetailRootView: View {
-    @ObservedObject var wallpaperManager: WallpaperManager
-    @Binding var selectedItem: SelectedItem
-
-    var body: some View {
-        DetailView(selectedItem: $selectedItem)
-            .environmentObject(wallpaperManager)
-            .ignoresSafeArea(.container, edges: .top)
-    }
-}
 
 final class AppKitMainSplitViewController: NSSplitViewController {
     private enum LayoutConstants {
@@ -66,24 +17,18 @@ final class AppKitMainSplitViewController: NSSplitViewController {
         static let splitAutosaveFramesKeyPrefix = "NSSplitView Subview Frames "
     }
 
-    private let sidebarController = NSHostingController(
-        rootView: SidebarRootView(
-            wallpaperManager: .shared,
-            selectedItem: .constant(.category(.myWallpapers))
-        )
+    private lazy var sidebarController = AppKitSidebarViewController(
+        wallpaperManager: wallpaperManager,
+        selectedItemGetter: { [weak self] in self?.selectedItem ?? .category(.myWallpapers) },
+        selectedItemSetter: { [weak self] item in self?.setSelectedItem(item) }
     )
-    private let detailHostingController = NSHostingController(
-        rootView: DetailRootView(
-            wallpaperManager: .shared,
-            selectedItem: .constant(.category(.myWallpapers))
-        )
-    )
+    private lazy var detailHostController = AppKitDetailHostViewController(wallpaperManager: wallpaperManager)
     private let inspectorStore = InspectorHostStore()
     private let inspectorController = NSHostingController(
         rootView: InspectorHost(store: InspectorHostStore())
     )
     private lazy var detailContainerController = InspectorDetailContainerViewController(
-        contentController: detailHostingController,
+        contentController: detailHostController,
         overlayController: inspectorController
     )
     private var hasConfiguredSplitItems = false
@@ -92,11 +37,23 @@ final class AppKitMainSplitViewController: NSSplitViewController {
     private var currentManagerIdentity: ObjectIdentifier?
     private var currentSelectedItem: SelectedItem?
     private var notificationObservers: [NSObjectProtocol] = []
+    private var cancellables = Set<AnyCancellable>()
     private weak var preservedFirstResponder: NSResponder?
     private var inspectorTransitionGeneration = 0
-    init() {
+    private let wallpaperManager: WallpaperManager
+    private var selectedItem: SelectedItem = .category(.myWallpapers)
+    private var lastPostedModuleID: ModuleIdentifier = .videoLibrary
+    private var isSyncingSelectionFromManager = false
+
+    convenience init() {
+        self.init(wallpaperManager: .shared)
+    }
+
+    init(wallpaperManager: WallpaperManager) {
+        self.wallpaperManager = wallpaperManager
         super.init(nibName: nil, bundle: nil)
         inspectorController.rootView = InspectorHost(store: inspectorStore)
+        selectedItem = SelectedItem(selectionContext: wallpaperManager.currentSelectionContext)
     }
 
     @available(*, unavailable)
@@ -106,6 +63,14 @@ final class AppKitMainSplitViewController: NSSplitViewController {
 
     deinit {
         notificationObservers.forEach(NotificationCenter.default.removeObserver)
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        update(wallpaperManager: wallpaperManager, selectedItem: selectionBinding())
+        syncSelectedItemFromManager()
+        syncInitialModuleFocusIfNeeded()
+        observeShellState()
     }
 
     func update(wallpaperManager: WallpaperManager, selectedItem: Binding<SelectedItem>) {
@@ -122,14 +87,200 @@ final class AppKitMainSplitViewController: NSSplitViewController {
         currentManagerIdentity = managerIdentity
         currentSelectedItem = selectedValue
 
-        sidebarController.rootView = SidebarRootView(
-            wallpaperManager: wallpaperManager,
-            selectedItem: selectedItem
+        sidebarController.updateSelectedItem(selectedValue)
+        detailHostController.update(selectedItem: selectedValue)
+    }
+
+    private func selectionBinding() -> Binding<SelectedItem> {
+        Binding(
+            get: { [weak self] in self?.selectedItem ?? .category(.myWallpapers) },
+            set: { [weak self] newValue in self?.setSelectedItem(newValue) }
         )
-        detailHostingController.rootView = DetailRootView(
-            wallpaperManager: wallpaperManager,
-            selectedItem: selectedItem
-        )
+    }
+
+    private func setSelectedItem(_ newValue: SelectedItem) {
+        guard selectedItem != newValue else { return }
+        selectedItem = newValue
+        update(wallpaperManager: wallpaperManager, selectedItem: selectionBinding())
+        syncManagerSelection(from: newValue)
+    }
+
+    private func observeShellState() {
+        guard cancellables.isEmpty else { return }
+
+        wallpaperManager.$selectedCategory
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.syncSelectedItemFromManager() }
+            .store(in: &cancellables)
+
+        wallpaperManager.$selectedTag
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.syncSelectedItemFromManager()
+                self?.syncQuickLookPreviewIfNeeded()
+            }
+            .store(in: &cancellables)
+
+        wallpaperManager.$selectedWallpaperId
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.syncQuickLookPreviewIfNeeded() }
+            .store(in: &cancellables)
+
+        wallpaperManager.$selectedWallpaperIds
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.syncQuickLookPreviewIfNeeded() }
+            .store(in: &cancellables)
+
+        NotificationCenter.default.publisher(for: .wallpaperManagerDidResetToFreshInstallState)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.handleFreshInstallReset() }
+            .store(in: &cancellables)
+
+        NotificationCenter.default.publisher(for: .appOpenSettingsRequested)
+            .receive(on: DispatchQueue.main)
+            .sink { _ in SettingsWindowController.shared.showWindow() }
+            .store(in: &cancellables)
+    }
+
+    private func syncSelectedItemFromManager() {
+        guard !isSyncingSelectionFromManager else { return }
+        let managerSelection = SelectedItem(selectionContext: wallpaperManager.currentSelectionContext)
+        guard selectedItem != managerSelection else { return }
+        isSyncingSelectionFromManager = true
+        selectedItem = managerSelection
+        update(wallpaperManager: wallpaperManager, selectedItem: selectionBinding())
+        isSyncingSelectionFromManager = false
+    }
+
+    private func syncManagerSelection(from item: SelectedItem) {
+        if item.isInStaticImageLibraryContext {
+            SILService.shared.clearSelectionState()
+        }
+        item.apply(to: wallpaperManager)
+
+        let isSIL = item == .staticImageLibrary || { if case .silTag = item { return true }; return false }()
+        let isOnline = item == .onlineLibrary || item == .onlineDownloads
+        let isSteam = item == .steamWorkshop || item == .steamDownloads
+        let newModule = moduleIdentifier(for: item)
+
+        if lastPostedModuleID != newModule {
+            NotificationCenter.default.post(name: .inspectorHostCloseRequested, object: nil)
+            lastPostedModuleID = newModule
+            let silUserInfo = makeStaticImageLibraryModeUserInfo(for: item, enabled: isSIL)
+            let onlineUserInfo: [String: Any] = [
+                "enabled": isOnline,
+                "isDownloads": item == .onlineDownloads
+            ]
+            let steamUserInfo: [String: Any] = [
+                "enabled": isSteam,
+                "isDownloads": item == .steamDownloads
+            ]
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(
+                    name: .staticImageLibraryModeDidChange,
+                    object: nil,
+                    userInfo: silUserInfo
+                )
+                NotificationCenter.default.post(
+                    name: .onlineLibraryModeDidChange,
+                    object: nil,
+                    userInfo: onlineUserInfo
+                )
+                NotificationCenter.default.post(
+                    name: .steamWorkshopModeDidChange,
+                    object: nil,
+                    userInfo: steamUserInfo
+                )
+            }
+        } else if isSIL {
+            let silUserInfo = makeStaticImageLibraryModeUserInfo(for: item, enabled: true)
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(
+                    name: .staticImageLibraryModeDidChange,
+                    object: nil,
+                    userInfo: silUserInfo
+                )
+            }
+        } else if isOnline {
+            let onlineUserInfo: [String: Any] = [
+                "enabled": true,
+                "isDownloads": item == .onlineDownloads
+            ]
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(
+                    name: .onlineLibraryModeDidChange,
+                    object: nil,
+                    userInfo: onlineUserInfo
+                )
+            }
+        } else if isSteam {
+            let steamUserInfo: [String: Any] = [
+                "enabled": true,
+                "isDownloads": item == .steamDownloads
+            ]
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(
+                    name: .steamWorkshopModeDidChange,
+                    object: nil,
+                    userInfo: steamUserInfo
+                )
+            }
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+            NotificationCenter.default.post(
+                name: .moduleDidBecomeActive,
+                object: nil,
+                userInfo: ["module": newModule.rawValue]
+            )
+        }
+    }
+
+    private func makeStaticImageLibraryModeUserInfo(
+        for item: SelectedItem,
+        enabled: Bool
+    ) -> [String: Any] {
+        var userInfo: [String: Any] = ["enabled": enabled]
+        if case .silTag(let tag) = item {
+            userInfo["silTag"] = tag
+        }
+        return userInfo
+    }
+
+    private func moduleIdentifier(for item: SelectedItem) -> ModuleIdentifier {
+        switch item {
+        case .staticImageLibrary, .silTag:
+            return .staticImageLibrary
+        case .onlineLibrary, .onlineDownloads:
+            return .onlineLibrary
+        case .steamWorkshop, .steamDownloads:
+            return .steamWorkshop
+        default:
+            return .videoLibrary
+        }
+    }
+
+    private func syncQuickLookPreviewIfNeeded() {
+        QuickLookPreviewController.shared.syncVisiblePreview(for: wallpaperManager.selectedWallpaperForQuickLook)
+    }
+
+    private func syncInitialModuleFocusIfNeeded() {
+        let module = moduleIdentifier(for: selectedItem)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+            NotificationCenter.default.post(
+                name: .moduleDidBecomeActive,
+                object: nil,
+                userInfo: ["module": module.rawValue]
+            )
+        }
+    }
+
+    private func handleFreshInstallReset() {
+        selectedItem = .category(.myWallpapers)
+        lastPostedModuleID = .videoLibrary
+        update(wallpaperManager: wallpaperManager, selectedItem: selectionBinding())
+        NotificationCenter.default.post(name: .inspectorHostCloseRequested, object: nil)
+        syncQuickLookPreviewIfNeeded()
     }
 
     private func configureSplitItems() {

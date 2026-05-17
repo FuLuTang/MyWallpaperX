@@ -7,10 +7,9 @@
 //
 
 import AppKit
-import SwiftUI
 import Combine
 
-// MARK: - SwiftUI 桥接
+// MARK: - Collection View
 
 final class AppKitOLCollectionView: NSCollectionView {
     var cardPressStateHandler: ((IndexPath, Bool) -> Void)?
@@ -47,24 +46,6 @@ final class AppKitOLCollectionView: NSCollectionView {
             self.cardPressStateHandler?(pressedCardIndexPath, false)
             self.pressedCardIndexPath = nil
         }
-    }
-}
-
-struct AppKitOLBrowserGridView: NSViewRepresentable {
-    @ObservedObject var service: OnlineLibraryService
-    let onDownload:       (OnlineLibraryVideoItem) -> Void
-    let onSetAsWallpaper: (OnlineLibraryVideoItem) -> Void
-
-    func makeNSView(context: Context) -> AppKitOLBrowserContainerView {
-        AppKitOLBrowserContainerView(
-            service: service,
-            onDownload: onDownload,
-            onSetAsWallpaper: onSetAsWallpaper
-        )
-    }
-    func updateNSView(_ nsView: AppKitOLBrowserContainerView, context: Context) {
-        nsView.onDownload = onDownload
-        nsView.onSetAsWallpaper = onSetAsWallpaper
     }
 }
 

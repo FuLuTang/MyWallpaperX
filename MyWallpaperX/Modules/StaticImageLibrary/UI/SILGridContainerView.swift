@@ -119,7 +119,7 @@ final class SILGridContainerView: NSView, ModuleFocusable {
     private let thumbnailCache = SILThumbnailStore.sharedCache
     private var failedThumbnailSignatures: Set<String> = []
     var wallpapersByID: [String: SILWallpaper] = [:]
-    /// 当前标签上下文；nil 表示「我的图片」全库，由外部 SILBridgeView.updateNSView 写入
+    /// 当前标签上下文；nil 表示「我的图片」全库，由 Shell detail host 写入
     var currentSILTag: String? = nil
     private var orderedIDs: [String] = []
     private var lastKnownMultiSelectMode: Bool = false

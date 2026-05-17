@@ -3,13 +3,12 @@
 //  MyWallpaperX
 //
 
-import SwiftUI
 import AppKit
 import Combine
 import UniformTypeIdentifiers
 import Foundation
 
-enum AppSettingsSection: String, CaseIterable, Identifiable {
+enum AppSettingsSection: String, CaseIterable {
     case playbackModes
     case audio
     case system
@@ -18,27 +17,6 @@ enum AppSettingsSection: String, CaseIterable, Identifiable {
     case display
     case maintenance
 
-    var id: String { rawValue }
-}
-
-struct AppKitSettingsView: NSViewRepresentable {
-    @EnvironmentObject var wallpaperManager: WallpaperManager
-    var visibleSections: Set<AppSettingsSection> = Set(AppSettingsSection.allCases)
-    var topContentInset: CGFloat = 10
-
-    func makeNSView(context: Context) -> AppKitSettingsContainerView {
-        // SwiftUI 只负责把 AppKit 容器挂进来，设置页状态和交互都由容器自己维护。
-        AppKitSettingsContainerView(
-            wallpaperManager: wallpaperManager,
-            visibleSections: visibleSections,
-            topContentInset: topContentInset
-        )
-    }
-
-    func updateNSView(_ nsView: AppKitSettingsContainerView, context: Context) {
-        nsView.updateVisibleSections(visibleSections)
-        nsView.refreshFromState()
-    }
 }
 
 final class AppKitSettingsContainerView: NSView {

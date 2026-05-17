@@ -3,58 +3,45 @@
 //  MyWallpaperX
 //
 
-import SwiftUI
 import AppKit
 import Combine
 
-struct AppKitSidebarView: NSViewRepresentable {
-    @EnvironmentObject var wallpaperManager: WallpaperManager
-    @Binding var selectedItem: SelectedItem
-
-    func makeCoordinator() -> Coordinator {
-        // 协调器只负责桥接 SwiftUI 的 selectedItem 绑定，不持有业务状态。
-        Coordinator()
+final class AppKitSidebarViewController: NSViewController {
+    private let wallpaperManager: WallpaperManager
+    private let selectedItemGetter: () -> SelectedItem
+    private let selectedItemSetter: (SelectedItem) -> Void
+    private var sidebarView: AppKitSidebarContainerView? {
+        view as? AppKitSidebarContainerView
     }
 
-    func makeNSView(context: Context) -> AppKitSidebarContainerView {
-        // Sidebar 真正的状态源仍然是 WallpaperManager，SwiftUI 只挂一个容器。
+    init(
+        wallpaperManager: WallpaperManager,
+        selectedItemGetter: @escaping () -> SelectedItem,
+        selectedItemSetter: @escaping (SelectedItem) -> Void
+    ) {
+        self.wallpaperManager = wallpaperManager
+        self.selectedItemGetter = selectedItemGetter
+        self.selectedItemSetter = selectedItemSetter
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    override func loadView() {
         let view = AppKitSidebarContainerView(wallpaperManager: wallpaperManager)
-        context.coordinator.bind(
-            selectedItemGetter: { selectedItem },
-            selectedItemSetter: { selectedItem = $0 }
-        )
         view.configureSelectionBridge(
-            selectedItemGetter: context.coordinator.selectedItemGetter,
-            selectedItemSetter: context.coordinator.selectedItemSetter
+            selectedItemGetter: selectedItemGetter,
+            selectedItemSetter: selectedItemSetter
         )
-        view.updateSelectedItem(selectedItem)
-        return view
+        view.updateSelectedItem(selectedItemGetter())
+        self.view = view
     }
 
-    func updateNSView(_ nsView: AppKitSidebarContainerView, context: Context) {
-        // update 只刷新桥接引用和当前选中项，不重复创建 outlineView。
-        context.coordinator.bind(
-            selectedItemGetter: { selectedItem },
-            selectedItemSetter: { selectedItem = $0 }
-        )
-        nsView.configureSelectionBridge(
-            selectedItemGetter: context.coordinator.selectedItemGetter,
-            selectedItemSetter: context.coordinator.selectedItemSetter
-        )
-        nsView.updateSelectedItem(selectedItem)
-    }
-
-    final class Coordinator {
-        private(set) var selectedItemGetter: (() -> SelectedItem)?
-        private(set) var selectedItemSetter: ((SelectedItem) -> Void)?
-
-        func bind(
-            selectedItemGetter: @escaping () -> SelectedItem,
-            selectedItemSetter: @escaping (SelectedItem) -> Void
-        ) {
-            self.selectedItemGetter = selectedItemGetter
-            self.selectedItemSetter = selectedItemSetter
-        }
+    func updateSelectedItem(_ selectedItem: SelectedItem) {
+        sidebarView?.updateSelectedItem(selectedItem)
     }
 }
 
