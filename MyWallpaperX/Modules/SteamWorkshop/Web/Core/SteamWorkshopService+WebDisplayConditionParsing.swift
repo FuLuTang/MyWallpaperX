@@ -306,12 +306,20 @@ extension SteamWorkshopService {
                 advance()
             default:
                 if character.isNumber || character == "-" {
-                    let start = index
+                    let hasMinus = character == "-"
                     advance()
+                    // 跳过负号后可能存在的空白（如 "value > - 0.5"）
+                    while index < input.endIndex, input[index].isWhitespace {
+                        advance()
+                    }
+                    let numberStart = index
                     while index < input.endIndex, input[index].isNumber || input[index] == "." {
                         advance()
                     }
-                    guard let value = Double(input[start..<index]) else { return nil }
+                    guard index > numberStart else { return nil }
+                    let signPart = hasMinus ? "-" : ""
+                    let digitsPart = String(input[numberStart..<index])
+                    guard let value = Double(signPart + digitsPart) else { return nil }
                     tokens.append(.number(value))
                     continue
                 }
