@@ -3,7 +3,7 @@ name: Build MyWallpaperX
 on:
   push:
     branches:
-      - main
+      - "**"
     tags-ignore:
       - "**"
   workflow_dispatch:
