@@ -1,99 +1,47 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-usage() {
-  cat <<'EOF'
-Usage:
-  script/resolve_version.sh [--next] [--offset N]
+BASE_MAJOR_VERSION=1
+BASE_MINOR_VERSION=5
+BASE_PATCH_VERSION=0
 
-Computes the app version from the latest build-* release tag.
---next      Advance one release beyond the latest released version.
---offset N  Test helper: compute BASE_VERSION + N patch-style increments.
-EOF
-}
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT_DIR"
 
-script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=/dev/null
-source "$script_dir/version.env"
+LATEST_TAG="$(git tag --list 'build-*' --sort=-version:refname | head -n 1)"
 
-next=false
-offset_override=""
-
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --next)
-      next=true
-      shift
-      ;;
-    --offset)
-      [[ $# -ge 2 ]] || { usage >&2; exit 2; }
-      offset_override="$2"
-      shift 2
-      ;;
-    -h|--help)
-      usage
-      exit 0
-      ;;
-    *)
-      usage >&2
-      exit 2
-      ;;
-  esac
-done
-
-IFS='.' read -r base_major base_minor base_patch <<< "$BASE_VERSION"
-
-increment_version() {
-  local version="$1"
-  local major minor patch
-  IFS='.' read -r major minor patch <<< "$version"
-  patch=$((patch + 1))
-  if (( patch >= 10 )); then
-    patch=0
-    minor=$((minor + 1))
-  fi
-  if (( minor >= 10 )); then
-    minor=0
-    major=$((major + 1))
-  fi
-  printf '%d.%d.%d\n' "$major" "$minor" "$patch"
-}
-
-if [[ -n "$offset_override" ]]; then
-  version="$BASE_VERSION"
-  offset="$offset_override"
-  if ! [[ "$offset" =~ ^[0-9]+$ ]]; then
-    echo "Offset must be a non-negative integer: $offset" >&2
-    exit 2
-  fi
-  while (( offset > 0 )); do
-    version="$(increment_version "$version")"
-    offset=$((offset - 1))
-  done
-  printf '%s\n' "$version"
-  exit 0
-fi
-
-# 优先用本地 tag，fallback 到远程 tag（支持 shallow clone）
-latest_tag="$(git tag --list 'build-*' --sort=-version:refname | head -n 1 || true)"
-if [[ -z "$latest_tag" ]]; then
-  latest_tag="$(
-    git ls-remote --tags origin 'build-*' 2>/dev/null \
-      | awk -F'/' '{print $3}' \
-      | sort -V -r \
-      | head -n 1 \
-      || true
-  )"
-fi
-
-if [[ -n "$latest_tag" ]]; then
-  version="${latest_tag#build-}"
+if [[ -n "$LATEST_TAG" ]]; then
+  RAW_VERSION="${LATEST_TAG#build-}"
 else
-  version="$BASE_VERSION"
+  RAW_VERSION="${BASE_MAJOR_VERSION}.${BASE_MINOR_VERSION}.${BASE_PATCH_VERSION}"
 fi
 
-if [[ "$next" == true ]]; then
-  version="$(increment_version "$version")"
+IFS='.' read -r CURRENT_MAJOR CURRENT_MINOR CURRENT_PATCH <<< "$RAW_VERSION"
+
+if [[ -z "${CURRENT_PATCH:-}" ]]; then
+  CURRENT_PATCH=0
 fi
 
-printf '%s\n' "$version"
+NEXT_PATCH=$((CURRENT_PATCH + 1))
+NEXT_MINOR=$CURRENT_MINOR
+NEXT_MAJOR=$CURRENT_MAJOR
+
+if (( NEXT_PATCH >= 10 )); then
+  NEXT_PATCH=0
+  NEXT_MINOR=$((NEXT_MINOR + 1))
+fi
+
+if (( NEXT_MINOR >= 10 )); then
+  NEXT_MINOR=0
+  NEXT_MAJOR=$((NEXT_MAJOR + 1))
+fi
+
+MARKETING_VERSION="${NEXT_MAJOR}.${NEXT_MINOR}.${NEXT_PATCH}"
+
+BUILD_VERSION="$(git rev-list --count HEAD)"
+
+cat <<EOF
+MARKETING_VERSION=${MARKETING_VERSION}
+BUILD_VERSION=${BUILD_VERSION}
+PREVIOUS_TAG=${LATEST_TAG}
+EOF
