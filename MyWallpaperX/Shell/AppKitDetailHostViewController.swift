@@ -5,7 +5,6 @@
 
 import AppKit
 import Combine
-import SwiftUI
 
 final class AppKitDetailHostViewController: NSViewController {
     private let wallpaperManager: WallpaperManager
@@ -163,7 +162,7 @@ final class AppKitDetailHostViewController: NSViewController {
         case .onlineDownloads:
             return StaticViewController(contentView: AppKitOLDownloadsContainerView())
         case .steamWorkshop:
-            return NSHostingController(rootView: SteamWorkshopEntryView())
+            return StaticViewController(contentView: AppKitSteamWorkshopBrowserView())
         case .steamDownloads:
             return StaticViewController(contentView: AppKitSteamWorkshopDownloadsView())
         case .staticImageLibrary:
