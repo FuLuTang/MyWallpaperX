@@ -31,13 +31,31 @@ sign_path() {
   codesign "${codesign_args[@]}" "$path"
 }
 
-# Step 1: sign all standalone Mach-O binaries (deepest first)
+# Collect all nested bundle paths so we can exclude their contents
+# from standalone Mach-O signing.
+nested_bundle_list="$(mktemp)"
+find "$app_path/Contents" \
+  \( -name '*.app' -o -name '*.appex' -o -name '*.framework' -o -name '*.xpc' -o -name '*.bundle' -o -name '*.kext' -o -name '*.plugin' \) \
+  -print > "$nested_bundle_list"
+
+# Step 1: sign only truly standalone Mach-O binaries (not inside any bundle)
 while IFS= read -r binary_path; do
   [[ -n "$binary_path" ]] || continue
   sign_path "$binary_path"
 done < <(
   find "$app_path/Contents" -type f ! -path '*/_CodeSignature/*' -print \
     | while IFS= read -r candidate; do
+        # Skip files inside nested bundles (they get signed with their bundle)
+        inside_bundle=false
+        while IFS= read -r bundle_path; do
+          [[ -n "$bundle_path" ]] || continue
+          if [[ "$candidate" == "$bundle_path"/* ]]; then
+            inside_bundle=true
+            break
+          fi
+        done < "$nested_bundle_list"
+        [[ "$inside_bundle" == true ]] && continue
+
         if file -b "$candidate" | grep -q 'Mach-O'; then
           printf '%s\t%s\n' "$(awk -F/ '{print NF}' <<<"$candidate")" "$candidate"
         fi
@@ -52,13 +70,12 @@ while IFS= read -r nested_bundle; do
   [[ "$nested_bundle" == "$app_path" ]] && continue
   sign_path "$nested_bundle"
 done < <(
-  find "$app_path/Contents" \
-    \( -name '*.app' -o -name '*.appex' -o -name '*.framework' -o -name '*.xpc' \) \
-    -print \
-    | awk '{ print gsub(/\//, "&") "\t" $0 }' \
+  awk '{ print gsub(/\//, "&") "\t" $0 }' "$nested_bundle_list" \
     | sort -rn \
     | cut -f2-
 )
+
+rm -f "$nested_bundle_list"
 
 # Step 3: sign the main app bundle (no --deep)
 sign_path "$app_path"
