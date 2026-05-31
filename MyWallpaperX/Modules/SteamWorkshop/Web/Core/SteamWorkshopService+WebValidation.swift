@@ -128,7 +128,8 @@ extension SteamWorkshopService {
             appendIssue(.error, .fatal, "入口文件不存在：\(entryRelativePath)")
         }
 
-        while let fileURL = pendingFiles.first {
+        let maxScanFiles = 200
+        while let fileURL = pendingFiles.first, scannedFiles.count < maxScanFiles {
             pendingFiles.removeFirst()
             guard scannedFiles.insert(fileURL).inserted else { continue }
             guard let content = try? String(contentsOf: fileURL, encoding: .utf8) else {
@@ -201,9 +202,10 @@ extension SteamWorkshopService {
         if !scannedFiles.isEmpty {
             appendIssue(.info, .info, "已扫描 \(scannedFiles.count) 个入口/依赖文件")
         }
-        let effectiveExternalDependencyURLs = staticContentSummary.map {
+        let cachedExternalURLs = staticContentSummary.map {
             Set($0.externalDependencyHosts.map { "https://\($0)" })
-        } ?? externalDependencyURLs
+        } ?? []
+        let effectiveExternalDependencyURLs = externalDependencyURLs.union(cachedExternalURLs)
         appendWebExternalDependencyIssues(from: effectiveExternalDependencyURLs, appendIssue: appendIssue)
 
         if usesWebMResource {

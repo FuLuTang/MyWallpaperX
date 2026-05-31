@@ -44,8 +44,6 @@ extension SteamWorkshopService {
         return lowered.contains("wallpaperpluginlistener")
             || lowered.contains("onpluginloaded")
             || lowered.contains("wpplugins")
-            || lowered.contains(".led")
-            || lowered.contains(".rgb")
     }
 
     static func webContentUsesPersistentBrowserStorage(_ content: String) -> Bool {
