@@ -4,17 +4,38 @@
 //
 
 import Foundation
+import AppKit
 import WebKit
+import CoreGraphics
 
 extension DedicatedWebWallpaperHostPlaceholderAdapter {
     var currentGeneralProperties: [String: [String: Any]] {
-        [
-            "fps": ["value": resolvedGeneralFPSValue]
+        currentGeneralProperties(for: nil, screenID: nil)
+    }
+
+    func currentGeneralProperties(for screen: NSScreen?, screenID: CGDirectDisplayID?) -> [String: [String: Any]] {
+        let targetScreen = screen ?? NSScreen.main
+        let frame = targetScreen?.frame ?? .zero
+        return [
+            "fps": ["value": resolvedGeneralFPSValue(for: targetScreen)],
+            "paused": ["value": paused],
+            "volume": ["value": currentVolume],
+            "display": [
+                "value": screenID.map { "Monitor\($0)" } ?? "Monitor0",
+                "width": Int(frame.width),
+                "height": Int(frame.height),
+                "scale": targetScreen?.backingScaleFactor ?? 1
+            ]
         ]
     }
 
     var resolvedGeneralFPSValue: Int {
-        30
+        resolvedGeneralFPSValue(for: NSScreen.main)
+    }
+
+    func resolvedGeneralFPSValue(for screen: NSScreen?) -> Int {
+        guard let screen else { return 60 }
+        return max(1, screen.maximumFramesPerSecond)
     }
 
     var currentGeneralPropertiesJSON: String {
@@ -22,6 +43,16 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
               let data = try? JSONSerialization.data(withJSONObject: currentGeneralProperties),
               let json = String(data: data, encoding: .utf8) else {
             return #"{"fps":{"value":30}}"#
+        }
+        return json
+    }
+
+    func currentGeneralPropertiesJSON(for screen: NSScreen?, screenID: CGDirectDisplayID?) -> String {
+        let properties = currentGeneralProperties(for: screen, screenID: screenID)
+        guard JSONSerialization.isValidJSONObject(properties),
+              let data = try? JSONSerialization.data(withJSONObject: properties),
+              let json = String(data: data, encoding: .utf8) else {
+            return #"{"fps":{"value":60}}"#
         }
         return json
     }
@@ -130,7 +161,11 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
 
     func applyCompatibilityState(to webView: WKWebView, deferDirectorySync _: Bool) {
         let propertiesJSON = currentRequest?.propertiesJSON ?? "{}"
-        let generalPropertiesJSON = currentGeneralPropertiesJSON
+        let screenID = screenID(for: webView)
+        let screen = screenID.flatMap { targetID in
+            NSScreen.screens.first { Self.screenID(for: $0) == targetID }
+        }
+        let generalPropertiesJSON = currentGeneralPropertiesJSON(for: screen, screenID: screenID)
         refreshReadableResourceRoots(using: propertiesJSON)
         syncFetchAllDirectoryProperties(using: propertiesJSON)
         let escapedProperties = WebWallpaperHostSupport.javaScriptQuotedString(propertiesJSON)
@@ -171,6 +206,7 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
             "window.__myWallpaperSetPaused(\(pausedLiteral));",
             completionHandler: nil
         )
+        applyGeneralProperties(to: webView)
     }
 
     func applyProperties(_ propertiesJSON: String, to webView: WKWebView) {
@@ -191,7 +227,11 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
     }
 
     func applyGeneralProperties(to webView: WKWebView) {
-        let escapedGeneralProperties = WebWallpaperHostSupport.javaScriptQuotedString(currentGeneralPropertiesJSON)
+        let screenID = screenID(for: webView)
+        let screen = screenID.flatMap { targetID in
+            NSScreen.screens.first { Self.screenID(for: $0) == targetID }
+        }
+        let escapedGeneralProperties = WebWallpaperHostSupport.javaScriptQuotedString(currentGeneralPropertiesJSON(for: screen, screenID: screenID))
         webView.evaluateJavaScript(
             """
             (() => {
@@ -215,6 +255,7 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
             """,
             completionHandler: nil
         )
+        applyGeneralProperties(to: webView)
     }
 
     func pushAudioSpectrum(_ levels: [Float], to webView: WKWebView) {

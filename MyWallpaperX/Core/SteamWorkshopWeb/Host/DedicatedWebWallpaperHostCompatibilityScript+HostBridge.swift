@@ -223,6 +223,21 @@ let webCompatibilityScriptHostBridge = #"""
     for (const listener of playbackStateListeners) {
       try { listener(paused); } catch (_) {}
     }
+    for (const context of audioContextInstances) {
+      try {
+        if (paused && typeof context.suspend === 'function') {
+          context.suspend().catch((error) => {
+            hostLogger.post('audio.suspend.error', error && error.message ? error.message : error);
+          });
+        } else if (!paused && typeof context.resume === 'function') {
+          context.resume().catch((error) => {
+            hostLogger.post('audio.resume.error', error && error.message ? error.message : error);
+          });
+        }
+      } catch (error) {
+        hostLogger.post('audio.context-state.error', error && error.message ? error.message : error);
+      }
+    }
     const mediaNodes = Array.from(document.querySelectorAll('audio,video'));
     for (const node of mediaNodes.concat(audioStreams)) {
       if (!node) continue;
@@ -245,5 +260,15 @@ let webCompatibilityScriptHostBridge = #"""
     }
     wallpaperDispatchMediaPlayback(wallpaperPreferredMediaNode(), paused);
   };
+  try {
+    window.__myWallpaperApplyProperties(window.__myWallpaperLastUserProperties || {});
+    window.__myWallpaperApplyGeneralProperties(window.__myWallpaperLastGeneralProperties || {});
+    window.__myWallpaperSetGlobalVolume(window.__myWallpaperInitialVolume);
+    window.__myWallpaperSetPaused(!!window.__myWallpaperInitialPaused);
+    window.__myWallpaperNotifyPluginLoaded('led');
+    window.__myWallpaperNotifyPluginLoaded('rgb');
+  } catch (error) {
+    hostLogger.post('bootstrap.seed.error', error && error.message ? error.message : error);
+  }
 })();
 """#

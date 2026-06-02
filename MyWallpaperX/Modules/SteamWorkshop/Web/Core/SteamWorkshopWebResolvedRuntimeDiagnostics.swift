@@ -6,7 +6,7 @@ extension SteamWorkshopService {
             userPropertiesLevel: .basic,
             generalProperties: .init(
                 applyListenerLevel: .basic,
-                fpsLevel: .placeholder
+                fpsLevel: .basic
             ),
             directoryNotificationsLevel: .placeholder,
             audioListenerLevel: .basic,
@@ -40,6 +40,11 @@ extension SteamWorkshopService {
         var usesGeneralFPS = false
         var usesPluginBridge = false
         var usesPersistentBrowserStorage = false
+        var usesServiceWorkerRegistration = false
+        var usesESModuleDependency = false
+        var usesDynamicImport = false
+        var usesWASMResource = false
+        var usesWASMStreaming = false
         let hasFetchAllDirectoryProperty = propertyDefinitions.contains {
             $0.kind == .directory && $0.directoryMode?.lowercased() == "fetchall"
         }
@@ -73,6 +78,21 @@ extension SteamWorkshopService {
             if Self.webContentUsesPersistentBrowserStorage(content) {
                 usesPersistentBrowserStorage = true
             }
+            if Self.webContentUsesServiceWorkerRegistration(content) {
+                usesServiceWorkerRegistration = true
+            }
+            if Self.webContentUsesESModuleDependency(content) {
+                usesESModuleDependency = true
+            }
+            if Self.webContentUsesDynamicImport(content) {
+                usesDynamicImport = true
+            }
+            if Self.webContentUsesWASMResource(content) {
+                usesWASMResource = true
+            }
+            if Self.webContentUsesWASMStreaming(content) {
+                usesWASMStreaming = true
+            }
 
             for reference in Self.extractLocalWebResourceReferences(from: content, fileExtension: fileURL.pathExtension) {
                 switch reference {
@@ -83,6 +103,9 @@ extension SteamWorkshopService {
                     let ext = resolvedURL.pathExtension.localizedLowercase
                     if ext == "webm" {
                         usesWebMResource = true
+                    }
+                    if ext == "wasm" {
+                        usesWASMResource = true
                     }
                     if ["html", "htm", "css", "js", "json"].contains(ext),
                        FileManager.default.fileExists(atPath: resolvedURL.path),
@@ -116,6 +139,11 @@ extension SteamWorkshopService {
             usesGeneralFPS: usesGeneralFPS,
             usesPluginBridge: usesPluginBridge,
             usesPersistentBrowserStorage: usesPersistentBrowserStorage,
+            usesServiceWorkerRegistration: usesServiceWorkerRegistration,
+            usesESModuleDependency: usesESModuleDependency,
+            usesDynamicImport: usesDynamicImport,
+            usesWASMResource: usesWASMResource,
+            usesWASMStreaming: usesWASMStreaming,
             usesWebMResource: usesWebMResource,
             usesHoverOnlyInteraction: usesHoverOnlyInteraction,
             hasFetchAllDirectoryProperty: hasFetchAllDirectoryProperty,

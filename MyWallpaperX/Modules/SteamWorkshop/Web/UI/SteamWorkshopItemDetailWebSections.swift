@@ -188,6 +188,7 @@ struct SteamWorkshopItemDetailWebDiagnosticsSection: View {
     var body: some View {
         let resolvedEntryPath = descriptor?.resolvedEntryRelativePath ?? report.entryRelativePath
         let entrySummary = resolvedEntryPath.isEmpty ? "未解析到入口" : resolvedEntryPath
+        let runtimeEvents = WebRuntimeDiagnosticsStore.shared.recentEvents(recordID: record?.id, limit: 12)
 
         Divider()
             .overlay(Color.white.opacity(0.035))
@@ -236,7 +237,40 @@ struct SteamWorkshopItemDetailWebDiagnosticsSection: View {
                         : "当前项目声明依赖包 \(itemID)，但本地未找到该依赖的可启动 WEB 入口"
                 )
             }
+
+            if !runtimeEvents.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("最近运行事件")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                    ForEach(runtimeEvents) { event in
+                        SteamWorkshopValidationPill(
+                            severity: event.validationSeverity,
+                            levelTitle: event.type,
+                            message: event.displayMessage
+                        )
+                    }
+                }
+            }
         }
         .padding(.horizontal, 2)
+    }
+}
+
+private extension WebRuntimeDiagnosticEvent {
+    var validationSeverity: SteamWorkshopWebValidationSeverity {
+        switch severity {
+        case .error:
+            return .error
+        case .warning:
+            return .warning
+        case .info:
+            return .info
+        }
+    }
+
+    var displayMessage: String {
+        let urlText = url.map { "  ·  \($0)" } ?? ""
+        return "\(message)\(urlText)"
     }
 }

@@ -33,6 +33,8 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
     func launch(_ request: WallpaperEngine.WebWallpaperLaunchRequest) {
         let shouldRebuildSurfaces = currentRequest?.entryURL.resolvingSymlinksInPath().standardizedFileURL != request.entryURL.resolvingSymlinksInPath().standardizedFileURL
             || currentRequest?.rootURL.resolvingSymlinksInPath().standardizedFileURL != request.rootURL.resolvingSymlinksInPath().standardizedFileURL
+            || currentRequest?.runtimeProfile != request.runtimeProfile
+            || currentRequest?.recordID != request.recordID
 
         if shouldRebuildSurfaces {
             teardownHostSurfaces()
@@ -63,6 +65,13 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
             entryURL: request.entryURL,
             rootURL: request.rootURL
         )
+        recordDiagnostic(
+            type: "runtime.profile",
+            severity: .info,
+            message: "profile=\(request.runtimeProfile.id) origin=\(request.runtimeProfile.originMode.rawValue) dataStore=\(request.runtimeProfile.dataStorePolicy.rawValue)",
+            screenID: nil,
+            url: entryURL.absoluteString
+        )
 
         let targetScreens = availableScreens
 
@@ -74,7 +83,7 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
                 surface.window.orderFrontRegardless()
                 surface.window.level = Self.webWindowLevel
                 surface.webView.stopLoading()
-                surface.webView.load(URLRequest(url: entryURL))
+                surface.webView.load(URLRequest(url: runtimeEntryURL(for: request, localEntryURL: entryURL, surface: surface)))
             }
             return
         }
@@ -87,7 +96,7 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
             setTransientMouseCaptureEnabled(false, for: surface)
             surface.window.orderFrontRegardless()
             surface.window.level = Self.webWindowLevel
-            surface.webView.load(URLRequest(url: entryURL))
+            surface.webView.load(URLRequest(url: runtimeEntryURL(for: request, localEntryURL: entryURL, surface: surface)))
             createdSurface = true
         }
 
@@ -130,7 +139,9 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
                         entryURL: request.entryURL,
                         rootURL: request.rootURL,
                         propertiesJSON: propertiesJSON,
-                        source: request.source
+                        source: request.source,
+                        recordID: request.recordID,
+                        runtimeProfile: request.runtimeProfile
                     )
                 }
                 syncFetchAllDirectoryProperties(using: propertiesJSON)
@@ -159,7 +170,18 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
             let source = ((message.body as? [String: Any])?["source"] as? String) ?? "page-script"
             updateInteractiveRegions(regions, source: source, screenID: screenID)
         case "wallpaperHostLog":
-            break
+            guard let webView = self.webView(for: userContentController) else { return }
+            let screenID = screenID(for: webView)
+            let body = message.body as? [String: Any]
+            let type = body?["type"] as? String ?? "js.log"
+            let rawMessage = body?["message"] as? String ?? String(describing: message.body)
+            recordDiagnostic(
+                type: type,
+                severity: diagnosticSeverity(for: type),
+                message: rawMessage,
+                screenID: screenID,
+                url: webView.url?.absoluteString
+            )
         case "wallpaperHostRandomFile":
             guard let body = message.body as? [String: Any],
                   let requestID = body["requestID"] as? String,
@@ -177,6 +199,61 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
         default:
             return
         }
+    }
+
+    func runtimeEntryURL(
+        for request: WallpaperEngine.WebWallpaperLaunchRequest,
+        localEntryURL: URL,
+        surface: HostSurface
+    ) -> URL {
+        guard request.runtimeProfile.originMode == .httpLoopback else {
+            return localEntryURL
+        }
+        do {
+            let server: WebWallpaperLoopbackServer
+            if let existing = loopbackServers[surface.screenID] {
+                server = existing
+            } else {
+                server = WebWallpaperLoopbackServer(schemeHandler: surface.schemeHandler)
+                loopbackServers[surface.screenID] = server
+            }
+            let baseURL = try server.start()
+            let path = localEntryURL.path
+            let url = baseURL.appendingPathComponent(path.trimmingCharacters(in: CharacterSet(charactersIn: "/")))
+            recordDiagnostic(type: "runtime.origin", severity: .info, message: "httpLoopback \(url.absoluteString)", screenID: surface.screenID, url: url.absoluteString)
+            return url
+        } catch {
+            recordDiagnostic(type: "runtime.origin.error", severity: .error, message: error.localizedDescription, screenID: surface.screenID, url: localEntryURL.absoluteString)
+            return localEntryURL
+        }
+    }
+
+    func recordDiagnostic(
+        type: String,
+        severity: WebRuntimeDiagnosticEvent.Severity,
+        message: String,
+        screenID: CGDirectDisplayID?,
+        url: String?
+    ) {
+        WebRuntimeDiagnosticsStore.shared.record(
+            type: type,
+            severity: severity,
+            message: message,
+            recordID: currentRequest?.recordID,
+            screenID: screenID,
+            url: url
+        )
+    }
+
+    func diagnosticSeverity(for type: String) -> WebRuntimeDiagnosticEvent.Severity {
+        let lowered = type.lowercased()
+        if lowered.contains("error") || lowered.contains("rejection") {
+            return .error
+        }
+        if lowered.contains("warn") || lowered.contains("stalled") || lowered.contains("waiting") {
+            return .warning
+        }
+        return .info
     }
 
 }

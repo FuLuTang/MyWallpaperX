@@ -37,6 +37,11 @@ struct ResolvedWebStaticContentSummary: Codable, Equatable {
     let usesGeneralFPS: Bool
     let usesPluginBridge: Bool
     let usesPersistentBrowserStorage: Bool
+    let usesServiceWorkerRegistration: Bool
+    let usesESModuleDependency: Bool
+    let usesDynamicImport: Bool
+    let usesWASMResource: Bool
+    let usesWASMStreaming: Bool
     let usesWebMResource: Bool
     let usesHoverOnlyInteraction: Bool
     let hasFetchAllDirectoryProperty: Bool
@@ -95,6 +100,11 @@ enum ResolvedWebRuntimeRiskFlag: String, Codable, Equatable, Hashable {
     case knownSafariBaselineIncompatibility
     case missingAccessibleFileBinding
     case missingAccessibleDirectoryBinding
+    case serviceWorkerRegistration
+    case esModuleDependency
+    case dynamicImportUsage
+    case wasmUsage
+    case wasmStreamingUsage
 
     var displayName: String {
         switch self {
@@ -124,6 +134,16 @@ enum ResolvedWebRuntimeRiskFlag: String, Codable, Equatable, Hashable {
             return "缺少可访问文件"
         case .missingAccessibleDirectoryBinding:
             return "缺少可访问目录"
+        case .serviceWorkerRegistration:
+            return "Service Worker 依赖"
+        case .esModuleDependency:
+            return "ES Module 依赖"
+        case .dynamicImportUsage:
+            return "动态 import 依赖"
+        case .wasmUsage:
+            return "WASM 依赖"
+        case .wasmStreamingUsage:
+            return "WASM Streaming 依赖"
         }
     }
 }

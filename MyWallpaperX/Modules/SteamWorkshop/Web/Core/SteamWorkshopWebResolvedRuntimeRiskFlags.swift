@@ -59,6 +59,21 @@ extension SteamWorkshopService {
             if message.contains("localstorage") || message.contains("indexeddb") || message.contains("sessionstorage") {
                 flags.insert(.persistentBrowserStorageUsage)
             }
+            if message.contains("service worker") {
+                flags.insert(.serviceWorkerRegistration)
+            }
+            if message.contains("es module") {
+                flags.insert(.esModuleDependency)
+            }
+            if message.contains("import()") {
+                flags.insert(.dynamicImportUsage)
+            }
+            if message.contains("wasm") || message.contains("webassembly") {
+                flags.insert(.wasmUsage)
+            }
+            if message.contains("streaming") {
+                flags.insert(.wasmStreamingUsage)
+            }
         }
         return Array(flags)
     }

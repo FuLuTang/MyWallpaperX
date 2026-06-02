@@ -13,6 +13,7 @@ let webCompatibilityScriptBootstrapFoundation = #"""
   const mediaTimelineListeners = [];
   const mediaPlaybackListeners = [];
   const playbackStateListeners = [];
+  const audioContextInstances = new Set();
   const randomFileRequestTimeoutMS = 8000;
   const mediaPlaybackConstants = {
     PLAYBACK_STOPPED: 'stopped',
@@ -42,8 +43,12 @@ let webCompatibilityScriptBootstrapFoundation = #"""
     playback: { state: mediaPlaybackConstants.PLAYBACK_STOPPED }
   };
   window.__myWallpaperDirectoryState = window.__myWallpaperDirectoryState || {};
-  window.__myWallpaperLastUserProperties = window.__myWallpaperLastUserProperties || {};
-  window.__myWallpaperLastGeneralProperties = window.__myWallpaperLastGeneralProperties || {};
+  window.__myWallpaperLastUserProperties = window.__myWallpaperInitialUserProperties || window.__myWallpaperLastUserProperties || {};
+  window.__myWallpaperLastGeneralProperties = window.__myWallpaperInitialGeneralProperties || window.__myWallpaperLastGeneralProperties || {};
+  window.wallpaperEngine_paused = !!window.__myWallpaperInitialPaused;
+  let wallpaperPropertyListenerValue = window.wallpaperPropertyListener && typeof window.wallpaperPropertyListener === 'object'
+    ? window.wallpaperPropertyListener
+    : {};
   const resumeAudioContexts = () => {
     const constructors = [window.AudioContext, window.webkitAudioContext].filter(Boolean);
     for (const Ctor of constructors) {
@@ -53,6 +58,7 @@ let webCompatibilityScriptBootstrapFoundation = #"""
         if (Ctor.prototype.__mwxResumeWrapped) continue;
         Ctor.prototype.__mwxResumeWrapped = true;
         Ctor.prototype.resume = function(...args) {
+          try { audioContextInstances.add(this); } catch (_) {}
           return originalResume.apply(this, args).catch((error) => {
             hostLogger.post('audio.resume.error', error && error.message ? error.message : error);
             throw error;
@@ -60,6 +66,21 @@ let webCompatibilityScriptBootstrapFoundation = #"""
         };
       } catch (_) {}
     }
+  };
+  const wrapAudioContextConstructor = (name) => {
+    try {
+      const OriginalCtor = window[name];
+      if (!OriginalCtor || OriginalCtor.__mwxConstructorWrapped) return;
+      const WrappedCtor = function(...args) {
+        const instance = new OriginalCtor(...args);
+        try { audioContextInstances.add(instance); } catch (_) {}
+        return instance;
+      };
+      WrappedCtor.prototype = OriginalCtor.prototype;
+      Object.setPrototypeOf(WrappedCtor, OriginalCtor);
+      WrappedCtor.__mwxConstructorWrapped = true;
+      window[name] = WrappedCtor;
+    } catch (_) {}
   };
   const defineVisibilityProperty = (target, name, getter) => {
     if (!target) return false;
@@ -130,6 +151,8 @@ let webCompatibilityScriptBootstrapFoundation = #"""
     };
   })();
   resumeAudioContexts();
+  wrapAudioContextConstructor('AudioContext');
+  wrapAudioContextConstructor('webkitAudioContext');
   window.wallpaperEngine_mouseover = false;
   window.wallpaperEngine_cursor = { x: 0, y: 0, normalizedX: 0, normalizedY: 0, buttons: 0 };
   window.__myWallpaperInteractiveRegionState = {
@@ -178,9 +201,7 @@ let webCompatibilityScriptBootstrapFoundation = #"""
       try { listener(window.__myWallpaperMediaState.timeline); } catch (_) {}
     }
   };
-  window.wallpaperRegisterPropertyListener = function(listener) {
-    if (!listener || typeof listener !== 'object') return;
-    window.wallpaperPropertyListener = Object.assign({}, window.wallpaperPropertyListener || {}, listener);
+  const replayWallpaperPropertyListenerState = function() {
     try {
       if (typeof window.wallpaperPropertyListener.applyUserProperties === 'function') {
         window.wallpaperPropertyListener.applyUserProperties(window.__myWallpaperLastUserProperties || {});
@@ -237,6 +258,27 @@ let webCompatibilityScriptBootstrapFoundation = #"""
         }
       }
     } catch (_) {}
+  };
+  try {
+    Object.defineProperty(window, 'wallpaperPropertyListener', {
+      configurable: true,
+      enumerable: true,
+      get() {
+        return wallpaperPropertyListenerValue;
+      },
+      set(value) {
+        if (!value || typeof value !== 'object') return;
+        Object.assign(wallpaperPropertyListenerValue, value);
+        replayWallpaperPropertyListenerState();
+      }
+    });
+  } catch (_) {
+    window.wallpaperPropertyListener = wallpaperPropertyListenerValue;
+  }
+  window.wallpaperRegisterPropertyListener = function(listener) {
+    if (!listener || typeof listener !== 'object') return;
+    window.wallpaperPropertyListener = listener;
+    replayWallpaperPropertyListenerState();
   };
   window.wallpaperSetPlaybackStateListener = function(listener) {
     if (typeof listener === 'function') {

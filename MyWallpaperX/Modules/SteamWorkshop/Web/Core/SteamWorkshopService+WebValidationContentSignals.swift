@@ -52,4 +52,35 @@ extension SteamWorkshopService {
             || lowered.contains("indexeddb")
             || lowered.contains("sessionstorage")
     }
+
+    static func webContentUsesServiceWorkerRegistration(_ content: String) -> Bool {
+        let lowered = content.lowercased()
+        return lowered.contains("serviceworker.register")
+            || lowered.contains("navigator.serviceworker")
+    }
+
+    static func webContentUsesESModuleDependency(_ content: String) -> Bool {
+        let lowered = content.lowercased()
+        return lowered.contains("type=\"module\"")
+            || lowered.contains("type='module'")
+            || lowered.contains(".mjs")
+    }
+
+    static func webContentUsesDynamicImport(_ content: String) -> Bool {
+        let lowered = content.lowercased()
+        return lowered.contains("import(")
+    }
+
+    static func webContentUsesWASMResource(_ content: String) -> Bool {
+        let lowered = content.lowercased()
+        return lowered.contains(".wasm")
+            || lowered.contains("application/wasm")
+            || lowered.contains("webassembly.")
+    }
+
+    static func webContentUsesWASMStreaming(_ content: String) -> Bool {
+        let lowered = content.lowercased()
+        return lowered.contains("webassembly.instantiatestreaming")
+            || lowered.contains("webassembly.compilestreaming")
+    }
 }
