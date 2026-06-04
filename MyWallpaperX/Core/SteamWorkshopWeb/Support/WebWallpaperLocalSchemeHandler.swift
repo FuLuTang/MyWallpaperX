@@ -37,6 +37,7 @@ final class WebWallpaperLocalSchemeHandler: NSObject, WKURLSchemeHandler {
     private var additionalReadableRoots: [URL] = []
     private let strictSymlinkPolicy: Bool
     private var servedDiagnosticURLs: Set<String> = []
+    private var deniedAccessByRequestURL: [String: AccessDenied] = [:]
     var diagnosticHandler: ((String, WebRuntimeDiagnosticEvent.Severity, String, URL?) -> Void)?
 
     init(rootURL: URL, strictSymlinkPolicy: Bool = false) {
@@ -61,7 +62,9 @@ final class WebWallpaperLocalSchemeHandler: NSObject, WKURLSchemeHandler {
             return
         }
         guard let resource = resolvedResource(for: requestURL, allowsDirectoryIndexFallback: true) else {
-            urlSchemeTask.didFailWithError(AccessDenied(reason: .invalidURL, requestURL: requestURL, candidateURL: nil, resolvedURL: nil))
+            let error = deniedAccess(for: requestURL)
+                ?? AccessDenied(reason: .invalidURL, requestURL: requestURL, candidateURL: nil, resolvedURL: nil)
+            urlSchemeTask.didFailWithError(error)
             return
         }
 
@@ -159,7 +162,8 @@ final class WebWallpaperLocalSchemeHandler: NSObject, WKURLSchemeHandler {
 
     func resolvedFileURL(for requestURL: URL, allowsDirectoryIndexFallback: Bool = false) throws -> URL {
         guard let resource = resolvedResource(for: requestURL, allowsDirectoryIndexFallback: allowsDirectoryIndexFallback) else {
-            throw AccessDenied(reason: .invalidURL, requestURL: requestURL, candidateURL: nil, resolvedURL: nil)
+            throw deniedAccess(for: requestURL)
+                ?? AccessDenied(reason: .invalidURL, requestURL: requestURL, candidateURL: nil, resolvedURL: nil)
         }
         return resource.fileURL
     }
@@ -276,6 +280,7 @@ final class WebWallpaperLocalSchemeHandler: NSObject, WKURLSchemeHandler {
     }
 
     private func recordDeny(_ denial: AccessDenied) {
+        deniedAccessByRequestURL[denial.requestURL.absoluteString] = denial
         let candidate = denial.candidateURL?.path ?? ""
         let resolved = denial.resolvedURL?.path ?? ""
         let message = [
@@ -286,5 +291,9 @@ final class WebWallpaperLocalSchemeHandler: NSObject, WKURLSchemeHandler {
         .compactMap { $0 }
         .joined(separator: " ")
         diagnosticHandler?("local-resource-deny", .warning, message, denial.requestURL)
+    }
+
+    private func deniedAccess(for requestURL: URL) -> AccessDenied? {
+        deniedAccessByRequestURL[requestURL.absoluteString]
     }
 }

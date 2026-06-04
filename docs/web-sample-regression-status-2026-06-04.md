@@ -489,3 +489,114 @@ fetch("performance.layout.user.js", { method: "HEAD" })
 - `3566247256`：NIKKE 初始 `background.png` 请求只剩真实 `missing`，不再重复 `invalidURL`。
 
 结论：本次改动让诊断分类更接近实际语义，便于后续继续处理真正影响播放的资源/宿主能力缺口。
+
+## Loopback 缺资源原因透传与 45 样本复测
+
+### 修正点
+
+上一轮修正了 local scheme 自身重复 `invalidURL` 的问题，但 `httpLoopback` 路径仍会在同一个缺文件上出现两条语义不一致的日志：
+
+- `local-resource-deny reason=missing`
+- `loopback.resource.error local_scheme_denied_invalidURL`
+
+这会误导后续把“文件缺失/样本初始请求”看成 URL 解析失败。本轮让 `resolvedFileURL` 复用 `resolvedResource` 已记录的拒绝原因，因此 loopback 侧也能保留真实原因。
+
+### 针对性验证
+
+日志目录：
+
+```text
+/tmp/mwx-loopback-deny-reason-20260604-142903
+```
+
+结果：
+
+- `1081733658`：`img/faces/face-5.jpg` 的 loopback 事件从 `local_scheme_denied_invalidURL` 变为 `local_scheme_denied_missing`，且有 `navigation.finish`。
+- `2997985023`：多个缺失音频的 loopback 事件均变为 `local_scheme_denied_missing`，真实 `resource.error` / `media.error` 仍保留。
+- `3566247256`：NIKKE 初始 `background.png` 请求仍是 `reason=missing`，有 `navigation.finish`。该样本实际用 `schemecolor` 写入 RGB 纯色背景，并有自己的角色资源，不应按空背景处理。
+- `3702822549`：空 `IMG src` 仍是 `resource.ignored IMG empty-src`。
+
+### 全量复测
+
+按 `project.json type=web` 重新枚举 45 个 Web 声明目录，并逐个实际启动 Debug App 播放，日志固定写入：
+
+```text
+/tmp/mwx-wide-after-load-replay
+```
+
+统计：
+
+| 指标 | 结果 |
+| --- | ---: |
+| `runtime.profile` | 45/45 |
+| `navigation.finish` | 44/45（8 秒窗口） |
+| `properties.error` | 0/45 |
+| `general-properties.error` | 0/45 |
+| 有 `resource.error` 的样本数 | 2 |
+| 有 `resource.ignored` 的样本数 | 3 |
+| 有 `local-resource-deny` 的样本数 | 15 |
+| 有 `local-resource-error` 的样本数 | 0 |
+| 有 `loopback.resource.error` 的样本数 | 2 |
+| 有 `media.error` 的样本数 | 1 |
+| 有 `fetch.error` 的样本数 | 1 |
+| 有 `fetch.ignored` 的样本数 | 1 |
+| 有 `console.error` 的样本数 | 1 |
+
+运行 profile：
+
+- `highCompatibility/httpLoopback/scopedPersistent`：6 个
+  - `1081733658`
+  - `1396475780`
+  - `2997985023`
+  - `3695176893`
+  - `3701406439`
+  - `3701797805`
+- `standard/customScheme/sharedPersistent`：39 个。
+
+8 秒窗口内缺 `navigation.finish`：
+
+- `3701773311`
+  - 单独延长到 20 秒验证后，有 `navigation.finish`。
+  - 本地 `main.css` 初始请求 `Placeholder.png`，实际文件是 `Placeholder.jpg`；页面 `index.js` 的实际 placeholder fallback 使用 `Placeholder.jpg`。
+  - 后续远端 `https://wallpaperengineapi.onrender.com/apod-images/2026-06-04.jpg` 图片失败后，页面 fallback 并完成导航。
+
+剩余高信号事件：
+
+- `1509243786`
+  - 仍有 `LINK mwx-local://wallpaper/css/index.css` 的 `resource.error`。
+  - 前轮已经用 `local-resource.served` 证明 CSS 文件完整返回，暂不按 host 路径拒绝处理。
+  - 同时有一条 `console.error {}`，后续若要继续收敛，应查页面脚本触发。
+- `2997985023`
+  - 缺失多个 `assets/sound/*.mp3`，`resource.error` / `media.error` / `audio.resume.error` / `media.play.error` 保留。
+  - README 指向用户自行下载 BGM，当前不把它当宿主资源解析失败。
+- `3697499196`
+  - 只剩 Google Storage 远端文本资源 `fetch.error`，属于远端依赖。
+- `3639973107`
+  - `performance.layout.user.js` 为可选用户覆盖，前端事件为 `fetch.ignored`。
+
+需要分层看待的 `local-resource-deny`：
+
+- `1081733658`
+  - 页面构造 `Analog_Clock` 时先用默认 `img/faces/face-5.jpg`，下一行才调用 `SetFacesFolderPath('modules/clock/release/img/faces/')`。
+  - `modules/clock/release/img/faces/face-5.jpg` 实际存在；初始根路径请求是样本初始化顺序，不是派生 payload 把路径改坏。
+- `3676193993`
+  - `style.css` 写了 `background-image:url("bg_full.png"),url("bg_fuji.png"),...`。
+  - `bg_full.png` 缺失，但 `bg_fuji.png` 存在；这是 CSS 多背景 fallback 场景，不应做宿主通用替换。
+- NIKKE / Spine 背景：
+  - `3566247256`
+  - `3601888127`
+  - `3602501948`
+  - `3603106230`
+  - `3620596895`
+  - `3689993041`
+  - `3690554020`
+  - `3701249553`
+  - `3705960722`
+  - 这些样本用 `schemecolor` 把系统绘制 RGB 纯色当背景，并各自带角色资源；`background.png` 是初始 CSS 遗留请求，不是“空背景样本”。
+- 其他：
+  - `2997985023`：样本缺音频。
+  - `3639973107`：可选 `performance.layout.user.js`。
+  - `3701773311`：CSS 初始 `Placeholder.png`，JS fallback 用存在的 `Placeholder.jpg`。
+  - `884307090`：`null` 媒体路径。
+
+当前结论：本轮实际复测没有发现属性回放新回归；大多数样本可以启动并进入运行状态。下一步继续收敛时，优先处理能证明影响真实画面/交互的宿主能力缺口，不应为 NIKKE `background.png`、CSS 多背景 fallback 或页面初始化遗留请求做宽泛 host fallback。
