@@ -649,3 +649,108 @@ fetch("performance.layout.user.js", { method: "HEAD" })
 - `1509243786`：仍有 `navigation.finish`，`console.error` 保留具体堆栈。
 - `3702822549`：空 `IMG src` 仍为 `resource.ignored IMG empty-src`。
 - `2997985023`：缺音频仍保留 `local-resource-deny reason=missing`、`loopback.resource.error local_scheme_denied_missing`、`resource.error` 和 `media.error`。
+
+## 当前 HEAD 全量复测（15:08）
+
+本轮没有先改 runtime 代码，先按当前 `feature/scene` HEAD 重新构建并实际启动 App 播放全部 Web 声明目录。
+
+构建命令：
+
+```sh
+xcodebuild -project MyWallpaperX.xcodeproj -scheme MyWallpaperX -configuration Debug -destination 'platform=macOS' build
+```
+
+结果：通过。
+
+日志目录：
+
+```text
+/tmp/mwx-web-all-current-20260604-150807
+```
+
+播放口径：
+
+- 枚举 `/Users/songziqiang/Movies/MyWallpaperX/创意工坊` 下所有 `project.json type=web` 目录，共 45 个。
+- 每个样本单独启动 Debug App：
+
+```sh
+MyWallpaperX --mwx-debug-play-workshop-id <目录ID>
+```
+
+- 每个样本播放窗口约 10 秒，随后杀掉 App，再跑下一个样本，避免 WebView / storage / runtime 状态串样本。
+
+统计：
+
+| 指标 | 结果 |
+| --- | ---: |
+| 启动 Web 样本 | 45/45 |
+| `runtime.profile` | 45/45 |
+| `navigation.finish` | 44/45（10 秒窗口） |
+| `navigation.failure` | 0/45 |
+| `properties.error` | 0/45 |
+| `general-properties.error` | 0/45 |
+| 有 `resource.error` 的样本数 | 2 |
+| 有 `resource.ignored` 的样本数 | 3 |
+| 有 `local-resource-deny` 的样本数 | 15 |
+| 有 `local-resource-error` 的样本数 | 0 |
+| 有 `loopback.resource.error` 的样本数 | 2 |
+| 有 `media.error` 的样本数 | 1 |
+| 有 `fetch.error` 的样本数 | 1 |
+| 有 `fetch.ignored` 的样本数 | 1 |
+| 有 `console.error` 的样本数 | 1 |
+| 有 `audio.resume.error` / `media.play.error` 的样本数 | 1 |
+
+运行 profile：
+
+- `highCompatibility/httpLoopback/scopedPersistent`：6 个
+  - `1081733658`
+  - `1396475780`
+  - `2997985023`
+  - `3695176893`
+  - `3701406439`
+  - `3701797805`
+- `standard/customScheme/sharedPersistent`：39 个。
+
+10 秒窗口内缺 `navigation.finish`：
+
+- `3701773311`
+  - 单独延长到 25 秒验证，日志目录：
+
+```text
+/tmp/mwx-3701773311-long-20260604-151656
+```
+
+  - 结果：约 2 秒后出现 `navigation.finish`。
+  - 同时记录 `Image failed: https://wallpaperengineapi.onrender.com/apod-images/2026-06-04.jpg`。
+  - 判断：该样本的导航完成受远端 APOD 图片失败 / fallback 时机影响，不是宿主导航失败。
+
+本轮剩余高信号事件仍与上一轮一致：
+
+- `1509243786`
+  - `console.error`: `Can't find variable: weather setUpdate@mwx-local://wallpaper/js/loader.js:12:15`。
+  - 复核源码确认 `loader.js` 在 `weather.setting.js`、`date.setting.js`、`note.setting.js` 之前加载，并立即轮询 `weather.loaded()` / `date.loaded()` / `note.loaded()`。
+  - 页面随后仍有 `dom.ready` / `navigation.finish`。
+  - `LINK mwx-local://wallpaper/css/index.css` 的 `resource.error` 仍存在；前轮已确认 CSS 文件本体由 local scheme 完整返回，强制 loopback 也不能消除该事件。
+- `2997985023`
+  - 缺失 `assets/sound/bgm.mp3`、`good*.mp3`、`bad*.mp3`、`vgood*.mp3`、`ok.mp3`。
+  - 目录内实际只有 `assets/sound/1.mp3`、`2.mp3`、`3.mp3` 和 README。
+  - `resource.error` / `media.error` / `audio.resume.error` / `media.play.error` 均由缺音频链路触发，当前不按宿主资源解析失败处理。
+- `3697499196`
+  - 多个 Google Storage 远端文本资源 `fetch.error`，属于远端依赖。
+- `3639973107`
+  - `HEAD performance.layout.user.js` 仍按可选用户覆盖记为 `fetch.ignored`。
+- `1081733658`
+  - `img/faces/face-5.jpg` 的初始请求仍为 `loopback.resource.error local_scheme_denied_missing`。
+  - 复核源码确认页面先用默认 `img/faces/` 初始化 `Analog_Clock`，随后才调用 `SetFacesFolderPath('modules/clock/release/img/faces/')`；后者路径下资源实际存在。
+
+交互验证备注：
+
+- 源码侧当前已覆盖 `pointermove` / `pointerdown` / `pointerup` / `click` / `drag` / `wheel` 合成事件，以及被动 hover 样式。
+- 尝试启动交互密集样本 `3137947556` 并通过 Computer Use 点击桌面层 Web 内容，但工具只能稳定看到主窗口，没能可靠把点击送到壁纸窗口。
+- 该样本启动日志没有新增 `pointer.dispatch.error` / `wheel.dispatch.error` / `console.error`，但“真实点击响应”本轮未形成强验证证据。后续如果用户仍反馈点击无效，应优先做专门的前台/桌面层点击复现，而不是从静态代码猜。
+
+当前结论：
+
+- 当前 HEAD 在 45 个 Web 声明目录上没有发现新的宿主侧属性回放、导航失败或 local scheme 读取错误。
+- 大多数样本可以正常启动并进入运行状态；剩余错误主要是样本缺文件、远端依赖、页面自身初始化顺序或可选资源探测。
+- 本轮没有足够证据支持继续修改宿主 runtime。下一步只有在实际视觉/音频/点击复现证明宿主能力缺口时再改代码。
