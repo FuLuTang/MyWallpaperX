@@ -58,52 +58,9 @@ let webCompatibilityScriptHostBridge = #"""
           const colorComponents = String(rawValue.type || '').toLowerCase() === 'color' && typeof scalarValue === 'string'
             ? scalarValue.trim().split(/\s+/).map((item) => Number(item)).filter((item) => Number.isFinite(item))
             : null;
-          try {
-            Object.defineProperty(boxedValue, 'valueOf', {
-              configurable: true,
-              enumerable: false,
-              value() { return scalarValue; }
-            });
-          } catch (_) {}
-          try {
-            Object.defineProperty(boxedValue, 'toString', {
-              configurable: true,
-              enumerable: false,
-              value() { return String(scalarValue); }
-            });
-          } catch (_) {}
           if (colorComponents && colorComponents.length >= 3) {
-            try {
-              Object.defineProperty(boxedValue, 'value', {
-                configurable: true,
-                enumerable: true,
-                value: Object.assign(colorComponents.slice(0, 3), {
-                  split(separator) {
-                    return String(scalarValue).split(separator);
-                  },
-                  trim() {
-                    return String(scalarValue).trim();
-                  },
-                  toString() {
-                    return String(scalarValue);
-                  },
-                  valueOf() {
-                    return String(scalarValue);
-                  },
-                  [Symbol.toPrimitive]() {
-                    return String(scalarValue);
-                  }
-                })
-              });
-            } catch (_) {}
+            boxedValue.value = colorComponents.slice(0, 3);
           }
-          try {
-            Object.defineProperty(boxedValue, Symbol.toPrimitive, {
-              configurable: true,
-              enumerable: false,
-              value() { return scalarValue; }
-            });
-          } catch (_) {}
           normalizedProperties[key] = boxedValue;
         } else {
           normalizedProperties[key] = rawValue;
@@ -114,6 +71,30 @@ let webCompatibilityScriptHostBridge = #"""
       return properties || {};
     }
   };
+  try {
+    const arrayPrototype = Array.prototype;
+    if (arrayPrototype.__mwxColorSplitPatched !== true) {
+      const originalSplit = arrayPrototype.split;
+      Object.defineProperty(arrayPrototype, 'split', {
+        configurable: true,
+        enumerable: false,
+        value(separator) {
+          if (this.length >= 3 && this.slice(0, 3).every((item) => Number.isFinite(Number(item)))) {
+            return this.map((item) => String(item)).join(' ').split(separator);
+          }
+          if (typeof originalSplit === 'function') {
+            return originalSplit.call(this, separator);
+          }
+          return String(this).split(separator);
+        }
+      });
+      Object.defineProperty(arrayPrototype, '__mwxColorSplitPatched', {
+        configurable: true,
+        enumerable: false,
+        value: true
+      });
+    }
+  } catch (_) {}
   window.__myWallpaperStablePropertySignature = function(value) {
     try {
       const normalize = (input) => {

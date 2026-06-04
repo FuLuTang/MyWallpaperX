@@ -22,8 +22,8 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
         // 默认保持桌面透传；只在命中热点时做短时接管。
         window.ignoresMouseEvents = true
         window.acceptsMouseMovedEvents = true
-        window.backgroundColor = .clear
-        window.isOpaque = false
+        window.backgroundColor = .black
+        window.isOpaque = true
         window.hasShadow = false
         window.hidesOnDeactivate = false
         window.level = Self.webWindowLevel
@@ -31,7 +31,7 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
         let contentView = HostContentView(frame: window.frame)
         contentView.autoresizingMask = [.width, .height]
         contentView.wantsLayer = true
-        contentView.layer?.backgroundColor = NSColor.clear.cgColor
+        contentView.layer?.backgroundColor = NSColor.black.cgColor
         window.contentView = contentView
 
         let controller = WKUserContentController()

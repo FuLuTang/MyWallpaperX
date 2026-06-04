@@ -289,7 +289,7 @@ let webCompatibilityScriptBootstrapFoundation = #"""
       window.__myWallpaperPropertyReplayQueued = true;
       const replay = () => {
         window.__myWallpaperPropertyReplayQueued = false;
-        replayWallpaperPropertyListenerState({ includeUserProperties: false });
+        replayWallpaperPropertyListenerState({ includeUserProperties: true });
       };
       if (typeof window.requestAnimationFrame === 'function') {
         window.requestAnimationFrame(() => window.setTimeout(replay, 0));
