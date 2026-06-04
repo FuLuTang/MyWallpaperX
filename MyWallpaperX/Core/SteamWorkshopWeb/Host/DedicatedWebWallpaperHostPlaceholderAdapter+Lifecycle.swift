@@ -182,6 +182,12 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
                 screenID: screenID,
                 url: webView.url?.absoluteString
             )
+            if type == "dom.ready", let screenID {
+                installDefaultInteractiveRegionsIfNeeded()
+                applyCompatibilityState(to: webView, deferDirectorySync: false)
+                startSyntheticInputForwardingIfNeeded()
+                markScreenReady(screenID)
+            }
         case "wallpaperHostRandomFile":
             guard let body = message.body as? [String: Any],
                   let requestID = body["requestID"] as? String,
@@ -248,6 +254,18 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
             screenID: screenID,
             url: url
         )
+    }
+
+    func markScreenReady(_ screenID: CGDirectDisplayID) {
+        let inserted = readyScreenIDs.insert(screenID).inserted
+        guard inserted,
+              readyScreenIDs.count == surfaces.count,
+              phase != .ready else {
+            return
+        }
+        recordDiagnostic(type: "host.ready", severity: .info, message: "ready", screenID: screenID, url: nil)
+        phase = .ready
+        eventHandler?(.ready)
     }
 
     func diagnosticSeverity(for type: String) -> WebRuntimeDiagnosticEvent.Severity {

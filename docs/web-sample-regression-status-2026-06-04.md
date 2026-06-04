@@ -1233,3 +1233,143 @@ MyWallpaperX --mwx-debug-suppress-main-window --mwx-debug-play-workshop-id <work
 - 本轮没有证据支持继续修改宿主 runtime：当前 45 个 Web 样本的启动、导航、属性回放、本地资源读取、点击转发均未出现新的宿主侧失败。
 - 不为缺失样本文件、远端 401 或页面自身初始化顺序增加全局 host fallback；这类 fallback 会污染正常资源语义，反而降低与 WE 受控资源模型的对齐度。
 - 后续如果继续推进，应优先找“官方 WE 能正常表现、但当前 App 有视觉/音频/交互差异”的具体样本和具体日志，再按单样本复现闭环修改。
+
+## 当前代码实测复核（19:30）
+
+本节接续前文 45 个 `type=web/Web` 口径。重新对照 App 当前 `resolveContentType`、依赖宿主入口和 preset 覆盖逻辑后，确认真实 Web 样本口径应为 59 个：
+
+- 45 个显式 Web / HTML 入口样本。
+- 14 个 dependency-backed Web shell：自身没有 HTML 入口，通过 `project.json.dependency` 使用另一个 Web 项作为宿主入口，同时用自己的 `preset` 覆盖属性和资源。
+
+### 本轮修复
+
+改动文件：
+
+```text
+MyWallpaperX/Modules/SteamWorkshop/Web/Core/SteamWorkshopService+WebProjectSupport.swift
+MyWallpaperX/Core/SteamWorkshopWeb/Host/DedicatedWebWallpaperHostPlaceholderAdapter+Lifecycle.swift
+MyWallpaperX/Core/SteamWorkshopWeb/Host/DedicatedWebWallpaperHostPlaceholderAdapter+NavigationDelegate.swift
+```
+
+调整：
+
+- 收窄 preset fallback 资源类型推断：
+  - `backgroundColor` / `schemecolor` 这类 color key 不再因为包含 `background` / `color` 被误判为 `type=file filetype=image`。
+  - 未声明属性定义时，只有具备资源路径形态的字符串才按 file/directory fallback 处理。
+- 新增 `host.ready` 诊断，并允许顶层 `dom.ready` 标记 Web 宿主 ready：
+  - `navigation.finish` 继续表示 WebKit 完整导航完成。
+  - `host.ready` 表示宿主已完成属性回放、输入转发和可播放态建立。
+  - 这修正了 `3701476549` 这种顶层页面已 ready、但远端 iframe 长加载导致 `didFinish` 长时间不返回的误判。
+
+### 构建
+
+命令：
+
+```sh
+xcodebuild -project MyWallpaperX.xcodeproj -scheme MyWallpaperX -configuration Debug -destination 'platform=macOS' build
+```
+
+结果：通过。
+
+### 清派生后 59 样本实际播放
+
+清理范围：
+
+```text
+/Users/songziqiang/Movies/MyWallpaperX/创意工坊/<59 个 Web 样本>/.mywallpaperx-web-analysis.json
+/Users/songziqiang/Movies/MyWallpaperX/创意工坊/<59 个 Web 样本>/.mywallpaperx-web-runtime.json
+```
+
+重新生成结果：118 个派生文件，即每个样本 analysis/runtime 各一份。
+
+日志目录：
+
+```text
+/tmp/mwx-web-59-after-preset-fallback-20260604-185744
+/tmp/mwx-web-59-final-20260604-191209
+```
+
+每个样本独立启动 Debug App，播放约 10 秒。
+
+最终统计：
+
+| 指标 | 结果 |
+| --- | ---: |
+| Web 样本日志 | 59/59 |
+| `MWX DEBUG PLAY: launching ... type=web` | 59/59 |
+| `runtime.profile` | 59/59 |
+| `dom.ready` | 59/59 |
+| `host.ready` | 59/59 |
+| `navigation.finish` | 58/59 |
+| `navigation.failure` | 0/59 |
+| `properties.error` | 0/59 |
+| `general-properties.error` | 0/59 |
+| `local-resource-error` | 0/59 |
+
+`3701476549`：
+
+- 有 `runtime.profile`。
+- 有 `dom.ready`。
+- 有 `host.ready`。
+- 10 秒内没有 `navigation.finish`。
+- 样本结构是本地顶层 `index.html` 内嵌 `https://artemis.cdnspace.ca/` iframe；远端 iframe 长加载会拖住 WebKit `didFinish`，但顶层页面和宿主已 ready。
+
+`2362149509`：
+
+- `backgroundColor` runtime payload 已确认为：
+
+```json
+{
+  "type": "color",
+  "value": "0.568627 0.741176 0.729412"
+}
+```
+
+- 不再被误标为 `type=file filetype=image`。
+
+### 交互冒烟
+
+日志目录：
+
+```text
+/tmp/mwx-web-59-interaction-final-20260604-192310
+/tmp/mwx-3702346975-interaction-long-20260604-1934
+```
+
+方式：
+
+- 每个样本独立启动 Debug App。
+- 在桌面坐标 `1260,500` 发送系统级左键、右键、滚轮事件。
+- 首轮 6 秒窗口内 `3702346975` 未记录 pointer，是启动窗口偏短；单独延长后有 `host.ready`、`navigation.finish`、`pointer.down`、`pointer.up`、`pointer.contextmenu`。
+
+统计：
+
+| 指标 | 结果 |
+| --- | ---: |
+| `pointer.down` | 59/59（含 `3702346975` 延长复测） |
+| `pointer.up` | 59/59（含 `3702346975` 延长复测） |
+| `pointer.contextmenu` | 59/59（含 `3702346975` 延长复测） |
+| `pointer.dispatch.error` | 0/59 |
+| `wheel.dispatch.error` | 0/59 |
+| `navigation.failure` | 0/59 |
+| `properties.error` | 0/59 |
+| `general-properties.error` | 0/59 |
+
+当前日志只能证明宿主输入派发没有异常；每个页面是否实际消费滚轮/点击，仍取决于样本自身是否绑定对应交互。
+
+### 当前残留事件归类
+
+这些事件仍可见，但当前证据不指向新的宿主侧播放失败：
+
+- `2997985023`：缺少 `assets/sound/bgm.mp3` 及多组角色音效，导致 `resource.error` / `media.error` / `media.play.error` / `audio.resume.error`。
+- `3697499196`：`storage.googleapis.com/...October_*.txt` 远端请求失败。
+- `3701142326`：远端 fetch / console 噪声，样本仍有 `host.ready` 和 `navigation.finish`。
+- `1509243786`、`2362149509`：同一宿主入口的 `loader.js` 早于 `weather.setting.js`，页面报 `Can't find variable: weather` 后继续运行并完成 host ready / navigation finish。
+- `3639973107`：`performance.layout.user.js` 是可选用户覆盖文件，继续按 `fetch.ignored` 处理。
+- 多个样本仍有缺失的 `background.png`、`Placeholder.png`、`img/faces/face-5.jpg` 等初始探测或可选资源请求；这些样本均完成 `host.ready`，不应做全局路径替换 fallback。
+
+### 当前处理策略
+
+- 当前 59 个 Web 样本均可真实启动到宿主 ready，属性回放错误为 0，输入派发错误为 0。
+- 后续继续对齐官方 WE 时，应以具体“官方可见表现差异”样本为单位继续复现，不再按旧 45 口径判断覆盖率。
+- 不为缺失样本文件、远端 401/失败、页面自身初始化顺序增加宽泛 host fallback。

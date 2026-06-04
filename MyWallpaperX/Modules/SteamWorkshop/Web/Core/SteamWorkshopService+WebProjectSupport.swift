@@ -53,6 +53,13 @@ extension SteamWorkshopService {
             .lowercased()
         let pathExtension = URL(fileURLWithPath: normalizedPath).pathExtension.lowercased()
 
+        if normalizedKey.contains("color") || normalizedKey.contains("colour") {
+            return nil
+        }
+        if parseWebColorComponents(from: normalizedPath) != nil {
+            return nil
+        }
+
         if normalizedPath.hasPrefix("directories/")
             || webFallbackDirectoryKeyAliases.contains(normalizedKey)
             || normalizedKey.contains("directory")
@@ -75,8 +82,11 @@ extension SteamWorkshopService {
             || normalizedKey.contains("img")
             || normalizedKey.contains("background")
             || normalizedKey.contains("bg")
+        let hasResourcePathShape = looksLikeResourcePath
+            || normalizedPath.contains("/")
+            || pathExtension.isEmpty == false
 
-        guard looksLikeResourcePath || prefersVideo || prefersAudio || prefersImage else {
+        guard hasResourcePathShape, looksLikeResourcePath || prefersVideo || prefersAudio || prefersImage else {
             return nil
         }
 

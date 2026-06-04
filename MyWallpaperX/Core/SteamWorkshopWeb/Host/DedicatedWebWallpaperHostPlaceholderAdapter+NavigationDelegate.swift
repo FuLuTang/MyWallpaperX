@@ -16,11 +16,7 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
         startSyntheticInputForwardingIfNeeded()
         guard let screenID = screenID(for: webView) else { return }
         recordDiagnostic(type: "navigation.finish", severity: .info, message: "ready", screenID: screenID, url: webView.url?.absoluteString)
-        readyScreenIDs.insert(screenID)
-        if readyScreenIDs.count == surfaces.count {
-            phase = .ready
-            eventHandler?(.ready)
-        }
+        markScreenReady(screenID)
     }
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
