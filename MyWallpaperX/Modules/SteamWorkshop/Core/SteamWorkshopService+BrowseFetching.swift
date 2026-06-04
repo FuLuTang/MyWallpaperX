@@ -563,15 +563,6 @@ extension SteamWorkshopService {
     ) async throws -> SteamWorkshopBrowserItem {
         let detailURL = makeDetailURL(id: stub.id)
         let html = try await fetchHTML(url: detailURL, requestPriority: requestPriority)
-        let dependencyDiagnostics = dependencyParseDiagnostics(from: html)
-        NSLog(
-            "[SteamWorkshopDependency] id=%@ matchedPattern=%@ sectionCount=%ld dependencyIDs=%@ snippet=%@",
-            stub.id,
-            dependencyDiagnostics.matchedPattern ?? "<none>",
-            dependencyDiagnostics.sectionCount,
-            dependencyDiagnostics.dependencyIDs.joined(separator: ","),
-            dependencyDiagnostics.sectionSnippet ?? "<none>"
-        )
         let parsed = parseDetailPage(html: html, fallbackID: stub.id)
         if let workshopTypeText = parsed.workshopTypeText,
            !workshopTypeMatches(browserContentMode: browserContentMode, workshopTypeText: workshopTypeText) {

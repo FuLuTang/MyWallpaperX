@@ -29,6 +29,7 @@ final class WebRuntimeDiagnosticsStore {
 
     private let capacity = 500
     private var events: [WebRuntimeDiagnosticEvent] = []
+    private let shouldLogToConsole = ProcessInfo.processInfo.arguments.contains("--mwx-log-web-diagnostics")
 
     func record(
         type: String,
@@ -52,6 +53,7 @@ final class WebRuntimeDiagnosticsStore {
             events.removeFirst(events.count - capacity)
         }
         #if DEBUG
+        guard shouldLogToConsole else { return }
         NSLog(
             "MWX WEB DIAG record=%@ screen=%@ severity=%@ type=%@ url=%@ message=%@",
             recordID ?? "-",
