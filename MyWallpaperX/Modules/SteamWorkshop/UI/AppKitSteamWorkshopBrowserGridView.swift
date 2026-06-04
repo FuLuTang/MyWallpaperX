@@ -471,7 +471,6 @@ final class AppKitSteamWorkshopBrowserContainerView: NSView, ModuleFocusable, NS
         }
 
         guard let cell = item as? AppKitSteamWorkshopBrowserItem else { return }
-        configureCell(cell, for: id)
         prioritizeVisibleItemsForHydration()
     }
 }
