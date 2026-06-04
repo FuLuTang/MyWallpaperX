@@ -152,6 +152,7 @@ final class AppKitSteamWorkshopBrowserContainerView: NSView, ModuleFocusable, NS
             .store(in: &cancellables)
 
         service.$previewReloadToken
+            .dropFirst()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 self?.forceReloadVisiblePreviews()
@@ -470,7 +471,7 @@ final class AppKitSteamWorkshopBrowserContainerView: NSView, ModuleFocusable, NS
             return
         }
 
-        guard let cell = item as? AppKitSteamWorkshopBrowserItem else { return }
+        guard item is AppKitSteamWorkshopBrowserItem else { return }
         prioritizeVisibleItemsForHydration()
     }
 }

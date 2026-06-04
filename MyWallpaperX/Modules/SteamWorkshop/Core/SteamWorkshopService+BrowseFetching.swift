@@ -15,7 +15,6 @@ extension SteamWorkshopService {
         navigationVersion += 1
         reloadInstalledItems()
         SteamWorkshopPreviewRequestCoordinator.shared.resetAllFailureStates()
-        previewReloadToken += 1
         isRefreshingBrowserFeed = true
         statusMessage = browseContext.isAuthorWorkshop
             ? "正在刷新作者工坊列表…"

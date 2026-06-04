@@ -93,7 +93,6 @@ extension SteamWorkshopService {
         if let previewURL = item.previewImageURL {
             SteamWorkshopPreviewRequestCoordinator.shared.resetFailureState(for: previewURL)
             let cacheKey = steamWorkshopPreviewCacheKey(for: previewURL)
-            SteamWorkshopPreviewRequestCoordinator.shared.markCachedImageSuspicious(forKey: cacheKey)
             SteamWorkshopPreviewImageCache.shared.remove(forKey: cacheKey)
         }
         previewReloadToken += 1

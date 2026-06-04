@@ -104,7 +104,9 @@ private struct SteamWorkshopCachedPreviewImage: NSViewRepresentable {
             if let image, !steamWorkshopPreviewImageLooksSuspicious(image) {
                 nsView.setImage(image)
             } else {
-                SteamWorkshopPreviewRequestCoordinator.shared.markCachedImageSuspicious(forKey: cacheKey)
+                if image != nil {
+                    SteamWorkshopPreviewRequestCoordinator.shared.markCachedImageSuspicious(forKey: cacheKey)
+                }
                 nsView.setLoadingState(.unavailable)
             }
         }

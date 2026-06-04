@@ -309,7 +309,6 @@ final class AppKitSteamWorkshopBrowserItem: NSCollectionViewItem {
             let cacheKey = steamWorkshopPreviewCacheKey(for: currentPreviewSourceURL)
             SteamWorkshopPreviewImageCache.shared.remove(forKey: cacheKey)
             SteamWorkshopPreviewRequestCoordinator.shared.resetFailureState(for: currentPreviewSourceURL)
-            SteamWorkshopPreviewRequestCoordinator.shared.markCachedImageSuspicious(forKey: cacheKey)
         }
 
         currentPreviewURL = nil
@@ -1025,7 +1024,9 @@ final class AppKitSteamWorkshopBrowserItem: NSCollectionViewItem {
         }
 
         previewImageView.image = nil
-        SteamWorkshopPreviewRequestCoordinator.shared.markCachedImageSuspicious(forKey: cacheKey)
+        if image != nil {
+            SteamWorkshopPreviewRequestCoordinator.shared.markCachedImageSuspicious(forKey: cacheKey)
+        }
         schedulePreviewRetry(url: url, cacheKey: cacheKey)
         updatePreviewImageFrame()
     }

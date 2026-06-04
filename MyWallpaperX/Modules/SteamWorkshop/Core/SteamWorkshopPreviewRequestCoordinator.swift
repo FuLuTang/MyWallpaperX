@@ -93,6 +93,7 @@ final class SteamWorkshopPreviewRequestCoordinator {
     func resetAllFailureStates() {
         stateQueue.async {
             self.failureStates.removeAll()
+            self.suspiciousCacheKeys.removeAll()
         }
     }
 
