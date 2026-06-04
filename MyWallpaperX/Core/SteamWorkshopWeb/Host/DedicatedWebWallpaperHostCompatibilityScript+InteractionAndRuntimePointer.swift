@@ -18,6 +18,36 @@ let webCompatibilityScriptInteractionAndRuntimePointer = #"""
           return false;
         }
       };
+      const inverseHoverDeclarations = function(cssText) {
+        const parts = [];
+        const text = String(cssText || '');
+        if (/(^|;)\s*display\s*:\s*none\s*(!important)?\s*(;|$)/i.test(text)) {
+          parts.push('display: revert !important');
+        }
+        if (/(^|;)\s*visibility\s*:\s*(hidden|collapse)\s*(!important)?\s*(;|$)/i.test(text)) {
+          parts.push('visibility: visible !important');
+        }
+        if (/(^|;)\s*opacity\s*:\s*0(?:\.0+)?\s*(!important)?\s*(;|$)/i.test(text)) {
+          parts.push('opacity: revert !important');
+        }
+        return parts.join('; ');
+      };
+      const appendSyntheticRule = function(targetRules, selectorText, cssText) {
+        const selector = String(selectorText || '');
+        const body = String(cssText || '').trim();
+        if (!selector.includes(':hover') || !body) return;
+        const syntheticSelector = selector.replace(/:hover\b/g, '.__mwx-hover');
+        if (syntheticSelector !== selector) {
+          targetRules.push(`${syntheticSelector} { ${body} }`);
+        }
+        if (selector.includes(':not(:hover)')) {
+          const inverseSelector = selector.replace(/:not\(:hover\)/g, '.__mwx-hover');
+          const inverseBody = inverseHoverDeclarations(body);
+          if (inverseSelector !== selector && inverseBody) {
+            targetRules.push(`${inverseSelector} { ${inverseBody}; }`);
+          }
+        }
+      };
       const collectRules = (ruleList) => {
         for (const rule of Array.from(ruleList || [])) {
           try {
@@ -27,9 +57,8 @@ let webCompatibilityScriptInteractionAndRuntimePointer = #"""
             }
             const selectorText = String(rule.selectorText || '');
             if (!selectorText.includes(':hover')) continue;
-            const syntheticSelector = selectorText.replace(/:hover\b/g, '.__mwx-hover');
-            if (syntheticSelector !== selectorText && rule.style && rule.style.cssText) {
-              rules.push(`${syntheticSelector} { ${rule.style.cssText} }`);
+            if (rule.style && rule.style.cssText) {
+              appendSyntheticRule(rules, selectorText, rule.style.cssText);
             }
           } catch (_) {}
         }
@@ -56,10 +85,7 @@ let webCompatibilityScriptInteractionAndRuntimePointer = #"""
             const selector = String(match[1] || '').trim();
             const body = String(match[2] || '').trim();
             if (!selector || !body) continue;
-            const syntheticSelector = selector.replace(/:hover\b/g, '.__mwx-hover');
-            if (syntheticSelector !== selector) {
-              fetchedRules.push(`${syntheticSelector} { ${body} }`);
-            }
+            appendSyntheticRule(fetchedRules, selector, body);
           }
         }
         appendSyntheticHoverStyle(fetchedRules);

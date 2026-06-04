@@ -120,8 +120,21 @@ let webCompatibilityScriptHostBridge = #"""
     const safeProperties = window.__myWallpaperNormalizePropertyBag(properties || {});
     window.__myWallpaperLastUserProperties = safeProperties;
     try {
-      if (window.wallpaperPropertyListener && typeof window.wallpaperPropertyListener.applyUserProperties === 'function') {
+      const hasUserPropertyListener = window.wallpaperPropertyListener && typeof window.wallpaperPropertyListener.applyUserProperties === 'function';
+      const userPropertyCallback = hasUserPropertyListener ? window.wallpaperPropertyListener.applyUserProperties : null;
+      const signature = window.__myWallpaperStablePropertySignature(safeProperties);
+      if (
+        hasUserPropertyListener &&
+        signature &&
+        signature === window.__myWallpaperLastAppliedUserPropertySignature &&
+        userPropertyCallback === window.__myWallpaperLastAppliedUserPropertyCallback
+      ) {
+        return;
+      }
+      if (hasUserPropertyListener) {
         window.wallpaperPropertyListener.applyUserProperties(safeProperties);
+        window.__myWallpaperLastAppliedUserPropertySignature = signature;
+        window.__myWallpaperLastAppliedUserPropertyCallback = userPropertyCallback;
       }
       window.dispatchEvent(new CustomEvent('wallpaper-properties-applied', { detail: safeProperties }));
     } catch (error) {
