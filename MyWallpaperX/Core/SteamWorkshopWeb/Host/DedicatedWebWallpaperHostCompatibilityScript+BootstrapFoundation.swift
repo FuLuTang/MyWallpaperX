@@ -155,6 +155,9 @@ let webCompatibilityScriptBootstrapFoundation = #"""
   wrapAudioContextConstructor('webkitAudioContext');
   window.wallpaperEngine_mouseover = false;
   window.wallpaperEngine_cursor = { x: 0, y: 0, normalizedX: 0, normalizedY: 0, buttons: 0 };
+  if (typeof window.updateCircleSize !== 'function') {
+    window.updateCircleSize = function() {};
+  }
   window.__myWallpaperInteractiveRegionState = {
     lastSignature: '',
     lastAutoRegisterAt: 0
@@ -201,14 +204,29 @@ let webCompatibilityScriptBootstrapFoundation = #"""
       try { listener(window.__myWallpaperMediaState.timeline); } catch (_) {}
     }
   };
-  const replayWallpaperPropertyListenerState = function() {
+  const replayWallpaperPropertyListenerState = function(options) {
+    const replayOptions = options || {};
     try {
-      if (typeof window.__myWallpaperApplyProperties === 'function') {
-        window.__myWallpaperApplyProperties(window.__myWallpaperLastUserProperties || {});
-      } else if (typeof window.wallpaperPropertyListener.applyUserProperties === 'function') {
-        window.wallpaperPropertyListener.applyUserProperties(window.__myWallpaperLastUserProperties || {});
+      if (document.readyState !== 'complete') {
+        if (window.__myWallpaperDeferredPropertyReplayScheduled !== true) {
+          window.__myWallpaperDeferredPropertyReplayScheduled = true;
+          window.addEventListener('load', () => {
+            window.__myWallpaperDeferredPropertyReplayScheduled = false;
+            replayWallpaperPropertyListenerState(replayOptions);
+          }, { once: true });
+        }
+        return;
       }
     } catch (_) {}
+    if (replayOptions.includeUserProperties === true) {
+      try {
+        if (typeof window.__myWallpaperApplyProperties === 'function') {
+          window.__myWallpaperApplyProperties(window.__myWallpaperLastUserProperties || {});
+        } else if (typeof window.wallpaperPropertyListener.applyUserProperties === 'function') {
+          window.wallpaperPropertyListener.applyUserProperties(window.__myWallpaperLastUserProperties || {});
+        }
+      } catch (_) {}
+    }
     try {
       if (typeof window.__myWallpaperApplyGeneralProperties === 'function') {
         window.__myWallpaperApplyGeneralProperties(window.__myWallpaperLastGeneralProperties || {});
@@ -263,6 +281,23 @@ let webCompatibilityScriptBootstrapFoundation = #"""
       }
     } catch (_) {}
   };
+  const scheduleWallpaperPropertyListenerReplay = function() {
+    try {
+      if (window.__myWallpaperPropertyReplayQueued === true) return;
+      window.__myWallpaperPropertyReplayQueued = true;
+      const replay = () => {
+        window.__myWallpaperPropertyReplayQueued = false;
+        replayWallpaperPropertyListenerState({ includeUserProperties: false });
+      };
+      if (typeof window.requestAnimationFrame === 'function') {
+        window.requestAnimationFrame(() => window.setTimeout(replay, 0));
+      } else {
+        window.setTimeout(replay, 0);
+      }
+    } catch (_) {
+      try { replayWallpaperPropertyListenerState(); } catch (_) {}
+    }
+  };
   try {
     Object.defineProperty(window, 'wallpaperPropertyListener', {
       configurable: true,
@@ -273,7 +308,7 @@ let webCompatibilityScriptBootstrapFoundation = #"""
       set(value) {
         if (!value || typeof value !== 'object') return;
         Object.assign(wallpaperPropertyListenerValue, value);
-        replayWallpaperPropertyListenerState();
+        scheduleWallpaperPropertyListenerReplay();
       }
     });
   } catch (_) {
@@ -282,7 +317,7 @@ let webCompatibilityScriptBootstrapFoundation = #"""
   window.wallpaperRegisterPropertyListener = function(listener) {
     if (!listener || typeof listener !== 'object') return;
     window.wallpaperPropertyListener = listener;
-    replayWallpaperPropertyListenerState();
+    scheduleWallpaperPropertyListenerReplay();
   };
   window.wallpaperSetPlaybackStateListener = function(listener) {
     if (typeof listener === 'function') {

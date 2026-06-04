@@ -163,7 +163,9 @@ final class WebWallpaperLocalSchemeHandler: NSObject, WKURLSchemeHandler {
                 .standardizedFileURL
         }
         let requestedURL = originalURL.resolvingSymlinksInPath().standardizedFileURL
-        let resolvedRequestedURL = existingFileURL(for: originalURL) ?? requestedURL
+        let resolvedRequestedURL = existingFileURL(for: originalURL)
+            ?? compatibilityFallbackFileURL(for: originalURL)
+            ?? requestedURL
         var isDirectory: ObjCBool = false
         let targetURL: URL
         if FileManager.default.fileExists(atPath: resolvedRequestedURL.path, isDirectory: &isDirectory), isDirectory.boolValue {
@@ -198,6 +200,41 @@ final class WebWallpaperLocalSchemeHandler: NSObject, WKURLSchemeHandler {
             return nil
         }
         return ResolvedResource(fileURL: normalizedTargetURL, didTraverseSymlink: didTraverseSymlink, matchedRootPath: matchedRootPath)
+    }
+
+    private func compatibilityFallbackFileURL(for originalURL: URL) -> URL? {
+        let relativePath: String
+        let originalPath = originalURL.standardizedFileURL.path
+        let rootPath = rootURL.path
+        if originalPath == rootPath {
+            relativePath = ""
+        } else if originalPath.hasPrefix(rootPath + "/") {
+            relativePath = String(originalPath.dropFirst(rootPath.count + 1))
+        } else {
+            return nil
+        }
+
+        let lowerRelativePath = relativePath.lowercased()
+        let candidateURL: URL?
+        switch lowerRelativePath {
+        case "background.png":
+            candidateURL = rootURL
+                .appendingPathComponent("image", isDirectory: true)
+                .appendingPathComponent("bg.png", isDirectory: false)
+        case "spine-player.js":
+            candidateURL = rootURL.appendingPathComponent("spine-player4.1.js", isDirectory: false)
+        default:
+            if lowerRelativePath.hasPrefix("map/") {
+                candidateURL = rootURL
+                    .appendingPathComponent("Default Content", isDirectory: true)
+                    .appendingPathComponent(relativePath, isDirectory: false)
+            } else {
+                candidateURL = nil
+            }
+        }
+
+        guard let candidateURL else { return nil }
+        return existingFileURL(for: candidateURL)
     }
 
     private func matchedReadableRootPath(for targetURL: URL) -> String? {

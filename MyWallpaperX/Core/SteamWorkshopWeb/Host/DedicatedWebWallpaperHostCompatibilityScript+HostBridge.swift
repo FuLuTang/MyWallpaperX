@@ -55,6 +55,9 @@ let webCompatibilityScriptHostBridge = #"""
         if (rawValue && typeof rawValue === 'object' && Object.prototype.hasOwnProperty.call(rawValue, 'value')) {
           const boxedValue = Object.assign({}, rawValue);
           const scalarValue = rawValue.value;
+          const colorComponents = String(rawValue.type || '').toLowerCase() === 'color' && typeof scalarValue === 'string'
+            ? scalarValue.trim().split(/\s+/).map((item) => Number(item)).filter((item) => Number.isFinite(item))
+            : null;
           try {
             Object.defineProperty(boxedValue, 'valueOf', {
               configurable: true,
@@ -69,6 +72,31 @@ let webCompatibilityScriptHostBridge = #"""
               value() { return String(scalarValue); }
             });
           } catch (_) {}
+          if (colorComponents && colorComponents.length >= 3) {
+            try {
+              Object.defineProperty(boxedValue, 'value', {
+                configurable: true,
+                enumerable: true,
+                value: Object.assign(colorComponents.slice(0, 3), {
+                  split(separator) {
+                    return String(scalarValue).split(separator);
+                  },
+                  trim() {
+                    return String(scalarValue).trim();
+                  },
+                  toString() {
+                    return String(scalarValue);
+                  },
+                  valueOf() {
+                    return String(scalarValue);
+                  },
+                  [Symbol.toPrimitive]() {
+                    return String(scalarValue);
+                  }
+                })
+              });
+            } catch (_) {}
+          }
           try {
             Object.defineProperty(boxedValue, Symbol.toPrimitive, {
               configurable: true,
@@ -110,11 +138,6 @@ let webCompatibilityScriptHostBridge = #"""
   window.__myWallpaperApplyProperties = function(properties) {
     const safeProperties = window.__myWallpaperNormalizePropertyBag(properties || {});
     window.__myWallpaperLastUserProperties = safeProperties;
-    const signature = window.__myWallpaperStablePropertySignature(safeProperties);
-    if (signature && window.__myWallpaperLastAppliedUserPropertiesSignature === signature) {
-      return;
-    }
-    window.__myWallpaperLastAppliedUserPropertiesSignature = signature;
     try {
       if (window.wallpaperPropertyListener && typeof window.wallpaperPropertyListener.applyUserProperties === 'function') {
         window.wallpaperPropertyListener.applyUserProperties(safeProperties);
@@ -127,11 +150,6 @@ let webCompatibilityScriptHostBridge = #"""
   window.__myWallpaperApplyGeneralProperties = function(properties) {
     const normalizedProperties = window.__myWallpaperNormalizePropertyBag(properties || {});
     window.__myWallpaperLastGeneralProperties = normalizedProperties;
-    const signature = window.__myWallpaperStablePropertySignature(normalizedProperties);
-    if (signature && window.__myWallpaperLastAppliedGeneralPropertiesSignature === signature) {
-      return;
-    }
-    window.__myWallpaperLastAppliedGeneralPropertiesSignature = signature;
     try {
       if (window.wallpaperPropertyListener && typeof window.wallpaperPropertyListener.applyGeneralProperties === 'function') {
         window.wallpaperPropertyListener.applyGeneralProperties(normalizedProperties);
@@ -297,8 +315,6 @@ let webCompatibilityScriptHostBridge = #"""
     wallpaperDispatchMediaPlayback(wallpaperPreferredMediaNode(), paused);
   };
   try {
-    window.__myWallpaperApplyProperties(window.__myWallpaperLastUserProperties || {});
-    window.__myWallpaperApplyGeneralProperties(window.__myWallpaperLastGeneralProperties || {});
     window.__myWallpaperSetGlobalVolume(window.__myWallpaperInitialVolume);
     window.__myWallpaperSetPaused(!!window.__myWallpaperInitialPaused);
     window.__myWallpaperNotifyPluginLoaded('led');

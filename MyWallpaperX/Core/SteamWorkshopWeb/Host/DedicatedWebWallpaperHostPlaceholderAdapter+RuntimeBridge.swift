@@ -186,7 +186,11 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
               const generalProperties = JSON.parse(\(escapedGeneralProperties));
               window.__myWallpaperNotifyPluginLoaded('led');
               window.__myWallpaperNotifyPluginLoaded('rgb');
-              window.__myWallpaperApplyProperties(properties);
+              if (typeof window.__myWallpaperNormalizePropertyBag === 'function') {
+                window.__myWallpaperLastUserProperties = window.__myWallpaperNormalizePropertyBag(properties);
+              } else {
+                window.__myWallpaperLastUserProperties = properties;
+              }
               window.__myWallpaperApplyGeneralProperties(generalProperties);
               window.__myWallpaperSetGlobalVolume(\(volumeLiteral));
               window.__myWallpaperSetPaused(\(pausedLiteral));
