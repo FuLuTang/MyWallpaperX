@@ -5,7 +5,7 @@
 
 import Foundation
 
-enum SteamWorkshopDetailRefreshSupport {
+nonisolated enum SteamWorkshopDetailRefreshSupport {
     static func needsRefresh(_ item: SteamWorkshopBrowserItem) -> Bool {
         needsListRefresh(item) || needsDependencyRefresh(item)
     }

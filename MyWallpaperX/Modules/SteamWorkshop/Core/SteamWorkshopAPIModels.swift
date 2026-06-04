@@ -36,7 +36,7 @@ enum SteamWorkshopBrowseContext: Equatable {
     }
 }
 
-struct SteamWorkshopProjectGeneral: Decodable {
+nonisolated struct SteamWorkshopProjectGeneral: Decodable {
     let hasProperties: Bool
 
     enum CodingKeys: String, CodingKey {
@@ -49,7 +49,7 @@ struct SteamWorkshopProjectGeneral: Decodable {
     }
 }
 
-struct SteamWorkshopProject: Decodable {
+nonisolated struct SteamWorkshopProject: Decodable {
     let title: String?
     let description: String?
     let preview: String?
@@ -160,21 +160,21 @@ struct SteamWorkshopDetailParseResult {
     let detailFields: [SteamWorkshopDetailField]
 }
 
-struct SteamWorkshopPublishedFileResponseEnvelope: Decodable {
+nonisolated struct SteamWorkshopPublishedFileResponseEnvelope: Decodable {
     let response: SteamWorkshopPublishedFileResponse
 }
 
-struct SteamWorkshopPublishedFileResponse: Decodable {
+nonisolated struct SteamWorkshopPublishedFileResponse: Decodable {
     let result: Int?
     let resultcount: Int?
     let publishedfiledetails: [SteamWorkshopPublishedFileDetail]
 }
 
-struct SteamWorkshopPublishedFileTag: Decodable {
+nonisolated struct SteamWorkshopPublishedFileTag: Decodable {
     let tag: String
 }
 
-struct SteamWorkshopPublishedFileDetail: Decodable {
+nonisolated struct SteamWorkshopPublishedFileDetail: Decodable {
     let publishedfileid: String
     let result: Int
     let creator: String?
@@ -278,17 +278,17 @@ struct SteamWorkshopPublishedFileDetail: Decodable {
     }
 }
 
-struct SteamWorkshopBrowserCacheSnapshot: Codable {
+nonisolated struct SteamWorkshopBrowserCacheSnapshot: Codable {
     let fetchedAt: Date
     let items: [SteamWorkshopBrowserItem]
 }
 
-struct SteamWorkshopBrowseStubPage {
+nonisolated struct SteamWorkshopBrowseStubPage {
     let stubs: [SteamWorkshopBrowseStub]
     let hasMore: Bool
 }
 
-struct SteamWorkshopDiscoveryBrowseSnapshot {
+nonisolated struct SteamWorkshopDiscoveryBrowseSnapshot {
     let browserContentMode: SteamWorkshopBrowserContentMode
     let browserItems: [SteamWorkshopBrowserItem]
     let browserState: SteamWorkshopBrowserLoadState
@@ -304,7 +304,7 @@ struct SteamWorkshopDiscoveryBrowseSnapshot {
     let scrollOffsetY: CGFloat
 }
 
-struct SteamWorkshopBrowseStub: Equatable {
+nonisolated struct SteamWorkshopBrowseStub: Equatable {
     let id: String
     let title: String?
     let author: String?
@@ -315,12 +315,12 @@ struct SteamWorkshopBrowseStub: Equatable {
     let previewImageURL: URL?
 }
 
-struct SteamWorkshopDetailCacheSnapshot: Codable {
+nonisolated struct SteamWorkshopDetailCacheSnapshot: Codable {
     let fetchedAt: Date
     let item: SteamWorkshopBrowserItem
 }
 
-struct SteamWorkshopBundledRuntimeMetadata: Codable {
+nonisolated struct SteamWorkshopBundledRuntimeMetadata: Codable {
     let channel: String
     let version: String
     let releaseDate: String

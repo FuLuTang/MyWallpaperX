@@ -75,7 +75,7 @@ enum SteamWorkshopDownloadsDisplayMode: String, CaseIterable, Equatable {
     }
 }
 
-enum SteamWorkshopPreviewAssetKind: String, Equatable, Codable {
+nonisolated enum SteamWorkshopPreviewAssetKind: String, Equatable, Codable {
     case unknown
     case stillImage
     case animatedImage
@@ -86,14 +86,14 @@ enum SteamWorkshopPreviewAssetKind: String, Equatable, Codable {
     }
 }
 
-struct SteamWorkshopDetailField: Identifiable, Equatable, Codable {
+nonisolated struct SteamWorkshopDetailField: Identifiable, Equatable, Codable {
     let label: String
     let value: String
 
     var id: String { "\(label):\(value)" }
 }
 
-struct SteamWorkshopBrowserItem: Identifiable, Equatable, Codable {
+nonisolated struct SteamWorkshopBrowserItem: Identifiable, Equatable, Codable {
     let id: String
     let title: String
     let author: String
