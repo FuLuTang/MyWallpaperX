@@ -11,6 +11,7 @@ final class WebWallpaperLoopbackServer {
     private let schemeHandler: WebWallpaperLocalSchemeHandler
     private var listener: NWListener?
     private(set) var port: UInt16?
+    var diagnosticHandler: ((String, WebRuntimeDiagnosticEvent.Severity, String, URL?) -> Void)?
 
     init(schemeHandler: WebWallpaperLocalSchemeHandler) {
         self.schemeHandler = schemeHandler
@@ -22,18 +23,47 @@ final class WebWallpaperLoopbackServer {
             return url
         }
 
+        let readySemaphore = DispatchSemaphore(value: 0)
         let listener = try NWListener(using: .tcp, on: .any)
+        var startupError: Error?
+        listener.stateUpdateHandler = { [weak self] state in
+            guard let self else { return }
+            switch state {
+            case .ready:
+                self.port = listener.port?.rawValue
+                self.diagnosticHandler?("loopback.ready", .info, "port=\(self.port ?? 0)", nil)
+                readySemaphore.signal()
+            case let .failed(error):
+                startupError = error
+                self.diagnosticHandler?("loopback.failed", .error, error.localizedDescription, nil)
+                readySemaphore.signal()
+            case let .waiting(error):
+                self.diagnosticHandler?("loopback.waiting", .warning, error.localizedDescription, nil)
+            default:
+                break
+            }
+        }
         listener.newConnectionHandler = { [weak self] connection in
             self?.handle(connection)
         }
         listener.start(queue: queue)
         self.listener = listener
 
-        guard let nwPort = listener.port,
-              let url = URL(string: "http://127.0.0.1:\(nwPort.rawValue)/") else {
+        if readySemaphore.wait(timeout: .now() + 1.0) == .timedOut {
+            diagnosticHandler?("loopback.start.timeout", .error, "listener did not become ready", nil)
+            listener.cancel()
+            self.listener = nil
+            throw NSError(domain: "WebWallpaperLoopbackServer", code: 3, userInfo: [NSLocalizedDescriptionKey: "loopback_start_timeout"])
+        }
+        if let startupError {
+            listener.cancel()
+            self.listener = nil
+            throw startupError
+        }
+        guard let port,
+              let url = URL(string: "http://127.0.0.1:\(port)/") else {
             throw NSError(domain: "WebWallpaperLoopbackServer", code: 1, userInfo: [NSLocalizedDescriptionKey: "loopback_port_unavailable"])
         }
-        port = nwPort.rawValue
         return url
     }
 
@@ -85,7 +115,7 @@ final class WebWallpaperLoopbackServer {
             return
         }
 
-        let rawPath = lineParts[1]
+        let rawPath = normalizedRequestPath(lineParts[1])
         guard let requestURL = URL(string: "mwx-local://wallpaper\(rawPath)") else {
             sendError(400, message: "bad_url", on: connection)
             return
@@ -111,8 +141,21 @@ final class WebWallpaperLoopbackServer {
                 on: connection
             )
         } catch {
+            diagnosticHandler?("loopback.resource.error", .warning, error.localizedDescription, requestURL)
             sendError(404, message: error.localizedDescription, on: connection)
         }
+    }
+
+    private func normalizedRequestPath(_ rawTarget: String) -> String {
+        if let absoluteURL = URL(string: rawTarget),
+           absoluteURL.scheme?.hasPrefix("http") == true,
+           let absoluteComponents = URLComponents(url: absoluteURL, resolvingAgainstBaseURL: false) {
+            var components = URLComponents()
+            components.percentEncodedPath = absoluteComponents.percentEncodedPath.isEmpty ? "/" : absoluteComponents.percentEncodedPath
+            components.percentEncodedQuery = absoluteComponents.percentEncodedQuery
+            return components.string ?? components.percentEncodedPath
+        }
+        return rawTarget.hasPrefix("/") ? rawTarget : "/\(rawTarget)"
     }
 
     private func sendHTTPResponse(
@@ -175,4 +218,5 @@ final class WebWallpaperLoopbackServer {
         default: "Error"
         }
     }
+
 }

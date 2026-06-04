@@ -93,13 +93,9 @@ extension SteamWorkshopService {
         let flags = Set(model.runtimeRiskFlags)
         let requiresOriginCompatibility = flags.contains(.serviceWorkerRegistration)
             || flags.contains(.esModuleDependency)
-            || flags.contains(.dynamicImportUsage)
             || flags.contains(.wasmStreamingUsage)
-            || flags.contains(.wasmUsage)
+            || flags.contains(.customSchemeSensitiveWebGL)
         if requiresOriginCompatibility {
-            return .highCompatibility
-        }
-        if flags.contains(.persistentBrowserStorageUsage) {
             return .highCompatibility
         }
         return .standard

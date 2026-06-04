@@ -74,6 +74,9 @@ extension SteamWorkshopService {
             if message.contains("streaming") {
                 flags.insert(.wasmStreamingUsage)
             }
+            if message.contains("pixi") || message.contains("live2d") || message.contains("视频纹理") || message.contains("origin 安全") {
+                flags.insert(.customSchemeSensitiveWebGL)
+            }
         }
         return Array(flags)
     }

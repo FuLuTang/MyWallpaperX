@@ -215,6 +215,11 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
                 server = existing
             } else {
                 server = WebWallpaperLoopbackServer(schemeHandler: surface.schemeHandler)
+                server.diagnosticHandler = { [weak self] type, severity, message, url in
+                    Task { @MainActor in
+                        self?.recordDiagnostic(type: type, severity: severity, message: message, screenID: surface.screenID, url: url?.absoluteString)
+                    }
+                }
                 loopbackServers[surface.screenID] = server
             }
             let baseURL = try server.start()

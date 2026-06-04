@@ -75,6 +75,7 @@ extension SteamWorkshopService {
         var usesDynamicImport = staticContentSummary?.usesDynamicImport ?? false
         var usesWASMResource = staticContentSummary?.usesWASMResource ?? false
         var usesWASMStreaming = staticContentSummary?.usesWASMStreaming ?? false
+        var usesCustomSchemeSensitiveWebGL = staticContentSummary?.usesCustomSchemeSensitiveWebGL ?? false
         var scannedRiskFlags = Set<ResolvedWebRuntimeRiskFlag>()
 
         func appendIssue(_ severity: SteamWorkshopWebValidationSeverity, _ level: SteamWorkshopWebValidationLevel, _ message: String) {
@@ -176,6 +177,9 @@ extension SteamWorkshopService {
             if Self.webContentUsesWASMStreaming(content) {
                 usesWASMStreaming = true
             }
+            if Self.webContentUsesCustomSchemeSensitiveWebGL(content) {
+                usesCustomSchemeSensitiveWebGL = true
+            }
 
             for reference in Self.extractLocalWebResourceReferences(from: content, fileExtension: fileURL.pathExtension) {
                 switch reference {
@@ -268,6 +272,10 @@ extension SteamWorkshopService {
         if usesWASMStreaming {
             scannedRiskFlags.insert(.wasmStreamingUsage)
             appendIssue(.warning, .warning, "检测到 WebAssembly streaming 编译；自定义 scheme 兼容性较弱，运行时将优先使用本地 HTTP loopback")
+        }
+        if usesCustomSchemeSensitiveWebGL {
+            scannedRiskFlags.insert(.customSchemeSensitiveWebGL)
+            appendIssue(.warning, .warning, "检测到 Pixi/Live2D/视频纹理等 WebGL 资源路径；自定义 scheme 容易触发 origin 安全限制，运行时将优先使用本地 HTTP loopback")
         }
         if staticContentSummary?.hasOnDemandDirectoryProperty == true {
             appendIssue(.info, .info, "检测到目录属性使用 ondemand 模式；当前宿主更偏按需随机文件解析语义，尚未完全覆盖更复杂旧生态样本对目录枚举/刷新节奏的预期")

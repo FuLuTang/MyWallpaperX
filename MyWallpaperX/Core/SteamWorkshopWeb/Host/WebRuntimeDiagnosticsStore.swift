@@ -51,6 +51,17 @@ final class WebRuntimeDiagnosticsStore {
         if events.count > capacity {
             events.removeFirst(events.count - capacity)
         }
+        #if DEBUG
+        NSLog(
+            "MWX WEB DIAG record=%@ screen=%@ severity=%@ type=%@ url=%@ message=%@",
+            recordID ?? "-",
+            screenID.map(String.init) ?? "-",
+            severity.rawValue,
+            type,
+            event.url ?? "-",
+            event.message
+        )
+        #endif
     }
 
     func recentEvents(recordID: String?, limit: Int = 50) -> [WebRuntimeDiagnosticEvent] {

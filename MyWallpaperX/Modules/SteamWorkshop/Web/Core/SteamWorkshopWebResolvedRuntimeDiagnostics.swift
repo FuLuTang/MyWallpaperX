@@ -45,6 +45,7 @@ extension SteamWorkshopService {
         var usesDynamicImport = false
         var usesWASMResource = false
         var usesWASMStreaming = false
+        var usesCustomSchemeSensitiveWebGL = false
         let hasFetchAllDirectoryProperty = propertyDefinitions.contains {
             $0.kind == .directory && $0.directoryMode?.lowercased() == "fetchall"
         }
@@ -92,6 +93,9 @@ extension SteamWorkshopService {
             }
             if Self.webContentUsesWASMStreaming(content) {
                 usesWASMStreaming = true
+            }
+            if Self.webContentUsesCustomSchemeSensitiveWebGL(content) {
+                usesCustomSchemeSensitiveWebGL = true
             }
 
             for reference in Self.extractLocalWebResourceReferences(from: content, fileExtension: fileURL.pathExtension) {
@@ -144,6 +148,7 @@ extension SteamWorkshopService {
             usesDynamicImport: usesDynamicImport,
             usesWASMResource: usesWASMResource,
             usesWASMStreaming: usesWASMStreaming,
+            usesCustomSchemeSensitiveWebGL: usesCustomSchemeSensitiveWebGL,
             usesWebMResource: usesWebMResource,
             usesHoverOnlyInteraction: usesHoverOnlyInteraction,
             hasFetchAllDirectoryProperty: hasFetchAllDirectoryProperty,

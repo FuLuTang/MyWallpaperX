@@ -42,6 +42,7 @@ struct ResolvedWebStaticContentSummary: Codable, Equatable {
     let usesDynamicImport: Bool
     let usesWASMResource: Bool
     let usesWASMStreaming: Bool
+    let usesCustomSchemeSensitiveWebGL: Bool
     let usesWebMResource: Bool
     let usesHoverOnlyInteraction: Bool
     let hasFetchAllDirectoryProperty: Bool
@@ -49,6 +50,87 @@ struct ResolvedWebStaticContentSummary: Codable, Equatable {
     let externalDependencyHosts: [String]
     let localhostDependencyHosts: [String]
     let remoteScriptDependencyHosts: [String]
+
+    enum CodingKeys: String, CodingKey {
+        case usesApplyGeneralProperties
+        case usesGeneralFPS
+        case usesPluginBridge
+        case usesPersistentBrowserStorage
+        case usesServiceWorkerRegistration
+        case usesESModuleDependency
+        case usesDynamicImport
+        case usesWASMResource
+        case usesWASMStreaming
+        case usesCustomSchemeSensitiveWebGL
+        case usesWebMResource
+        case usesHoverOnlyInteraction
+        case hasFetchAllDirectoryProperty
+        case hasOnDemandDirectoryProperty
+        case externalDependencyHosts
+        case localhostDependencyHosts
+        case remoteScriptDependencyHosts
+    }
+
+    init(
+        usesApplyGeneralProperties: Bool,
+        usesGeneralFPS: Bool,
+        usesPluginBridge: Bool,
+        usesPersistentBrowserStorage: Bool,
+        usesServiceWorkerRegistration: Bool,
+        usesESModuleDependency: Bool,
+        usesDynamicImport: Bool,
+        usesWASMResource: Bool,
+        usesWASMStreaming: Bool,
+        usesCustomSchemeSensitiveWebGL: Bool,
+        usesWebMResource: Bool,
+        usesHoverOnlyInteraction: Bool,
+        hasFetchAllDirectoryProperty: Bool,
+        hasOnDemandDirectoryProperty: Bool,
+        externalDependencyHosts: [String],
+        localhostDependencyHosts: [String],
+        remoteScriptDependencyHosts: [String]
+    ) {
+        self.usesApplyGeneralProperties = usesApplyGeneralProperties
+        self.usesGeneralFPS = usesGeneralFPS
+        self.usesPluginBridge = usesPluginBridge
+        self.usesPersistentBrowserStorage = usesPersistentBrowserStorage
+        self.usesServiceWorkerRegistration = usesServiceWorkerRegistration
+        self.usesESModuleDependency = usesESModuleDependency
+        self.usesDynamicImport = usesDynamicImport
+        self.usesWASMResource = usesWASMResource
+        self.usesWASMStreaming = usesWASMStreaming
+        self.usesCustomSchemeSensitiveWebGL = usesCustomSchemeSensitiveWebGL
+        self.usesWebMResource = usesWebMResource
+        self.usesHoverOnlyInteraction = usesHoverOnlyInteraction
+        self.hasFetchAllDirectoryProperty = hasFetchAllDirectoryProperty
+        self.hasOnDemandDirectoryProperty = hasOnDemandDirectoryProperty
+        self.externalDependencyHosts = externalDependencyHosts
+        self.localhostDependencyHosts = localhostDependencyHosts
+        self.remoteScriptDependencyHosts = remoteScriptDependencyHosts
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            usesApplyGeneralProperties: try container.decode(Bool.self, forKey: .usesApplyGeneralProperties),
+            usesGeneralFPS: try container.decode(Bool.self, forKey: .usesGeneralFPS),
+            usesPluginBridge: try container.decode(Bool.self, forKey: .usesPluginBridge),
+            usesPersistentBrowserStorage: try container.decode(Bool.self, forKey: .usesPersistentBrowserStorage),
+            usesServiceWorkerRegistration: try container.decode(Bool.self, forKey: .usesServiceWorkerRegistration),
+            usesESModuleDependency: try container.decode(Bool.self, forKey: .usesESModuleDependency),
+            usesDynamicImport: try container.decode(Bool.self, forKey: .usesDynamicImport),
+            usesWASMResource: try container.decode(Bool.self, forKey: .usesWASMResource),
+            usesWASMStreaming: try container.decode(Bool.self, forKey: .usesWASMStreaming),
+            usesCustomSchemeSensitiveWebGL: try container.decodeIfPresent(Bool.self, forKey: .usesCustomSchemeSensitiveWebGL) ?? false,
+            usesWebMResource: try container.decode(Bool.self, forKey: .usesWebMResource),
+            usesHoverOnlyInteraction: try container.decode(Bool.self, forKey: .usesHoverOnlyInteraction),
+            hasFetchAllDirectoryProperty: try container.decode(Bool.self, forKey: .hasFetchAllDirectoryProperty),
+            hasOnDemandDirectoryProperty: try container.decode(Bool.self, forKey: .hasOnDemandDirectoryProperty),
+            externalDependencyHosts: try container.decode([String].self, forKey: .externalDependencyHosts),
+            localhostDependencyHosts: try container.decode([String].self, forKey: .localhostDependencyHosts),
+            remoteScriptDependencyHosts: try container.decode([String].self, forKey: .remoteScriptDependencyHosts)
+        )
+    }
 }
 
 struct ResolvedWebProjectDescriptor: Equatable {
@@ -105,6 +187,7 @@ enum ResolvedWebRuntimeRiskFlag: String, Codable, Equatable, Hashable {
     case dynamicImportUsage
     case wasmUsage
     case wasmStreamingUsage
+    case customSchemeSensitiveWebGL
 
     var displayName: String {
         switch self {
@@ -144,6 +227,8 @@ enum ResolvedWebRuntimeRiskFlag: String, Codable, Equatable, Hashable {
             return "WASM 依赖"
         case .wasmStreamingUsage:
             return "WASM Streaming 依赖"
+        case .customSchemeSensitiveWebGL:
+            return "WebGL/纹理 Origin 敏感"
         }
     }
 }
