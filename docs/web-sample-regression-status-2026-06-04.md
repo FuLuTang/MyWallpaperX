@@ -233,3 +233,104 @@ xcodebuild -project MyWallpaperX.xcodeproj -scheme MyWallpaperX -configuration D
 1. 若要追 `1509243786`，先给 local scheme handler 增加成功返回诊断或用 Web Inspector 直接确认 CSS response，而不是直接改路径 fallback。
 2. 若要进一步贴近 WE，可以给 `fetch("performance.layout.user.js", { method: "HEAD" })` 的缺失可选文件降噪，避免把可选 user override 记成高信号错误。
 3. `/performance` 可考虑做空数据 stub，但要以 `3639973107` 实际触发外部请求的日志为依据；本轮全量日志主要是可选 layout 文件缺失。
+
+## 旧版对比验证
+
+### 对比分支
+
+从旧基线提交创建测试分支：
+
+```text
+codex/web-baseline-2a8b468
+```
+
+基线提交：
+
+```text
+2a8b46829ef2eb0346a3ca27c4c8aabc0bad42a7
+```
+
+测试补丁提交：
+
+```text
+dae4d7e test: add baseline web playback diagnostics
+```
+
+该补丁只加入：
+
+- `--mwx-debug-play-workshop-id <目录ID>` 播放入口。
+- `wallpaperHostLog` / navigation finish / navigation failure 的 stderr 诊断。
+
+没有带入当前版本的 runtime profile、loopback 选择、属性回放、color 值兼容、fetch companion stub 等修复。
+
+### 清缓存口径
+
+旧版和当前版本都按相同方式清理后重新构建：
+
+```sh
+pkill -x MyWallpaperX 2>/dev/null || true
+rm -rf /Users/songziqiang/Library/Developer/Xcode/DerivedData/MyWallpaperX-ezuatvrxfeqxwzeubireydvbdhtc
+find /Users/songziqiang/Movies/MyWallpaperX/创意工坊 -name '.mywallpaperx-web-analysis.json' -o -name '.mywallpaperx-web-runtime.json' | xargs -r rm -f
+rm -rf /Users/songziqiang/Library/Caches/MyWallpaperX/SteamWorkshop/WebRuntime 2>/dev/null || true
+xcodebuild -project MyWallpaperX.xcodeproj -scheme MyWallpaperX -configuration Debug -destination 'platform=macOS' build
+```
+
+旧版和当前版本均构建通过。
+
+### 日志目录
+
+旧版：
+
+```text
+/tmp/mwx-web-baseline-2a8b468-20260604-134235
+```
+
+当前版本：
+
+```text
+/tmp/mwx-web-current-clean-20260604-134841
+```
+
+### 同口径结果
+
+| 指标 | 旧版 `2a8b468` + 测试日志 | 当前版本 `8fdc778` |
+| --- | ---: | ---: |
+| 启动 Web 样本 | 36/36 | 36/36 |
+| `runtime.profile` | 0/36 | 36/36 |
+| `navigation.finish` | 34/36 | 36/36 |
+| `properties.error` | 2/36 | 0/36 |
+| `general-properties.error` | 0/36 | 0/36 |
+| 有 `resource.error` 的样本数 | 5 | 3 |
+| 有 `media.error` 的样本数 | 4 | 1 |
+| 有 `fetch.error` 的样本数 | 2 | 2 |
+| 有 `console.error` 的样本数 | 3 | 1 |
+
+旧版缺 `navigation.finish`：
+
+- `2997985023`
+- `3530909637`
+
+旧版宿主属性错误：
+
+- `3700928191`
+  - `f.push is not a function. (In 'f.push(1)', 'f.push' is undefined)`
+- `3702378813`
+  - `null is not an object (evaluating 'audio.volume = volume/100')`
+
+当前版本对应结果：
+
+- `2997985023`：`runtime.profile profile=highCompatibility origin=httpLoopback`，有 `navigation.finish`；只剩缺 `assets/sound/bgm.mp3`。
+- `3530909637`：有 `runtime.profile` 和 `navigation.finish`。
+- `3700928191`：有 `runtime.profile` 和 `navigation.finish`，无 `properties.error`。
+- `3702378813`：有 `runtime.profile` 和 `navigation.finish`，无 `properties.error`。
+
+### 结论
+
+当前版本比 `2a8b468` 旧基线更稳定，也更适合作为后续开发路线：
+
+- 当前版本保留了 runtime profile，可区分 `customScheme` 和 `httpLoopback`，有利于继续对齐 WE 的来源/安全/兼容策略。
+- 当前版本在同样 36 个 Web 样本上导航完成率更高。
+- 当前版本已消除旧版仍存在的属性回放崩溃。
+- 当前版本的残留问题主要集中在样本缺资源、外部接口和少数可继续验证的资源事件，不是旧版更优的证据。
+
+后续不建议回退到 `2a8b468` 继续开发；应沿当前 `feature/scene` 的 `8fdc778` 继续收敛残留问题。
