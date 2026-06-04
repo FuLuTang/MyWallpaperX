@@ -877,3 +877,98 @@ MyWallpaperX --mwx-debug-suppress-main-window --mwx-debug-play-workshop-id 31379
 - 本轮有明确宿主侧修复：中文 macOS / Dock 桌面覆盖窗口下，Web 壁纸真实点击无法转发的问题。
 - 修复后已有真实系统事件验证，不再只是源码推断。
 - 资源、属性、导航在代表样本上无新增回归。
+
+## 2026-06-04 点击修复后 45 个 Web 样本全量复测
+
+本轮只做运行验证和日志归类，没有新增宿主侧代码修改。
+
+构建：
+
+```sh
+xcodebuild -project MyWallpaperX.xcodeproj -scheme MyWallpaperX -configuration Debug -destination 'platform=macOS' build
+```
+
+结果：通过。
+
+启动方式：
+
+```sh
+MyWallpaperX --mwx-debug-suppress-main-window --mwx-debug-play-workshop-id <workshop-id>
+```
+
+范围：
+
+- `/Users/songziqiang/Movies/MyWallpaperX/创意工坊` 下 45 个 Web 样本。
+- 每个样本独立启动 Debug App，运行约 10 秒后退出并读取后台日志。
+
+全量日志目录：
+
+```text
+/tmp/mwx-web-full-after-pointer-fix-20260604-153747
+```
+
+统计：
+
+| 指标 | 结果 |
+| --- | ---: |
+| Web 样本日志 | 45/45 |
+| `MWX DEBUG PLAY: launching` | 45/45 |
+| `runtime.profile` | 45/45 |
+| `navigation.finish` | 44/45 |
+| `navigation.failure` | 0/45 |
+| `properties.error` | 0/45 |
+| `general-properties.error` | 0/45 |
+| `local-resource-error` | 0/45 |
+| `pointer.dispatch.error` | 0/45 |
+| `wheel.dispatch.error` | 0/45 |
+
+`navigation.finish` 首轮缺失样本：
+
+- `3701773311`
+
+单样本延长复测：
+
+```text
+/tmp/mwx-3701773311-after-pointer-long-20260604-154645
+```
+
+结果：
+
+- 有 `runtime.profile`。
+- 有 `dom.ready`。
+- 有 `navigation.finish`。
+- 保留 `local-resource-deny Placeholder.png`，页面 JS 随后使用存在的 `Placeholder.jpg` 作为回退。
+- 保留远端 `https://wallpaperengineapi.onrender.com/apod-images/2026-06-04.jpg` 图片失败日志。
+
+结论：`3701773311` 首轮 10 秒内缺 `navigation.finish` 是样本远端/回退时序问题，不是稳定的宿主导航失败。
+
+### 剩余异常归类
+
+| 类型 | 样本 | 当前判断 |
+| --- | --- | --- |
+| `resource.error` | `1509243786`, `2997985023` | `1509243786` 为页面脚本/样式事件；`2997985023` 为缺失音频文件。 |
+| `resource.ignored` | `1509243786`, `3137947556`, `3702822549` | 空 `src` / 已知可忽略资源探测。 |
+| `local-resource-deny` | `884307090`, `1081733658`, `2997985023`, `3566247256`, `3601888127`, `3602501948`, `3603106230`, `3620596895`, `3639973107`, `3676193993`, `3689993041`, `3690554020`, `3701249553`, `3701773311`, `3705960722` | 均为缺文件、可选探测或页面自身回退路径。没有越权路径或宿主读取失败。 |
+| `loopback.resource.error` | `1081733658`, `2997985023` | HTTP loopback 透传本地方案拒绝原因；`1081733658` 是初始默认头像路径，`2997985023` 是缺音频。 |
+| `media.error` / `audio.resume.error` / `media.play.error` | `2997985023` | 样本目录缺 `assets/sound/*.mp3`；目录中只有 `1.mp3`、`2.mp3`、`3.mp3` 这类文件。 |
+| `fetch.error` | `3697499196` | 远端 Google Storage 文本资源失败。 |
+| `fetch.ignored` | `3639973107` | `HEAD performance.layout.user.js` 可选布局文件探测。 |
+| `console.error` | `1509243786` | `js/loader.js` 中 `weather` 变量未定义；页面仍完成导航。 |
+
+样本细节：
+
+- `884307090`：HTML 内存在 `<source src= null>`，浏览器会请求 `mwx-local://wallpaper/null`。页面仍完成导航；这是样本占位写法，不适合在宿主侧全局吞掉 `null` 路径。
+- `1081733658`：首屏请求不存在的 `img/faces/face-5.jpg`，后续使用现有 `modules/clock/release/img/faces/` 资源；页面完成导航。
+- `2997985023`：实际请求 `assets/sound/bgm.mp3`, `good.mp3`, `good2.mp3`, `bad.mp3`, `bad2.mp3`, `vgood.mp3`, `vgood2.mp3`, `ok.mp3`，样本目录缺这些文件，所以音频相关错误仍存在。
+- NIKKE / Spine 组：多个样本保留初始 `background.png` 缺失日志，但页面完成导航；这是 CSS 初始背景噪声，不是当前宿主的资源映射失败。
+- `3639973107`：`performance.layout.user.js` 不存在，但页面逻辑本身把它作为可选覆盖文件探测。
+- `3676193993`：CSS 先请求不存在的 `bg_full.png`，同一声明内仍有存在的 `bg_fuji.png` 回退。
+- `3697499196`：页面依赖远端 `storage.googleapis.com` 文本资源，当前失败不落在本地资源宿主。
+- `3701773311`：首轮 10 秒内未记录 `navigation.finish`，延长复测后完成导航；仍依赖远端 APOD 图片并回退到本地 `Placeholder.jpg`。
+
+### 当前结论
+
+- 45 个 Web 样本均能启动并产出运行时 profile。
+- 没有新的 `navigation.failure`、属性注入错误、本地资源读取错误、指针派发错误或滚轮派发错误。
+- 点击修复后的真实事件转发结论保持有效。
+- 本轮不做新的代码修复；剩余问题先按样本缺资源、远端依赖、页面自身占位/回退逻辑记录。
