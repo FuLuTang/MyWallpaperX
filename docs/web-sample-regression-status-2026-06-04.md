@@ -600,3 +600,52 @@ fetch("performance.layout.user.js", { method: "HEAD" })
   - `884307090`：`null` 媒体路径。
 
 当前结论：本轮实际复测没有发现属性回放新回归；大多数样本可以启动并进入运行状态。下一步继续收敛时，优先处理能证明影响真实画面/交互的宿主能力缺口，不应为 NIKKE `background.png`、CSS 多背景 fallback 或页面初始化遗留请求做宽泛 host fallback。
+
+## 1509243786 剩余事件复核
+
+### 追加诊断
+
+`console.error {}` 信息不足，已增强 console 包装器对 `Error` 对象的记录：优先输出 `message` 和 `stack`，再回退到 JSON/string。
+
+验证日志：
+
+```text
+/tmp/mwx-1509243786-console-detail-20260604-144647
+```
+
+结果：
+
+- 原 `console.error {}` 变成：
+  - `Can't find variable: weather setUpdate@mwx-local://wallpaper/js/loader.js:12:15`
+- `loader.js` 在 `index.html` 中位于 `weather.setting.js`、`date.setting.js`、`note.setting.js` 之前加载。
+- `loader.js` 的第一轮 `setUpdate()` 会立即读取 `weather.loaded()` / `date.loaded()` / `note.loaded()`，此时这些全局变量尚未声明，因此触发短暂页面脚本错误。
+- 样本随后仍有 `dom.ready` 和 `navigation.finish`。
+
+### 强制 loopback 对照
+
+临时把 `1509243786` 强制为 `highCompatibility/httpLoopback` 后单独跑一次，日志：
+
+```text
+/tmp/mwx-1509243786-forced-loopback-20260604-144537
+```
+
+结果：
+
+- `LINK ... css/index.css` 的 `resource.error` 仍存在。
+- 因此该事件不是 `customScheme` origin 传输导致。
+- `css/index.css` 本体在 custom scheme 下已经由 local scheme 完整返回；更可能是 CSS 内部 Google Fonts `@import` 或 WebKit 对 stylesheet 子资源失败的父 link error。
+
+当前判断：
+
+- `1509243786` 的页面错误主要是样本自身初始化顺序和外部字体依赖；当前不做宿主级重排或硬编码修复。
+- 保留 Error 对象详细日志增强，后续遇到类似 `console.error {}` 能直接看到真正堆栈。
+
+小范围回归：
+
+```text
+/tmp/mwx-console-detail-regression-20260604-144829
+```
+
+- `1509243786`：仍有 `navigation.finish`，`console.error` 保留具体堆栈。
+- `3702822549`：空 `IMG src` 仍为 `resource.ignored IMG empty-src`。
+- `2997985023`：缺音频仍保留 `local-resource-deny reason=missing`、`loopback.resource.error local_scheme_denied_missing`、`resource.error` 和 `media.error`。

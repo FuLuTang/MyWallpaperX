@@ -5,6 +5,13 @@ let webCompatibilityScriptInteractionAndRuntimeLogging = #"""
       try {
         hostLogger.post(`console.${name}`, args.map(arg => {
           if (typeof arg === 'string') return arg;
+          if (arg && typeof arg === 'object') {
+            const message = typeof arg.message === 'string' ? arg.message : '';
+            const stack = typeof arg.stack === 'string' ? arg.stack : '';
+            if (message || stack) {
+              return [message, stack].filter(Boolean).join(' ');
+            }
+          }
           try { return JSON.stringify(arg); } catch (_) { return String(arg); }
         }).join(' '));
       } catch (_) {}
