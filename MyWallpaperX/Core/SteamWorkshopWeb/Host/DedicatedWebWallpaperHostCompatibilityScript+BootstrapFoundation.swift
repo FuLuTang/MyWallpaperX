@@ -203,12 +203,16 @@ let webCompatibilityScriptBootstrapFoundation = #"""
   };
   const replayWallpaperPropertyListenerState = function() {
     try {
-      if (typeof window.wallpaperPropertyListener.applyUserProperties === 'function') {
+      if (typeof window.__myWallpaperApplyProperties === 'function') {
+        window.__myWallpaperApplyProperties(window.__myWallpaperLastUserProperties || {});
+      } else if (typeof window.wallpaperPropertyListener.applyUserProperties === 'function') {
         window.wallpaperPropertyListener.applyUserProperties(window.__myWallpaperLastUserProperties || {});
       }
     } catch (_) {}
     try {
-      if (typeof window.wallpaperPropertyListener.applyGeneralProperties === 'function') {
+      if (typeof window.__myWallpaperApplyGeneralProperties === 'function') {
+        window.__myWallpaperApplyGeneralProperties(window.__myWallpaperLastGeneralProperties || {});
+      } else if (typeof window.wallpaperPropertyListener.applyGeneralProperties === 'function') {
         window.wallpaperPropertyListener.applyGeneralProperties(window.__myWallpaperLastGeneralProperties || {});
       }
     } catch (_) {}

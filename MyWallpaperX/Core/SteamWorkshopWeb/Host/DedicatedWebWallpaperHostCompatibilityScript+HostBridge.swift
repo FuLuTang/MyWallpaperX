@@ -48,23 +48,10 @@ let webCompatibilityScriptHostBridge = #"""
       hostLogger.post('interactive-regions.error', error && error.message ? error.message : error);
     }
   };
-  window.__myWallpaperApplyProperties = function(properties) {
-    const safeProperties = properties || {};
-    window.__myWallpaperLastUserProperties = safeProperties;
-    try {
-      if (window.wallpaperPropertyListener && typeof window.wallpaperPropertyListener.applyUserProperties === 'function') {
-        window.wallpaperPropertyListener.applyUserProperties(safeProperties);
-      }
-      window.dispatchEvent(new CustomEvent('wallpaper-properties-applied', { detail: safeProperties }));
-    } catch (error) {
-      hostLogger.post('properties.error', error && error.message ? error.message : error);
-    }
-  };
-  window.__myWallpaperApplyGeneralProperties = function(properties) {
-    const safeProperties = properties || {};
+  window.__myWallpaperNormalizePropertyBag = function(properties) {
     const normalizedProperties = {};
     try {
-      for (const [key, rawValue] of Object.entries(safeProperties)) {
+      for (const [key, rawValue] of Object.entries(properties || {})) {
         if (rawValue && typeof rawValue === 'object' && Object.prototype.hasOwnProperty.call(rawValue, 'value')) {
           const boxedValue = Object.assign({}, rawValue);
           const scalarValue = rawValue.value;
@@ -94,8 +81,57 @@ let webCompatibilityScriptHostBridge = #"""
           normalizedProperties[key] = rawValue;
         }
       }
-    } catch (_) {}
+      return normalizedProperties;
+    } catch (_) {
+      return properties || {};
+    }
+  };
+  window.__myWallpaperStablePropertySignature = function(value) {
+    try {
+      const normalize = (input) => {
+        if (Array.isArray(input)) return input.map(normalize);
+        if (input && typeof input === 'object') {
+          const output = {};
+          for (const key of Object.keys(input).sort()) {
+            const item = input[key];
+            if (typeof item !== 'function') {
+              output[key] = normalize(item);
+            }
+          }
+          return output;
+        }
+        return input;
+      };
+      return JSON.stringify(normalize(value || {}));
+    } catch (_) {
+      try { return JSON.stringify(value || {}); } catch (_) { return ''; }
+    }
+  };
+  window.__myWallpaperApplyProperties = function(properties) {
+    const safeProperties = window.__myWallpaperNormalizePropertyBag(properties || {});
+    window.__myWallpaperLastUserProperties = safeProperties;
+    const signature = window.__myWallpaperStablePropertySignature(safeProperties);
+    if (signature && window.__myWallpaperLastAppliedUserPropertiesSignature === signature) {
+      return;
+    }
+    window.__myWallpaperLastAppliedUserPropertiesSignature = signature;
+    try {
+      if (window.wallpaperPropertyListener && typeof window.wallpaperPropertyListener.applyUserProperties === 'function') {
+        window.wallpaperPropertyListener.applyUserProperties(safeProperties);
+      }
+      window.dispatchEvent(new CustomEvent('wallpaper-properties-applied', { detail: safeProperties }));
+    } catch (error) {
+      hostLogger.post('properties.error', error && error.message ? error.message : error);
+    }
+  };
+  window.__myWallpaperApplyGeneralProperties = function(properties) {
+    const normalizedProperties = window.__myWallpaperNormalizePropertyBag(properties || {});
     window.__myWallpaperLastGeneralProperties = normalizedProperties;
+    const signature = window.__myWallpaperStablePropertySignature(normalizedProperties);
+    if (signature && window.__myWallpaperLastAppliedGeneralPropertiesSignature === signature) {
+      return;
+    }
+    window.__myWallpaperLastAppliedGeneralPropertiesSignature = signature;
     try {
       if (window.wallpaperPropertyListener && typeof window.wallpaperPropertyListener.applyGeneralProperties === 'function') {
         window.wallpaperPropertyListener.applyGeneralProperties(normalizedProperties);
@@ -182,7 +218,7 @@ let webCompatibilityScriptHostBridge = #"""
     const safeLevels = Array.isArray(levels)
       ? levels.map((value) => {
           const numeric = Number(value);
-          return Number.isFinite(numeric) ? numeric : 0;
+          return Number.isFinite(numeric) ? Math.max(0, Math.min(1, numeric)) : 0;
         })
       : [];
     try {

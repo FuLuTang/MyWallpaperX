@@ -198,6 +198,7 @@ class WallpaperManager: ObservableObject {
         gridZoomOffset = UserDefaults.standard.object(forKey: "gridZoomOffset") as? Int ?? 0
         refreshAutoSwitchTimerIfNeeded()
         restorePlaybackState()
+        restorePersistedSystemAudioSpectrumIfNeeded()
         lastAppliedEnginePauseSettings = EnginePauseSettingsSnapshot(settings: settings)
         
         // 后台扫描缺失的视频元数据（时长、分辨率等）
@@ -275,6 +276,14 @@ class WallpaperManager: ObservableObject {
 
         GlobalHotkeyManager.shared.update(with: settings)
         lastAppliedHotkeySettings = HotkeySettingsSnapshot(settings: settings)
+    }
+
+    private func restorePersistedSystemAudioSpectrumIfNeeded() {
+        guard settings.systemAudioSpectrumEnabled else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+            guard let self, self.settings.systemAudioSpectrumEnabled else { return }
+            self.applySystemAudioSpectrumToEngine()
+        }
     }
 
     var pendingCardInteraction = false

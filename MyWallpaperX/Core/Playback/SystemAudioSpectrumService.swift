@@ -130,6 +130,7 @@ final class SystemAudioSpectrumService: NSObject {
             }
         } catch {
             stopCapture()
+            isEnabled = false
             onLevels?(Array(repeating: 0, count: barCount))
         }
     }
