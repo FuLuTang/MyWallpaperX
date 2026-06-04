@@ -334,3 +334,114 @@ xcodebuild -project MyWallpaperX.xcodeproj -scheme MyWallpaperX -configuration D
 - 当前版本的残留问题主要集中在样本缺资源、外部接口和少数可继续验证的资源事件，不是旧版更优的证据。
 
 后续不建议回退到 `2a8b468` 继续开发；应沿当前 `feature/scene` 的 `8fdc778` 继续收敛残留问题。
+
+## 空图片与 CSS 资源事件复核
+
+### 背景图误判修正
+
+NIKKE / Spine 类样本的 `background.png` 不应直接做宿主级透明占位或通用替换：
+
+- 样本 `style.css` 初始写了 `background: url(background.png)`。
+- 样本 `main.js` 会在初始化后把 `document.body.style.backgroundImage` 改为 `image/logo_nikke.png`。
+- 用户属性中的 `schemecolor` 会把 `document.body.style.backgroundColor` 改成 `rgb(...)`，这才是实际纯色背景路径。
+- 每个样本还带有自己的角色资源，例如 `image/c315_00.png`、`image/c610_00.png` 等；把缺失的 `background.png` 替换成透明图或角色图都会改变样本语义。
+
+因此当前不对 `background.png` 做通用 fallback；这些 `local-resource-deny background.png` 先归类为样本 CSS 初始遗留请求 / 低优先级噪声，而不是“空背景缺资源”。
+
+### 代码调整
+
+本轮只调整运行诊断，不改变资源解析结果：
+
+- `IMG` 空 `src` 或解析成当前文档 URL 的错误不再记为 `resource.error`，改记为 `resource.ignored IMG empty-src`。
+- local scheme 对 CSS 成功返回增加一次性 `local-resource.served` 诊断，用于判断 `LINK ... css/index.css` 是否真是宿主资源失败。
+
+### 针对性验证
+
+日志目录：
+
+```text
+/tmp/mwx-resource-ignore-empty-img-20260604-140441
+/tmp/mwx-css-served-once-20260604-141303
+```
+
+结果：
+
+- `3702822549`：原 `IMG mwx-local://wallpaper/index.html` 已变为 `resource.ignored IMG empty-src`。
+- `1509243786`：空图同样已变为 `resource.ignored IMG empty-src`。
+- `1509243786`：`css/index.css` 在 `resource.error LINK ... css/index.css` 前已由 local scheme 成功返回：
+  - `mime=text/css`
+  - `size=48351`
+  - `delivered=48351`
+  - `file=/Users/songziqiang/Movies/MyWallpaperX/创意工坊/1509243786/css/index.css`
+
+结论：`1509243786` 的 CSS link error 当前不应按 local scheme 路径失败修；宿主已经完整返回 CSS。后续若继续追，应查页面脚本或 WebKit 对该 link 事件的触发原因。
+
+## 45 个 Web 声明目录全量验证
+
+本轮按更宽口径枚举所有 `project.json type=web` 目录，共 45 个，不只使用前一轮 36 个“真 Web 样本”口径。
+
+日志目录：
+
+```text
+/tmp/mwx-web-full-resource-ignore-20260604-140558
+```
+
+全量结果：
+
+| 指标 | 结果 |
+| --- | ---: |
+| `runtime.profile` | 45/45 |
+| `navigation.finish` | 45/45 |
+| `properties.error` | 0/45 |
+| `general-properties.error` | 0/45 |
+| 有 `resource.error` 的样本数 | 2 |
+| 有 `resource.ignored` 的样本数 | 3 |
+| 有 `local-resource-deny` 的样本数 | 15 |
+| 有 `local-resource-error` 的样本数 | 0 |
+| 有 `media.error` 的样本数 | 1 |
+| 有 `fetch.error` 的样本数 | 2 |
+| 有 `console.error` 的样本数 | 1 |
+
+剩余 `resource.error`：
+
+- `1509243786`
+  - `LINK mwx-local://wallpaper/css/index.css`
+  - 已用 `local-resource.served` 证明 CSS 完整返回，不是 host 路径拒绝。
+- `2997985023`
+  - `AUDIO http://127.0.0.1:.../assets/sound/bgm.mp3`
+  - 样本缺 `assets/sound/bgm.mp3`，README 也指向用户自行下载 BGM。
+
+`resource.ignored` 样本：
+
+- `1509243786`
+- `3137947556`
+- `3702822549`
+
+这些都是空 `IMG src` 或等效当前文档 URL，已从错误统计中剔除。
+
+剩余 `fetch.error`：
+
+- `3639973107`：`performance.layout.user.js` 可选 user override 缺失，样本会 fallback。
+- `3697499196`：Google Storage 远端文本资源加载失败，属于远端依赖。
+
+剩余 `local-resource-deny` 需要继续分层看待：
+
+- 样本缺资源或可选资源：
+  - `1081733658`: `img/faces/face-5.jpg`
+  - `2997985023`: 多个 `assets/sound/*.mp3`
+  - `3639973107`: `performance.layout.user.js`
+  - `3676193993`: `bg_full.png`
+  - `3701773311`: `Placeholder.png`
+  - `884307090`: `null`
+- NIKKE / Spine 初始 CSS 背景请求：
+  - `3566247256`
+  - `3601888127`
+  - `3602501948`
+  - `3603106230`
+  - `3620596895`
+  - `3689993041`
+  - `3690554020`
+  - `3701249553`
+  - `3705960722`
+
+当前判断：核心播放稳定性已经比旧基线明显好，且 45 个 Web 声明目录全部导航完成。下一步应继续优先处理有明确宿主语义的能力缺口，而不是为样本 CSS 遗留路径做宽泛 fallback。

@@ -19,6 +19,17 @@ let webCompatibilityScriptInteractionAndRuntimeLogging = #"""
     if (target && target !== window) {
       const tagName = target.tagName || 'resource';
       const source = target.currentSrc || target.src || target.href || '';
+      try {
+        const sourceURL = source ? new URL(String(source), document.location.href) : null;
+        const rawSource =
+          target.getAttribute && tagName === 'IMG'
+            ? String(target.getAttribute('src') || '').trim()
+            : '';
+        if (tagName === 'IMG' && (!rawSource || (sourceURL && sourceURL.href === document.location.href))) {
+          hostLogger.post('resource.ignored', `${tagName} empty-src`);
+          return;
+        }
+      } catch (_) {}
       hostLogger.post('resource.error', `${tagName} ${source}`.trim());
       return;
     }

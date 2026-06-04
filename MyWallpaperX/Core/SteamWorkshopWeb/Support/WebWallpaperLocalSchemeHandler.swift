@@ -36,6 +36,7 @@ final class WebWallpaperLocalSchemeHandler: NSObject, WKURLSchemeHandler {
     private let rootURL: URL
     private var additionalReadableRoots: [URL] = []
     private let strictSymlinkPolicy: Bool
+    private var servedDiagnosticURLs: Set<String> = []
     var diagnosticHandler: ((String, WebRuntimeDiagnosticEvent.Severity, String, URL?) -> Void)?
 
     init(rootURL: URL, strictSymlinkPolicy: Bool = false) {
@@ -81,6 +82,16 @@ final class WebWallpaperLocalSchemeHandler: NSObject, WKURLSchemeHandler {
                 range: range,
                 deliveredLength: data.count
             )
+            if resource.fileURL.pathExtension.lowercased() == "css",
+               shouldRecordServedDiagnostic(for: requestURL) {
+                let rangeDescription = range.map { "\($0.lowerBound)-\($0.upperBound)" } ?? "full"
+                diagnosticHandler?(
+                    "local-resource.served",
+                    .info,
+                    "mime=\(mimeType) size=\(fileSize) delivered=\(data.count) range=\(rangeDescription) file=\(resource.fileURL.path)",
+                    requestURL
+                )
+            }
             urlSchemeTask.didReceive(response)
             urlSchemeTask.didReceive(data)
             urlSchemeTask.didFinish()
@@ -200,6 +211,15 @@ final class WebWallpaperLocalSchemeHandler: NSObject, WKURLSchemeHandler {
             return nil
         }
         return ResolvedResource(fileURL: normalizedTargetURL, didTraverseSymlink: didTraverseSymlink, matchedRootPath: matchedRootPath)
+    }
+
+    private func shouldRecordServedDiagnostic(for requestURL: URL) -> Bool {
+        let key = requestURL.absoluteString
+        guard servedDiagnosticURLs.contains(key) == false else {
+            return false
+        }
+        servedDiagnosticURLs.insert(key)
+        return true
     }
 
     private func compatibilityFallbackFileURL(for originalURL: URL) -> URL? {
