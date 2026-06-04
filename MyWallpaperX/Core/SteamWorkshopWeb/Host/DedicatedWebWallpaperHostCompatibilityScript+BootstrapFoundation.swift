@@ -106,6 +106,7 @@ let webCompatibilityScriptBootstrapFoundation = #"""
       'resource.error': 2000,
       'resource.ignored': 5000,
       'fetch.error': 5000,
+      'fetch.ignored': 5000,
       'xhr.error': 5000,
       'xhr.status': 5000,
       'media.error': 2000,

@@ -54,11 +54,14 @@ final class WebWallpaperLocalSchemeHandler: NSObject, WKURLSchemeHandler {
 
     func webView(_ webView: WKWebView, start urlSchemeTask: any WKURLSchemeTask) {
         let requestURL = urlSchemeTask.request.url
-        guard let requestURL,
-              let resource = resolvedResource(for: requestURL, allowsDirectoryIndexFallback: true) else {
-            let error = AccessDenied(reason: .invalidURL, requestURL: requestURL ?? URL(fileURLWithPath: "/"), candidateURL: nil, resolvedURL: nil)
+        guard let requestURL else {
+            let error = AccessDenied(reason: .invalidURL, requestURL: URL(fileURLWithPath: "/"), candidateURL: nil, resolvedURL: nil)
             recordDeny(error)
             urlSchemeTask.didFailWithError(error)
+            return
+        }
+        guard let resource = resolvedResource(for: requestURL, allowsDirectoryIndexFallback: true) else {
+            urlSchemeTask.didFailWithError(AccessDenied(reason: .invalidURL, requestURL: requestURL, candidateURL: nil, resolvedURL: nil))
             return
         }
 

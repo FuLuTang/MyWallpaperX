@@ -445,3 +445,47 @@ NIKKE / Spine 类样本的 `background.png` 不应直接做宿主级透明占位
   - `3705960722`
 
 当前判断：核心播放稳定性已经比旧基线明显好，且 45 个 Web 声明目录全部导航完成。下一步应继续优先处理有明确宿主语义的能力缺口，而不是为样本 CSS 遗留路径做宽泛 fallback。
+
+## 可选资源探测诊断修正
+
+### 问题
+
+`3639973107` 会用以下代码探测用户自定义性能布局：
+
+```js
+fetch("performance.layout.user.js", { method: "HEAD" })
+```
+
+该文件是用户可选覆盖文件；样本说明也建议用户复制/重命名 `performance.layout.js` 为 `performance.layout.user.js` 以避免更新覆盖。文件不存在时页面会 fallback 到 `performance.layout.js`，不应作为高信号 `fetch.error` 统计。
+
+同时 local scheme 对同一次缺失资源会先记录真实 `missing`，外层 guard 又补记一次 `invalidURL`，导致日志像“解析失败 + 文件缺失”两个问题并存，实际只有缺文件。
+
+### 调整
+
+- local scheme 缺资源时只保留 `resolvedResource` 内记录的真实拒绝原因，不再额外补一条 `invalidURL`。
+- `HEAD performance.layout.user.js` 失败改记为 `fetch.ignored`，页面 fallback 行为保持不变。
+- 真实资源失败仍保留 `fetch.error` / `resource.error` / `media.error`。
+
+### 验证
+
+日志目录：
+
+```text
+/tmp/mwx-optional-layout-diagnostic-20260604-141740
+/tmp/mwx-diagnostic-classification-regression-20260604-141822
+```
+
+目标样本 `3639973107`：
+
+- 有 `runtime.profile`。
+- 有 `navigation.finish`。
+- `performance.layout.user.js` 只剩一条 `local-resource-deny reason=missing`。
+- 前端 fetch 事件从 `fetch.error` 变为 `fetch.ignored HEAD performance.layout.user.js optional`。
+
+小范围回归：
+
+- `2997985023`：缺 `assets/sound/bgm.mp3` 仍保留 `resource.error` 和 `media.error`，没有被误吞。
+- `3702822549`：空 `IMG src` 仍为 `resource.ignored IMG empty-src`。
+- `3566247256`：NIKKE 初始 `background.png` 请求只剩真实 `missing`，不再重复 `invalidURL`。
+
+结论：本次改动让诊断分类更接近实际语义，便于后续继续处理真正影响播放的资源/宿主能力缺口。

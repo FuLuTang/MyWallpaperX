@@ -72,13 +72,29 @@ let webCompatibilityScriptInteractionAndRuntimeLogging = #"""
       return null;
     };
     window.fetch = function(resource, init) {
+      const method = String((init && init.method) || (resource && resource.method) || 'GET').toUpperCase();
+      const rawURL = resource && typeof resource === 'object' && 'url' in resource ? resource.url : resource;
       const companionResponse = localCompanionResponse(resource);
       if (companionResponse) {
-        hostLogger.post('fetch.compat', String(resource));
+        hostLogger.post('fetch.compat', String(rawURL));
         return Promise.resolve(companionResponse);
       }
       return originalFetch(resource, init).catch(error => {
-        hostLogger.post('fetch.error', `${String(resource)} ${error && error.message ? error.message : error}`);
+        try {
+          const url = new URL(String(rawURL || ''), document.location.href);
+          const localPath = url.pathname.replace(/^\/+/, '');
+          if (method === 'HEAD' && localPath === 'performance.layout.user.js') {
+            hostLogger.post('fetch.ignored', `${method} ${localPath} optional`);
+            throw error;
+          }
+        } catch (urlError) {
+          if (urlError !== error) {
+            // Fall through to regular error logging when URL normalization fails.
+          } else {
+            throw error;
+          }
+        }
+        hostLogger.post('fetch.error', `${String(rawURL)} ${error && error.message ? error.message : error}`);
         throw error;
       });
     };
