@@ -972,3 +972,74 @@ MyWallpaperX --mwx-debug-suppress-main-window --mwx-debug-play-workshop-id <work
 - 没有新的 `navigation.failure`、属性注入错误、本地资源读取错误、指针派发错误或滚轮派发错误。
 - 点击修复后的真实事件转发结论保持有效。
 - 本轮不做新的代码修复；剩余问题先按样本缺资源、远端依赖、页面自身占位/回退逻辑记录。
+
+## 2026-06-04 45 个 Web 样本交互冒烟
+
+目的：补充验证真实系统鼠标事件能否普遍进入 Web 宿主，而不是只看源码或单样本。
+
+方式：
+
+- 使用上一轮 Debug 构建。
+- 每个样本独立启动：
+
+```sh
+MyWallpaperX --mwx-debug-suppress-main-window --mwx-debug-play-workshop-id <workshop-id>
+```
+
+- 在桌面空白坐标 `126,164` 发送系统级左键、右键、滚轮事件。
+- 坐标先通过当前窗口列表排除前台普通窗口遮挡，避免点到 Codex 或其他前台窗口导致宿主正确拒绝转发。
+
+首轮日志目录：
+
+```text
+/tmp/mwx-web-interaction-smoke-20260604-155908
+```
+
+首轮统计：
+
+| 指标 | 结果 |
+| --- | ---: |
+| Web 样本日志 | 45/45 |
+| `runtime.profile` | 45/45 |
+| `navigation.finish` | 45/45 |
+| `pointer.down` | 43/45 |
+| `pointer.up` | 43/45 |
+| `pointer.contextmenu` | 43/45 |
+| `pointer.dispatch.error` | 0/45 |
+| `wheel.dispatch.error` | 0/45 |
+| `navigation.failure` | 0/45 |
+| `local-resource-error` | 0/45 |
+
+首轮缺点击事件样本：
+
+- `3701054862`
+- `3701476549`
+
+延长等待后复测：
+
+```text
+/tmp/mwx-web-interaction-rerun-20260604-160438
+```
+
+结果：
+
+- `3701054862`：有 `pointer.down`、`pointer.up`、`pointer.contextmenu`，无 `pointer.dispatch.error`。
+- `3701476549`：有 `pointer.down`、`pointer.up`、`pointer.contextmenu`，无 `pointer.dispatch.error`。
+
+结论：
+
+- 45 个样本都能完成导航。
+- 45 个样本在等待页面 ready 后都能收到左键、右键、右键菜单事件。
+- 没有样本出现 `pointer.dispatch.error`。
+- 滚轮当前只记录 `wheel.dispatch.error`，不记录成功事件；本轮只能确认没有滚轮派发异常，不能仅凭日志证明每个页面都绑定并消费了滚轮行为。
+
+### 剩余问题复核
+
+- `2997985023`：`README.md` 明确要求用户自行下载 BGM 并放到 `assets/sound/bgm.mp3`，可选角色音效也要求用户自行命名为 `good.mp3`、`good2.mp3`、`vgood.mp3`、`vgood2.mp3`、`bad.mp3`、`bad2.mp3`。当前样本目录只有 `assets/sound/1.mp3`、`2.mp3`、`3.mp3`，所以音频错误不是宿主资源映射失败。
+- `3697499196`：页面请求的 `https://storage.googleapis.com/download/storage/v1/b/p-2-cen1/o/October%2F1%2FOctober_105_1.txt?alt=media` 用 `curl` 直接请求返回 Google Storage `401`，错误为匿名调用没有 `storage.objects.get` 权限；不是 custom scheme / CORS / loopback 选择导致。
+- `1509243786`：`loader.js` 在 `weather.setting.js`、`date.setting.js`、`note.setting.js` 前执行并立即轮询 `weather.loaded()`；页面捕获错误后继续重试并完成导航。此前强制 HTTP loopback 不能消除该页面脚本时序错误。
+
+当前处理策略：
+
+- 不为样本缺失资源、远端 401 或页面自身初始化顺序增加全局宿主 fallback。
+- 继续保留这些事件在进度文档中，避免把真实资源缺失误归类为 MyWallpaperX 宿主失败。
