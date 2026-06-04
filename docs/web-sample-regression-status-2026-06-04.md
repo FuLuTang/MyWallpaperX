@@ -1043,3 +1043,193 @@ MyWallpaperX --mwx-debug-suppress-main-window --mwx-debug-play-workshop-id <work
 
 - 不为样本缺失资源、远端 401 或页面自身初始化顺序增加全局宿主 fallback。
 - 继续保留这些事件在进度文档中，避免把真实资源缺失误归类为 MyWallpaperX 宿主失败。
+
+## 当前代码实测复核（18:14）
+
+本节重新以当前 `feature/scene` 工作区、当前样本目录和当前构建产物为准，不把前文旧统计当作结论。
+
+### 当前代码状态
+
+- 分支：`feature/scene`，本地领先 `origin/feature/scene` 17 个提交。
+- 工作区：无未提交代码 diff。
+- `2a8b468..HEAD` 的 Web 播放链路提交仍为后续开发基线，主要覆盖：
+  - runtime diagnostics / profile / httpLoopback / local scheme 安全。
+  - 属性回放、color 值兼容、音频恢复。
+  - 被动 hover、真实鼠标输入转发。
+  - 资源诊断分类和本进度文档。
+
+构建命令：
+
+```sh
+xcodebuild -project MyWallpaperX.xcodeproj -scheme MyWallpaperX -configuration Debug -destination 'platform=macOS' build
+```
+
+结果：通过。
+
+### Web 样本口径修正
+
+样本目录：
+
+```text
+/Users/songziqiang/Movies/MyWallpaperX/创意工坊
+```
+
+当前目录内共有 73 个 `project.json`。
+
+按 App 当前代码的 `resolveContentType` 逻辑，`project.json.type` 会先做 `localizedLowercase`，因此 `type=Web` 和 `type=web` 都会被识别为 `.web`。本次重新枚举确认：
+
+- 小写 `type=web`：36 个。
+- 大写 `type=Web`：9 个。
+- App 真实 Web 样本口径：45 个。
+
+这解释了为什么只按严格字符串 `type == "web"` 会误得出 36 个样本；后续回归必须包含这 9 个大写 Web 样本：
+
+```text
+1081733658
+1396475780
+1748506393
+3100731584
+3137947556
+3676193993
+3695176893
+3700131876
+3701476549
+```
+
+### 当前构建全量实际播放
+
+启动方式：
+
+```sh
+MyWallpaperX --mwx-debug-suppress-main-window --mwx-debug-play-workshop-id <workshop-id>
+```
+
+日志目录：
+
+```text
+/tmp/mwx-web-all-current-actual-20260604-161800
+/tmp/mwx-web-uppercase-current-actual-20260604-175800
+```
+
+每个样本独立启动 Debug App，播放约 10 秒后退出并读取 stdout/stderr 后台日志。
+
+统计：
+
+| 指标 | 结果 |
+| --- | ---: |
+| Web 样本日志 | 45/45 |
+| `MWX DEBUG PLAY: launching` | 45/45 |
+| `runtime.profile` | 45/45 |
+| `navigation.finish` | 44/45（10 秒窗口） |
+| `navigation.failure` | 0/45 |
+| `properties.error` | 0/45 |
+| `general-properties.error` | 0/45 |
+| `local-resource-error` | 0/45 |
+| `pointer.dispatch.error` | 0/45 |
+| `wheel.dispatch.error` | 0/45 |
+| `resource.error` | 2/45 |
+| `resource.ignored` | 3/45 |
+| `local-resource-deny` | 15/45 |
+| `loopback.resource.error` | 2/45 |
+| `media.error` | 1/45 |
+| `fetch.error` | 1/45 |
+| `fetch.ignored` | 1/45 |
+| `console.error` | 1/45 |
+
+运行 profile：
+
+- `standard/customScheme/sharedPersistent`：39 个。
+- `highCompatibility/httpLoopback/scopedPersistent`：6 个：
+  - `1081733658`
+  - `1396475780`
+  - `2997985023`
+  - `3695176893`
+  - `3701406439`
+  - `3701797805`
+
+10 秒窗口内缺 `navigation.finish`：
+
+- `3701773311`
+
+单样本延长到 25 秒复测：
+
+```text
+/tmp/mwx-3701773311-current-long-20260604-180120
+```
+
+结果：
+
+- 有 `runtime.profile`。
+- 有 `dom.ready`。
+- 有 `navigation.finish`。
+- 有 `console.error Image failed: https://wallpaperengineapi.onrender.com/apod-images/2026-06-04.jpg`。
+- 有 `local-resource-deny Placeholder.png`；样本随后使用存在的 `Placeholder.jpg` fallback。
+
+判断：该样本 10 秒窗口内少 `navigation.finish` 是远端 APOD 图片失败和页面 fallback 时序，不是当前宿主导航失败。
+
+### 当前构建交互冒烟
+
+目的：验证真实系统鼠标事件能否进入 Web 宿主，不只依赖源码推断。
+
+日志目录：
+
+```text
+/tmp/mwx-interaction-current-3137947556-20260604-180300
+/tmp/mwx-web-interaction-smoke-current-20260604-180600
+```
+
+方式：
+
+- 每个样本独立启动 Debug App。
+- 等待页面启动后，在当前未被 Codex 主窗口遮挡的桌面坐标 `1260,500` 发送系统级左键、右键、滚轮事件。
+- 坐标通过 `CGWindowListCopyWindowInfo` 观察当前窗口层级后选择；当时 Codex 窗口覆盖左侧，右侧桌面区域可用于实际点击壁纸窗口。
+
+统计：
+
+| 指标 | 结果 |
+| --- | ---: |
+| Web 样本日志 | 45/45 |
+| `runtime.profile` | 45/45 |
+| `navigation.finish` | 45/45 |
+| `pointer.down` | 45/45 |
+| `pointer.up` | 45/45 |
+| `pointer.contextmenu` | 45/45 |
+| `pointer.dispatch.error` | 0/45 |
+| `wheel.dispatch.error` | 0/45 |
+| `navigation.failure` | 0/45 |
+| `properties.error` | 0/45 |
+| `general-properties.error` | 0/45 |
+
+结论：
+
+- 当前真实点击事件已经能进入 45 个 Web 样本。
+- 当前日志只能证明滚轮派发没有异常；成功消费滚轮仍取决于页面是否绑定滚轮行为。
+
+### 剩余事件归类
+
+当前实测中仍出现的异常事件，不指向新的宿主侧资源映射或播放失败：
+
+- `2997985023`
+  - 缺失 `assets/sound/bgm.mp3`、`good.mp3`、`good2.mp3`、`bad.mp3`、`bad2.mp3`、`vgood.mp3`、`vgood2.mp3`、`ok.mp3`。
+  - `README.md` 明确要求用户自行下载 BGM 并把可选角色音效按这些文件名放入 `assets/sound/`。
+  - 当前目录实际只有 `assets/sound/1.mp3`、`2.mp3`、`3.mp3`。
+  - 因此 `media.error`、`media.play.error`、`audio.resume.error` 属于样本缺资源，不是 host 找不到已有文件。
+- `3697499196`
+  - 多个 `storage.googleapis.com` 文本资源 `fetch.error`。
+  - 直接 `curl -I` 请求 `October_105_1.txt?alt=media` 返回 HTTP 401 和 `www-authenticate: Bearer`，不是 custom scheme / CORS / loopback 选择导致。
+- `1509243786`
+  - `console.error`: `Can't find variable: weather setUpdate@mwx-local://wallpaper/js/loader.js:12:15`。
+  - 源码顺序为 `loader.js` 早于 `weather.setting.js` / `date.setting.js` / `note.setting.js`，页面自己捕获后继续重试并完成导航。
+  - `LINK mwx-local://wallpaper/css/index.css` 的 `resource.error` 仍存在；前轮已经证明 CSS 文件由 local scheme 完整返回，强制 httpLoopback 也不能消除该事件。
+- `3639973107`
+  - `HEAD performance.layout.user.js` 继续按可选用户覆盖探测记为 `fetch.ignored`。
+- `884307090`
+  - `<source src= null>` 触发 `mwx-local://wallpaper/null` 缺失；页面完成导航。
+- NIKKE / Spine 组
+  - `background.png` 缺失仍只作为初始 CSS 遗留请求记录；页面完成导航，且真实背景/角色资源由样本自己的 JS/属性继续设置。
+
+### 当前处理策略
+
+- 本轮没有证据支持继续修改宿主 runtime：当前 45 个 Web 样本的启动、导航、属性回放、本地资源读取、点击转发均未出现新的宿主侧失败。
+- 不为缺失样本文件、远端 401 或页面自身初始化顺序增加全局 host fallback；这类 fallback 会污染正常资源语义，反而降低与 WE 受控资源模型的对齐度。
+- 后续如果继续推进，应优先找“官方 WE 能正常表现、但当前 App 有视觉/音频/交互差异”的具体样本和具体日志，再按单样本复现闭环修改。
