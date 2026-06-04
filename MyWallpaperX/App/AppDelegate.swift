@@ -11,6 +11,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
  private var statusBarController: StatusBarController?
  private var pendingInitialWindowOpen: DispatchWorkItem?
 
+ #if DEBUG
+ private var shouldSuppressInitialMainWindowForDebugPlayback: Bool {
+ ProcessInfo.processInfo.arguments.contains("--mwx-debug-suppress-main-window")
+ }
+ #endif
+
  private func normalizedMenuTitle(_ menuItem: NSMenuItem) -> String {
  menuItem.title.replacingOccurrences(of: " ", with: "")
  }
@@ -115,6 +121,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
  // 启动分阶段：优先让壁纸播放链路起稳，再激活主窗口，降低冷启动"同时抢占"造成的卡顿感。
  private func scheduleInitialMainWindowActivation() {
+ #if DEBUG
+ if shouldSuppressInitialMainWindowForDebugPlayback {
+ return
+ }
+ #endif
  // 启动分阶段：先让播放引擎稳定，再激活主窗口，减少冷启动时 UI 和 daemon 同时争抢资源。
  pendingInitialWindowOpen?.cancel()
 

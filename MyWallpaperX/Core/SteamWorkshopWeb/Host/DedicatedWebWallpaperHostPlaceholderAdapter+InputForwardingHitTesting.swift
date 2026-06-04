@@ -3,6 +3,49 @@ import CoreGraphics
 import Foundation
 
 extension DedicatedWebWallpaperHostPlaceholderAdapter {
+    private enum SystemWindowOwner {
+        case finder
+        case dock
+        case other
+    }
+
+    private func systemWindowOwner(pid: pid_t, ownerName: String) -> SystemWindowOwner {
+        if let app = NSRunningApplication(processIdentifier: pid),
+           let bundleIdentifier = app.bundleIdentifier {
+            switch bundleIdentifier {
+            case "com.apple.finder":
+                return .finder
+            case "com.apple.dock":
+                return .dock
+            default:
+                break
+            }
+        }
+
+        switch ownerName {
+        case "Finder", "访达":
+            return .finder
+        case "Dock", "程序坞":
+            return .dock
+        default:
+            return .other
+        }
+    }
+
+    private func isDockDesktopCoverWindow(
+        bounds: CGRect,
+        screenLocation: NSPoint,
+        systemOwner: SystemWindowOwner
+    ) -> Bool {
+        guard systemOwner == .dock else { return false }
+        let screenFrame = NSScreen.screens.first(where: { $0.frame.contains(screenLocation) })?.frame
+            ?? NSScreen.main?.frame
+            ?? .zero
+        guard !screenFrame.isEmpty else { return false }
+        return bounds.intersection(screenFrame).width >= screenFrame.width - 1
+            && bounds.intersection(screenFrame).height >= screenFrame.height - 1
+    }
+
     func shouldForwardMouseEventToWallpaper(_ event: NSEvent, screenLocation: NSPoint) -> Bool {
         if let sourceWindow = event.window {
             if sourceWindow.ignoresMouseEvents {
@@ -47,6 +90,7 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
             let windowName = (windowInfo[kCGWindowName as String] as? String) ?? ""
             let alpha = (windowInfo[kCGWindowAlpha as String] as? Double) ?? 1
             let sharingState = (windowInfo[kCGWindowSharingState as String] as? Int) ?? 0
+            let systemOwner = systemWindowOwner(pid: ownerPID, ownerName: ownerName)
 
             if ownerPID == getpid() {
                 continue
@@ -56,14 +100,18 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
                 continue
             }
 
-            if ownerName == "Finder" {
+            if systemOwner == .finder {
                 if layer <= Int(CGWindowLevelForKey(.desktopIconWindow)) || windowName == "" {
                     return true
                 }
                 return false
             }
 
-            if ownerName == "Dock" && layer <= Int(CGWindowLevelForKey(.desktopWindow)) + 1 {
+            if systemOwner == .dock && layer <= Int(CGWindowLevelForKey(.desktopWindow)) + 1 {
+                return true
+            }
+
+            if isDockDesktopCoverWindow(bounds: bounds, screenLocation: screenLocation, systemOwner: systemOwner) {
                 return true
             }
 
@@ -97,6 +145,7 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
             let windowName = (windowInfo[kCGWindowName as String] as? String) ?? ""
             let alpha = (windowInfo[kCGWindowAlpha as String] as? Double) ?? 1
             let sharingState = (windowInfo[kCGWindowSharingState as String] as? Int) ?? 0
+            let systemOwner = systemWindowOwner(pid: ownerPID, ownerName: ownerName)
 
             if ownerPID == getpid() {
                 continue
@@ -106,14 +155,18 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
                 continue
             }
 
-            if ownerName == "Finder",
+            if systemOwner == .finder,
                layer <= desktopIconWindowLevel,
                windowName.isEmpty {
                 continue
             }
 
-            if ownerName == "Dock",
+            if systemOwner == .dock,
                layer <= desktopWindowLevel + 1 {
+                continue
+            }
+
+            if isDockDesktopCoverWindow(bounds: bounds, screenLocation: screenLocation, systemOwner: systemOwner) {
                 continue
             }
 

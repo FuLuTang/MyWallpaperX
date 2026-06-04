@@ -754,3 +754,126 @@ MyWallpaperX --mwx-debug-play-workshop-id <目录ID>
 - 当前 HEAD 在 45 个 Web 声明目录上没有发现新的宿主侧属性回放、导航失败或 local scheme 读取错误。
 - 大多数样本可以正常启动并进入运行状态；剩余错误主要是样本缺文件、远端依赖、页面自身初始化顺序或可选资源探测。
 - 本轮没有足够证据支持继续修改宿主 runtime。下一步只有在实际视觉/音频/点击复现证明宿主能力缺口时再改代码。
+
+## 桌面层鼠标点击转发修复（15:32）
+
+### 复现路径
+
+上一节的交互验证只证明了启动后没有 pointer 错误，但没有证明真实点击能进入 Web 内容。本轮改用系统 `CGEvent` 发送真实鼠标移动、左键、右键事件，并读取 App 后台日志。
+
+前置观察：
+
+- Web 壁纸窗口默认 `ignoresMouseEvents = true`，真实输入依赖 App 的 global/local `NSEvent` monitor 捕获后注入 WebView。
+- 因此“点击能否进入 Web”取决于 `shouldForwardMouseEventToWallpaper` / `hasForegroundBlockingWindow` 对桌面层窗口的判断。
+- 当前系统窗口列表里 Finder / Dock 名称是中文：
+  - `访达`
+  - `程序坞`
+- Dock 还有覆盖全屏的系统桌面层窗口：
+  - `owner=程序坞 bundle=com.apple.dock name=Dock layer=20 bounds=(0,0,1512,982)`
+  - `owner=程序坞 bundle=com.apple.dock name=- layer=18 bounds=(0,0,1512,982)`
+
+问题：
+
+- 旧代码只按英文 `ownerName == "Finder"` / `"Dock"` 判断系统桌面层。
+- 在中文系统上，Finder / Dock 桌面层会被当作普通前景窗口，导致真实桌面点击被 `hasForegroundBlockingWindow` 过滤。
+- 即使 WebView 已启动并能收到被动 hover 样式准备，左键/右键点击不会进入页面。
+
+### 修复
+
+改动文件：
+
+```text
+MyWallpaperX/Core/SteamWorkshopWeb/Host/DedicatedWebWallpaperHostPlaceholderAdapter+InputForwardingHitTesting.swift
+MyWallpaperX/App/AppDelegate.swift
+```
+
+调整：
+
+- `InputForwardingHitTesting` 改为优先通过 `NSRunningApplication(processIdentifier:)?.bundleIdentifier` 判断系统窗口来源：
+  - `com.apple.finder`
+  - `com.apple.dock`
+- 保留英文/中文 owner name 兜底。
+- 对 Dock 的全屏桌面覆盖窗口做桌面层处理，不再视作前景阻挡窗口；限制条件是 Dock 来源且 bounds 覆盖当前屏幕，避免误吞普通 Dock 小窗口。
+- 增加 DEBUG-only 参数 `--mwx-debug-suppress-main-window`，用于实际播放回归时不自动打开主窗口，避免主窗口挡住桌面层点击。普通启动路径不受影响。
+
+### 验证
+
+构建：
+
+```sh
+xcodebuild -project MyWallpaperX.xcodeproj -scheme MyWallpaperX -configuration Debug -destination 'platform=macOS' build
+```
+
+结果：通过。
+
+真实点击验证样本：
+
+- `3137947556`
+
+启动方式：
+
+```sh
+MyWallpaperX --mwx-debug-suppress-main-window --mwx-debug-play-workshop-id 3137947556
+```
+
+日志目录：
+
+```text
+/tmp/mwx-interaction-after-dockfix-20260604-153215
+```
+
+结果：
+
+- 有 `runtime.profile`。
+- 有 `navigation.finish`。
+- 系统 `CGEvent` 发送真实左键/右键后，后台日志出现：
+  - `pointer.down button=0 buttons=1`
+  - `pointer.up button=0 buttons=0`
+  - `pointer.down button=2 buttons=2`
+  - `pointer.up button=2 buttons=0`
+  - `pointer.contextmenu button=2 buttons=0`
+- 没有 `pointer.dispatch.error`。
+
+结论：中文系统下桌面层点击被 Finder / Dock / Dock 全屏桌面覆盖窗口误判阻挡的问题已修复；真实鼠标点击现在能进入 Web 页面。
+
+### 小范围回归
+
+日志目录：
+
+```text
+/tmp/mwx-web-targeted-after-pointer-hitfix-20260604-153259
+```
+
+样本：
+
+- `3137947556`：交互密集样本。
+- `3701797805`：`highCompatibility/httpLoopback`。
+- `3566247256`：NIKKE / Spine，初始 `background.png` 缺失噪声样本。
+- `2997985023`：缺音频样本。
+- `3639973107`：可选 `performance.layout.user.js` 探测样本。
+- `3697499196`：远端 Google Storage 依赖样本。
+
+统计：
+
+| 指标 | 结果 |
+| --- | ---: |
+| 启动 Web 样本 | 6/6 |
+| `runtime.profile` | 6/6 |
+| `navigation.finish` | 6/6 |
+| `navigation.failure` | 0/6 |
+| `properties.error` | 0/6 |
+| `general-properties.error` | 0/6 |
+| `pointer.dispatch.error` | 0/6 |
+| `wheel.dispatch.error` | 0/6 |
+
+剩余事件仍按预期分类：
+
+- `2997985023`：缺 `assets/sound/*.mp3`，保留 `loopback.resource.error` / `resource.error` / `media.error`。
+- `3639973107`：`HEAD performance.layout.user.js` 仍为 `fetch.ignored`。
+- `3697499196`：Google Storage 远端文本资源仍为 `fetch.error`。
+
+当前结论：
+
+- 本轮有明确宿主侧修复：中文 macOS / Dock 桌面覆盖窗口下，Web 壁纸真实点击无法转发的问题。
+- 修复后已有真实系统事件验证，不再只是源码推断。
+- 资源、属性、导航在代表样本上无新增回归。
