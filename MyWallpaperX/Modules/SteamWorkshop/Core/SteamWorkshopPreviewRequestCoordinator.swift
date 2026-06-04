@@ -258,15 +258,15 @@ actor SteamWorkshopPreviewRequestScheduler {
     private func canAcquire(priority: SteamWorkshopPreviewRequestPriority) -> Bool {
         switch priority {
         case .userInitiated:
-            return activeUserRequests < 1 && (activeUserRequests + activeVisibleRequests) < 2
+            return activeUserRequests < 1 && (activeUserRequests + activeVisibleRequests) < 4
         case .visible:
-            return activeVisibleRequests < 2
+            return activeVisibleRequests < 4
                 && activeUserRequests == 0
                 && waitingUserRequests.isEmpty
         case .prefetch:
             return activeUserRequests == 0
-                && activeVisibleRequests == 0
-                && activePrefetchRequests == 0
+                && activeVisibleRequests < 2
+                && activePrefetchRequests < 2
                 && waitingUserRequests.isEmpty
                 && waitingVisibleRequests.isEmpty
         }
@@ -295,13 +295,8 @@ actor SteamWorkshopPreviewRequestScheduler {
             continuation.resume()
         }
 
-        if activeUserRequests == 0,
-           activeVisibleRequests == 0,
-           activePrefetchRequests == 0,
-           waitingUserRequests.isEmpty,
-           waitingVisibleRequests.isEmpty,
-           let continuation = waitingPrefetchRequests.first {
-            waitingPrefetchRequests.removeFirst()
+        while canAcquire(priority: .prefetch), !waitingPrefetchRequests.isEmpty {
+            let continuation = waitingPrefetchRequests.removeFirst()
             continuation.resume()
         }
     }

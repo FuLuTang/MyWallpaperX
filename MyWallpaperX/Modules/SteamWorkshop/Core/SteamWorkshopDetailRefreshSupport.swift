@@ -7,14 +7,21 @@ import Foundation
 
 enum SteamWorkshopDetailRefreshSupport {
     static func needsRefresh(_ item: SteamWorkshopBrowserItem) -> Bool {
+        needsListRefresh(item) || needsDependencyRefresh(item)
+    }
+
+    static func needsListRefresh(_ item: SteamWorkshopBrowserItem) -> Bool {
         item.detailFields.isEmpty
             || item.fileSizeText == nil
             || item.resolutionText == nil
             || item.workshopTypeText == nil
             || item.previewImageURL == nil
             || item.author == "未知作者"
-            || item.dependencyIDs.isEmpty
             || (item.authorProfileURL == nil && item.authorWorkshopURL == nil)
+    }
+
+    static func needsDependencyRefresh(_ item: SteamWorkshopBrowserItem) -> Bool {
+        item.dependencyIDs.isEmpty
     }
 
     static func makeStub(from item: SteamWorkshopBrowserItem) -> SteamWorkshopBrowseStub {
@@ -33,6 +40,6 @@ enum SteamWorkshopDetailRefreshSupport {
     static func cachedItemNeedsHydration(for stub: SteamWorkshopBrowseStub) -> Bool {
         guard let cached = SteamWorkshopService.loadDetailCache(id: stub.id) else { return true }
         let merged = SteamWorkshopService.mergeStub(stub, into: cached)
-        return needsRefresh(merged)
+        return needsListRefresh(merged)
     }
 }

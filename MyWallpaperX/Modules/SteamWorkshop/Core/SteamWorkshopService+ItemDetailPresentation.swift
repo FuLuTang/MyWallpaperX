@@ -9,7 +9,7 @@ extension SteamWorkshopService {
         currentWorkshopItemID = resolvedItem.id
         currentPageTitle = resolvedItem.title
         statusMessage = "已加载 \(resolvedItem.title)"
-        let needsDependencyRefresh = resolvedItem.dependencyIDs.isEmpty
+        let needsDependencyRefresh = SteamWorkshopDetailRefreshSupport.needsDependencyRefresh(resolvedItem)
         refreshSelectedBrowserItemDetailIfNeeded(
             forceRefresh: needsDependencyRefresh || SteamWorkshopDetailRefreshSupport.needsRefresh(resolvedItem)
         )

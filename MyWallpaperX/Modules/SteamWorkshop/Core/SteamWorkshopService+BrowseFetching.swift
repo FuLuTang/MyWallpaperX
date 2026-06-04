@@ -88,7 +88,6 @@ extension SteamWorkshopService {
                     let fallbackItems = seededItems
                         .filter { !existingIDs.contains($0.id) }
                     self.browserItems.append(contentsOf: fallbackItems)
-                    self.prefetchBrowserPreviewImages(for: fallbackItems, limit: 36)
                     self.browserNextPage = page + 1
                     self.hasMoreBrowserItems = pageResult.hasMore
                     self.isLoadingMoreBrowserItems = false
@@ -198,7 +197,6 @@ extension SteamWorkshopService {
             categoryFilter: categoryFilter
         ) {
             browserItems = cached.items
-            prefetchBrowserPreviewImages(for: cached.items, limit: 24)
             browserState = .loaded
             hasMoreBrowserItems = cached.items.count >= pageSize
             browserNextPage = max(2, (cached.items.count / pageSize) + 1)
@@ -246,7 +244,6 @@ extension SteamWorkshopService {
                           self.browserContentMode == browserContentMode else { return }
                     self.isRefreshingBrowserFeed = false
                     self.browserItems = seededItems
-                    self.prefetchBrowserPreviewImages(for: seededItems, limit: 24)
                     self.browserState = .loaded
                     self.hasMoreBrowserItems = pageResult.hasMore
                     self.browserNextPage = 2

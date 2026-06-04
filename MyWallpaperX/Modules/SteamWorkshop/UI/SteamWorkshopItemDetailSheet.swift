@@ -166,6 +166,7 @@ struct SteamWorkshopItemDetailSheet: View {
                     bottomFadeHeight: bottomScrollFadeHeight
                 )
             }
+            .frame(maxHeight: .infinity, alignment: .top)
 
             footerActions
         }
