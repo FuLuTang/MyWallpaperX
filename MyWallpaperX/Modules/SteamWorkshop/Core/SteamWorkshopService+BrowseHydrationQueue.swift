@@ -3,12 +3,15 @@ import Foundation
 extension SteamWorkshopService {
     func runBrowserDetailHydrationQueue(
         context: SteamWorkshopBrowseContext,
+        browserContentMode: SteamWorkshopBrowserContentMode,
         navigationVersion: Int
     ) async {
         defer {
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                if self.navigationVersion == navigationVersion, self.browseContext == context {
+                if self.navigationVersion == navigationVersion,
+                   self.browseContext == context,
+                   self.browserContentMode == browserContentMode {
                     self.statusMessage = self.completedStatusMessage(
                         for: context,
                         totalCount: self.browserItems.count,
@@ -16,7 +19,7 @@ extension SteamWorkshopService {
                     )
                     self.saveBrowserCache(
                         context: context,
-                        browserContentMode: self.browserContentMode,
+                        browserContentMode: browserContentMode,
                         source: self.source,
                         query: self.browserQuery.trimmingCharacters(in: .whitespacesAndNewlines),
                         trendingWindow: self.trendingWindow,
@@ -39,7 +42,9 @@ extension SteamWorkshopService {
             }
 
             let stubs: [SteamWorkshopBrowseStub] = await MainActor.run {
-                guard self.navigationVersion == navigationVersion, self.browseContext == context else {
+                guard self.navigationVersion == navigationVersion,
+                      self.browseContext == context,
+                      self.browserContentMode == browserContentMode else {
                     self.pendingBrowserDetailStubs.removeAll()
                     self.pendingBrowserDetailStubIDs.removeAll()
                     self.browserDetailRetryCounts.removeAll()
@@ -61,12 +66,14 @@ extension SteamWorkshopService {
             do {
                 let items = try await Self.fetchWorkshopItems(
                     stubs: stubs,
-                    browserContentMode: self.browserContentMode,
+                    browserContentMode: browserContentMode,
                     requestPriority: .background
                 )
                 guard !Task.isCancelled else { return }
                 await MainActor.run {
-                    guard self.navigationVersion == navigationVersion, self.browseContext == context else { return }
+                    guard self.navigationVersion == navigationVersion,
+                          self.browseContext == context,
+                          self.browserContentMode == browserContentMode else { return }
                     for item in items {
                         self.browserDetailRetryCounts[item.id] = nil
                     }
@@ -166,6 +173,7 @@ extension SteamWorkshopService {
             page: page
         )
         guard prefetchedBrowserPageKeys.insert(key).inserted else { return }
+        let expectedNavigationVersion = navigationVersion
 
         Task(priority: .utility) {
             guard let pageResult = try? await Self.fetchWorkshopStubPage(
@@ -183,7 +191,8 @@ extension SteamWorkshopService {
                 return
             }
             await MainActor.run {
-                guard self.browseContext == context,
+                guard self.navigationVersion == expectedNavigationVersion,
+                      self.browseContext == context,
                       self.browserContentMode == browserContentMode,
                       self.source == source,
                       self.browserQuery.trimmingCharacters(in: .whitespacesAndNewlines) == query,
@@ -198,6 +207,7 @@ extension SteamWorkshopService {
             }
             guard lookaheadDepth > 0, pageResult.hasMore else { return }
             await MainActor.run {
+                guard self.navigationVersion == expectedNavigationVersion else { return }
                 self.prefetchUpcomingBrowserPageIfNeeded(
                     context: context,
                     browserContentMode: browserContentMode,

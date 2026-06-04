@@ -121,6 +121,7 @@ extension SteamWorkshopService {
     func enqueueBrowserDetailHydration(
         stubs: [SteamWorkshopBrowseStub],
         context: SteamWorkshopBrowseContext,
+        browserContentMode: SteamWorkshopBrowserContentMode,
         navigationVersion: Int,
         resetQueue: Bool
     ) {
@@ -142,6 +143,7 @@ extension SteamWorkshopService {
         browserDetailHydrationTask = Task(priority: .utility) { [weak self] in
             await self?.runBrowserDetailHydrationQueue(
                 context: context,
+                browserContentMode: browserContentMode,
                 navigationVersion: navigationVersion
             )
         }

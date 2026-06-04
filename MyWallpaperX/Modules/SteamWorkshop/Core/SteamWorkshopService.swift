@@ -131,6 +131,7 @@ final class SteamWorkshopService: ObservableObject {
     var prioritizedVisibleBrowserItemIDs: [String] = []
     var lastPreviewPrefetchIDSet = Set<String>()
     var backgroundDetailDeferralUntil: Date = .distantPast
+    var browserLoadMoreRetryAfter: Date = .distantPast
 
     // MARK: - Shared infrastructure
 

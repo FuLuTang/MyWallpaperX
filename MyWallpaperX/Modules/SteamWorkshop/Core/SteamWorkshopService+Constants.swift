@@ -18,6 +18,7 @@ extension SteamWorkshopService {
         nonisolated static let detailPrefetchInterBatchDelayNanoseconds: UInt64 = 2_000_000_000
         nonisolated static let browserInteractionDeferralInterval: TimeInterval = 1.2
         nonisolated static let detailRequestDeferralInterval: TimeInterval = 4.0
+        nonisolated static let loadMoreRetryCooldown: TimeInterval = 2.0
         nonisolated static let browserDebugLoggingEnabledKey = "SteamWorkshop.browserDebugLoggingEnabled"
         nonisolated static let bundledSteamBundleName = "SteamCMDRuntime.bundle"
         nonisolated static let bundledSteamRootName = "Steam"

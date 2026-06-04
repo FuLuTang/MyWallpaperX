@@ -109,6 +109,7 @@ extension SteamWorkshopService {
 
     func makeDiscoveryBrowseSnapshot() -> SteamWorkshopDiscoveryBrowseSnapshot {
         SteamWorkshopDiscoveryBrowseSnapshot(
+            browserContentMode: browserContentMode,
             browserItems: browserItems,
             browserState: browserState,
             hasMoreBrowserItems: hasMoreBrowserItems,
@@ -128,6 +129,11 @@ extension SteamWorkshopService {
         _ snapshot: SteamWorkshopDiscoveryBrowseSnapshot,
         restoredQuery: String
     ) {
+        guard snapshot.browserContentMode == browserContentMode else {
+            setBrowserQuery(restoredQuery)
+            navigateToBrowse()
+            return
+        }
         setBrowserQuery(restoredQuery)
         selectedBrowserItemError = nil
         isRefreshingSelectedBrowserItem = false

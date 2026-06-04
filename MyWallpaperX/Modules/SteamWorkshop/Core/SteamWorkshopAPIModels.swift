@@ -289,6 +289,7 @@ struct SteamWorkshopBrowseStubPage {
 }
 
 struct SteamWorkshopDiscoveryBrowseSnapshot {
+    let browserContentMode: SteamWorkshopBrowserContentMode
     let browserItems: [SteamWorkshopBrowserItem]
     let browserState: SteamWorkshopBrowserLoadState
     let hasMoreBrowserItems: Bool
