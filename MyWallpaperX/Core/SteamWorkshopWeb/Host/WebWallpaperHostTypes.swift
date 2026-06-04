@@ -225,6 +225,8 @@ final class DedicatedWebWallpaperHostPlaceholderAdapter: NSObject, WallpaperEngi
     var deferredDirectorySyncWorkItem: DispatchWorkItem?
     var globalMouseMonitor: Any?
     var localMouseMonitor: Any?
+    var pointerPollingTimer: Timer?
+    var lastPolledMouseLocation: NSPoint?
     var lastHoveredScreenID: CGDirectDisplayID?
     var lastPointerMoveForwardedAt: TimeInterval = 0
     var interactiveRegionsByScreen: [CGDirectDisplayID: [InteractiveRegion]] = [:]

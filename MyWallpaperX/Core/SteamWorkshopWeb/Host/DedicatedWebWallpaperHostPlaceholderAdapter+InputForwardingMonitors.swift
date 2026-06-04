@@ -21,6 +21,7 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
                 self?.forwardMouseEventToWallpaper(event)
             }
         }
+        startPointerLocationPolling()
     }
 
     func stopGlobalMouseForwarding() {
@@ -32,7 +33,21 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
             NSEvent.removeMonitor(globalMouseMonitor)
             self.globalMouseMonitor = nil
         }
+        pointerPollingTimer?.invalidate()
+        pointerPollingTimer = nil
+        lastPolledMouseLocation = nil
         lastHoveredScreenID = nil
         lastPointerMoveForwardedAt = 0
+    }
+
+    func startPointerLocationPolling() {
+        pointerPollingTimer?.invalidate()
+        lastPolledMouseLocation = nil
+        pointerPollingTimer = Timer.scheduledTimer(withTimeInterval: Self.pointerMoveThrottleInterval, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.forwardPolledPointerLocationToWallpaper()
+            }
+        }
+        pointerPollingTimer?.tolerance = Self.pointerMoveThrottleInterval * 0.5
     }
 }

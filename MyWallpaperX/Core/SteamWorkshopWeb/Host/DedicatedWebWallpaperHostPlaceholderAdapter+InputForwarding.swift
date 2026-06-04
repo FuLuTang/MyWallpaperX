@@ -9,6 +9,55 @@ import WebKit
 import CoreGraphics
 
 extension DedicatedWebWallpaperHostPlaceholderAdapter {
+    func forwardPolledPointerLocationToWallpaper() {
+        guard !surfaces.isEmpty else { return }
+
+        let screenLocation = NSEvent.mouseLocation
+        if let lastPolledMouseLocation,
+           hypot(screenLocation.x - lastPolledMouseLocation.x, screenLocation.y - lastPolledMouseLocation.y) < 0.5 {
+            return
+        }
+        lastPolledMouseLocation = screenLocation
+
+        guard surfaces.values.contains(where: { surface in
+            let screenFrame = surface.window.screen?.frame ?? surface.window.frame
+            return screenFrame.contains(screenLocation)
+        }) else {
+            clearSyntheticHoverState()
+            return
+        }
+
+        guard let destinationSurface = targetSurface(at: screenLocation) else {
+            clearSyntheticHoverState()
+            return
+        }
+
+        let normalizedPoint = normalizedPoint(for: screenLocation, in: destinationSurface)
+        let buttonMask = Int(NSEvent.pressedMouseButtons)
+        let script = String(
+            format: "window.__myWallpaperSetPassiveMouseState(true, %.6f, %.6f, %d); window.__myWallpaperDispatchMouseEvent('pointermove', %.6f, %.6f, 0, %d, 1);",
+            normalizedPoint.x,
+            normalizedPoint.y,
+            buttonMask,
+            normalizedPoint.x,
+            normalizedPoint.y,
+            buttonMask
+        )
+        destinationSurface.webView.evaluateJavaScript(script, completionHandler: nil)
+        lastHoveredScreenID = destinationSurface.screenID
+    }
+
+    func clearSyntheticHoverState() {
+        if let lastHoveredScreenID,
+           let previousSurface = surfaces[lastHoveredScreenID] {
+            previousSurface.webView.evaluateJavaScript(
+                "window.__myWallpaperSetPassiveMouseState(false, 0, 0, 0);",
+                completionHandler: nil
+            )
+        }
+        lastHoveredScreenID = nil
+    }
+
     func forwardMouseEventToWallpaper(_ event: NSEvent) {
         guard !surfaces.isEmpty else { return }
         if event.type == .mouseMoved {
@@ -29,14 +78,7 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
             destinationSurface = capturedSurface
         } else {
             guard shouldForwardMouseEventToWallpaper(event, screenLocation: screenLocation) else {
-                if let lastHoveredScreenID,
-                   let previousSurface = surfaces[lastHoveredScreenID] {
-                    previousSurface.webView.evaluateJavaScript(
-                        "window.__myWallpaperSetPassiveMouseState(false, 0, 0, 0);",
-                        completionHandler: nil
-                    )
-                }
-                lastHoveredScreenID = nil
+                clearSyntheticHoverState()
                 return
             }
 

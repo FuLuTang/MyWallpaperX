@@ -1,11 +1,115 @@
 let webCompatibilityScriptInteractionAndRuntimePointer = #"""
-  window.__myWallpaperState = window.__myWallpaperState || { captureTarget: null, captureButtons: 0, hoverTarget: null };
+  window.__myWallpaperState = window.__myWallpaperState || { captureTarget: null, captureButtons: 0, hoverTarget: null, hoverChain: [] };
+  window.__myWallpaperEnsureSyntheticHoverStyles = function() {
+    try {
+      if (document.getElementById('__mwx-synthetic-hover-style')) return;
+      if (window.__mwxSyntheticHoverStyleLoading === true) return;
+      const rules = [];
+      const appendSyntheticHoverStyle = (nextRules) => {
+        try {
+          if (!Array.isArray(nextRules) || nextRules.length === 0 || document.getElementById('__mwx-synthetic-hover-style')) return false;
+          const style = document.createElement('style');
+          style.id = '__mwx-synthetic-hover-style';
+          style.textContent = nextRules.join('\n');
+          (document.head || document.documentElement || document.body).appendChild(style);
+          try { hostLogger.post('pointer.hoverStyle.ready', `rules=${nextRules.length}`); } catch (_) {}
+          return true;
+        } catch (_) {
+          return false;
+        }
+      };
+      const collectRules = (ruleList) => {
+        for (const rule of Array.from(ruleList || [])) {
+          try {
+            if (rule.cssRules) {
+              collectRules(rule.cssRules);
+              continue;
+            }
+            const selectorText = String(rule.selectorText || '');
+            if (!selectorText.includes(':hover')) continue;
+            const syntheticSelector = selectorText.replace(/:hover\b/g, '.__mwx-hover');
+            if (syntheticSelector !== selectorText && rule.style && rule.style.cssText) {
+              rules.push(`${syntheticSelector} { ${rule.style.cssText} }`);
+            }
+          } catch (_) {}
+        }
+      };
+      for (const sheet of Array.from(document.styleSheets || [])) {
+        try { collectRules(sheet.cssRules); } catch (_) {}
+      }
+      if (appendSyntheticHoverStyle(rules)) return;
+      const stylesheetLinks = Array.from(document.querySelectorAll('link[rel~="stylesheet"][href]'));
+      if (stylesheetLinks.length === 0 || typeof fetch !== 'function') return;
+      window.__mwxSyntheticHoverStyleLoading = true;
+      Promise.all(stylesheetLinks.map((link) => {
+        try {
+          return fetch(link.href).then((response) => response.ok ? response.text() : '');
+        } catch (_) {
+          return Promise.resolve('');
+        }
+      })).then((texts) => {
+        const fetchedRules = [];
+        const hoverRulePattern = /([^{}]+:hover[^{}]*)\{([^{}]*)\}/g;
+        for (const text of texts) {
+          let match = null;
+          while ((match = hoverRulePattern.exec(String(text || ''))) !== null) {
+            const selector = String(match[1] || '').trim();
+            const body = String(match[2] || '').trim();
+            if (!selector || !body) continue;
+            const syntheticSelector = selector.replace(/:hover\b/g, '.__mwx-hover');
+            if (syntheticSelector !== selector) {
+              fetchedRules.push(`${syntheticSelector} { ${body} }`);
+            }
+          }
+        }
+        appendSyntheticHoverStyle(fetchedRules);
+      }).catch((error) => {
+        try { hostLogger.post('pointer.hoverStyle.error', error && error.message ? error.message : error); } catch (_) {}
+      }).finally(() => {
+        window.__mwxSyntheticHoverStyleLoading = false;
+      });
+    } catch (error) {
+      try { hostLogger.post('pointer.hoverStyle.error', error && error.message ? error.message : error); } catch (_) {}
+    }
+  };
+  window.__myWallpaperSetSyntheticHoverChain = function(nextTarget) {
+    const wallpaperState = window.__myWallpaperState || (window.__myWallpaperState = { captureTarget: null, captureButtons: 0, hoverTarget: null, hoverChain: [] });
+    const previousChain = Array.isArray(wallpaperState.hoverChain) ? wallpaperState.hoverChain : [];
+    const nextChain = [];
+    let node = nextTarget && nextTarget.nodeType === 1 ? nextTarget : null;
+    while (node) {
+      nextChain.push(node);
+      if (node === document.documentElement) break;
+      node = node.parentElement;
+    }
+    const nextSet = new Set(nextChain);
+    previousChain.forEach((element) => {
+      try {
+        if (element && element.classList && !nextSet.has(element)) {
+          element.classList.remove('__mwx-hover');
+        }
+      } catch (_) {}
+    });
+    nextChain.forEach((element) => {
+      try {
+        if (element && element.classList) {
+          element.classList.add('__mwx-hover');
+        }
+      } catch (_) {}
+    });
+    wallpaperState.hoverChain = nextChain;
+  };
   window.__myWallpaperUpdateHoverTarget = function(nextTarget, mouseEventInit) {
-    const wallpaperState = window.__myWallpaperState || (window.__myWallpaperState = { captureTarget: null, captureButtons: 0, hoverTarget: null });
+    const wallpaperState = window.__myWallpaperState || (window.__myWallpaperState = { captureTarget: null, captureButtons: 0, hoverTarget: null, hoverChain: [] });
+    if (!Array.isArray(wallpaperState.hoverChain)) {
+      wallpaperState.hoverChain = [];
+    }
     const previousTarget = wallpaperState.hoverTarget;
     if (previousTarget === nextTarget) {
       return;
     }
+    window.__myWallpaperEnsureSyntheticHoverStyles();
+    window.__myWallpaperSetSyntheticHoverChain(nextTarget || null);
     if (previousTarget && typeof MouseEvent === 'function') {
       try {
         previousTarget.dispatchEvent(new MouseEvent('mouseout', { ...mouseEventInit, bubbles: true, cancelable: true, composed: true, relatedTarget: nextTarget || null }));
@@ -232,4 +336,3 @@ let webCompatibilityScriptInteractionAndRuntimePointer = #"""
     } catch (_) {}
   };
 """#
-
