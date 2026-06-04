@@ -64,7 +64,7 @@ private struct SteamWorkshopCachedPreviewImage: NSViewRepresentable {
 
         if url.isFileURL {
             if FileManager.default.fileExists(atPath: url.path),
-               let image = NSImage(contentsOf: url),
+               let image = steamWorkshopPreviewImage(from: url),
                !steamWorkshopPreviewImageLooksSuspicious(image) {
                 nsView.setImage(image)
                 return
@@ -99,7 +99,7 @@ private struct SteamWorkshopCachedPreviewImage: NSViewRepresentable {
                 from: url,
                 priority: .userInitiated
             )
-        }) { image in
+        }, decoder: steamWorkshopPreviewImage(from:)) { image in
             guard context.coordinator.currentURL == url else { return }
             if let image, !steamWorkshopPreviewImageLooksSuspicious(image) {
                 nsView.setImage(image)

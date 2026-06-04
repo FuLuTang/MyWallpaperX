@@ -12,7 +12,7 @@ import CryptoKit
 
 /// 异步缩略图加载缓存。
 /// 线程安全：并发读写通过 NSLock 保护 in-flight 表，NSCache 本身线程安全。
-final class ThumbnailCache {
+nonisolated final class ThumbnailCache: @unchecked Sendable {
 
     /// 缓存容量（最大图片数量）
     private let countLimit: Int
@@ -50,9 +50,8 @@ final class ThumbnailCache {
         loader: @escaping () -> NSImage?,
         completion: @escaping (NSImage?) -> Void
     ) {
-        let cacheKey = key as NSString
         // 1. 内存缓存
-        if let cached = imageCache.object(forKey: cacheKey) {
+        if let cached = imageCache.object(forKey: key as NSString) {
             completion(cached)
             return
         }
@@ -72,14 +71,14 @@ final class ThumbnailCache {
             let diskURL = Self.diskCacheURL(for: key)
             if let data = try? Data(contentsOf: diskURL),
                let image = NSImage(data: data) {
-                self.imageCache.setObject(image, forKey: cacheKey)
+                self.imageCache.setObject(image, forKey: key as NSString)
                 self.finish(key: key, image: image)
                 return
             }
             // 3. 解码原图
             let image = loader()
             if let image {
-                self.imageCache.setObject(image, forKey: cacheKey)
+                self.imageCache.setObject(image, forKey: key as NSString)
                 // 写入磁盘缓存（JPEG，压缩质量 0.85）
                 Self.writeToDisk(image: image, url: diskURL)
             }
@@ -94,8 +93,7 @@ final class ThumbnailCache {
         loader: @escaping () -> Data?,
         completion: @escaping (NSImage?) -> Void
     ) {
-        let cacheKey = key as NSString
-        if let cached = imageCache.object(forKey: cacheKey) {
+        if let cached = imageCache.object(forKey: key as NSString) {
             completion(cached)
             return
         }
@@ -114,7 +112,7 @@ final class ThumbnailCache {
             let diskURL = Self.diskCacheURL(for: key)
             if let data = try? Data(contentsOf: diskURL),
                let image = NSImage(data: data) {
-                self.imageCache.setObject(image, forKey: cacheKey)
+                self.imageCache.setObject(image, forKey: key as NSString)
                 self.finish(key: key, image: image)
                 return
             }
@@ -125,7 +123,7 @@ final class ThumbnailCache {
                 return
             }
 
-            self.imageCache.setObject(image, forKey: cacheKey)
+            self.imageCache.setObject(image, forKey: key as NSString)
             try? data.write(to: diskURL, options: .atomic)
             self.finish(key: key, image: image)
         }
@@ -136,10 +134,10 @@ final class ThumbnailCache {
     func loadImageDataAsync(
         forKey key: String,
         loader: @escaping @Sendable () async -> Data?,
+        decoder: @escaping @Sendable (Data) -> NSImage? = { NSImage(data: $0) },
         completion: @escaping (NSImage?) -> Void
     ) {
-        let cacheKey = key as NSString
-        if let cached = imageCache.object(forKey: cacheKey) {
+        if let cached = imageCache.object(forKey: key as NSString) {
             completion(cached)
             return
         }
@@ -158,7 +156,7 @@ final class ThumbnailCache {
             let diskURL = Self.diskCacheURL(for: key)
             if let data = try? Data(contentsOf: diskURL),
                let image = NSImage(data: data) {
-                self.imageCache.setObject(image, forKey: cacheKey)
+                self.imageCache.setObject(image, forKey: key as NSString)
                 self.finish(key: key, image: image)
                 return
             }
@@ -166,22 +164,21 @@ final class ThumbnailCache {
             Task { [weak self] in
                 guard let self else { return }
                 guard let data = await loader(),
-                      let image = NSImage(data: data) else {
-                    await self.finish(key: key, image: nil)
+                      let image = decoder(data) else {
+                    self.finish(key: key, image: nil)
                     return
                 }
 
-                await self.imageCache.setObject(image, forKey: cacheKey)
+                self.imageCache.setObject(image, forKey: key as NSString)
                 try? data.write(to: diskURL, options: .atomic)
-                await self.finish(key: key, image: image)
+                self.finish(key: key, image: image)
             }
         }
     }
 
     /// 预取：触发后台加载但不注册回调。
     func prefetch(forKey key: String, loader: @escaping () -> NSImage?) {
-        let cacheKey = key as NSString
-        guard imageCache.object(forKey: cacheKey) == nil else { return }
+        guard imageCache.object(forKey: key as NSString) == nil else { return }
 
         lock.lock()
         guard inFlight[key] == nil else { lock.unlock(); return }
@@ -193,13 +190,13 @@ final class ThumbnailCache {
             let diskURL = Self.diskCacheURL(for: key)
             if let data = try? Data(contentsOf: diskURL),
                let image = NSImage(data: data) {
-                self.imageCache.setObject(image, forKey: cacheKey)
+                self.imageCache.setObject(image, forKey: key as NSString)
                 self.finish(key: key, image: image)
                 return
             }
             let image = loader()
             if let image {
-                self.imageCache.setObject(image, forKey: cacheKey)
+                self.imageCache.setObject(image, forKey: key as NSString)
                 Self.writeToDisk(image: image, url: diskURL)
             }
             self.finish(key: key, image: image)
@@ -209,8 +206,7 @@ final class ThumbnailCache {
     /// 预取原始图片数据并保留原编码格式。
     /// 适合 GIF 等动态缩略图，避免在预取阶段被转成静态 JPEG。
     func prefetchImageData(forKey key: String, loader: @escaping () -> Data?) {
-        let cacheKey = key as NSString
-        guard imageCache.object(forKey: cacheKey) == nil else { return }
+        guard imageCache.object(forKey: key as NSString) == nil else { return }
 
         lock.lock()
         guard inFlight[key] == nil else { lock.unlock(); return }
@@ -222,7 +218,7 @@ final class ThumbnailCache {
             let diskURL = Self.diskCacheURL(for: key)
             if let data = try? Data(contentsOf: diskURL),
                let image = NSImage(data: data) {
-                self.imageCache.setObject(image, forKey: cacheKey)
+                self.imageCache.setObject(image, forKey: key as NSString)
                 self.finish(key: key, image: image)
                 return
             }
@@ -234,7 +230,7 @@ final class ThumbnailCache {
 
             let image = NSImage(data: data)
             if let image {
-                self.imageCache.setObject(image, forKey: cacheKey)
+                self.imageCache.setObject(image, forKey: key as NSString)
             }
             try? data.write(to: diskURL, options: .atomic)
             self.finish(key: key, image: image)
@@ -246,8 +242,7 @@ final class ThumbnailCache {
         forKey key: String,
         loader: @escaping @Sendable () async -> Data?
     ) {
-        let cacheKey = key as NSString
-        guard imageCache.object(forKey: cacheKey) == nil else { return }
+        guard imageCache.object(forKey: key as NSString) == nil else { return }
 
         lock.lock()
         guard inFlight[key] == nil else { lock.unlock(); return }
@@ -259,7 +254,7 @@ final class ThumbnailCache {
             let diskURL = Self.diskCacheURL(for: key)
             if let data = try? Data(contentsOf: diskURL),
                let image = NSImage(data: data) {
-                self.imageCache.setObject(image, forKey: cacheKey)
+                self.imageCache.setObject(image, forKey: key as NSString)
                 self.finish(key: key, image: image)
                 return
             }
@@ -267,16 +262,16 @@ final class ThumbnailCache {
             Task { [weak self] in
                 guard let self else { return }
                 guard let data = await loader() else {
-                    await self.finish(key: key, image: nil)
+                    self.finish(key: key, image: nil)
                     return
                 }
 
                 let image = NSImage(data: data)
                 if let image {
-                    await self.imageCache.setObject(image, forKey: cacheKey)
+                    self.imageCache.setObject(image, forKey: key as NSString)
                 }
                 try? data.write(to: diskURL, options: .atomic)
-                await self.finish(key: key, image: image)
+                self.finish(key: key, image: image)
             }
         }
     }

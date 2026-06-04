@@ -893,7 +893,7 @@ final class AppKitSteamWorkshopBrowserItem: NSCollectionViewItem {
 
     private func loadLocalPreview(from localURL: URL, fallbackVideoURL: URL?) {
         if FileManager.default.fileExists(atPath: localURL.path),
-           let image = NSImage(contentsOf: localURL) {
+           let image = steamWorkshopPreviewImage(from: localURL) {
             previewImageView.image = image
             previewPlaceholderView.setState(.hidden)
             updatePreviewImageFrame()
@@ -995,7 +995,7 @@ final class AppKitSteamWorkshopBrowserItem: NSCollectionViewItem {
                 await MainActor.run {
                     guard self.currentPreviewURL == url else { return }
                     self.isPreviewLoadInFlight = false
-                    self.applyResolvedPreviewImage(data.flatMap(NSImage.init(data:)), url: url, cacheKey: cacheKey)
+                    self.applyResolvedPreviewImage(data.flatMap(steamWorkshopPreviewImage(from:)), url: url, cacheKey: cacheKey)
                 }
             }
             return
@@ -1007,7 +1007,7 @@ final class AppKitSteamWorkshopBrowserItem: NSCollectionViewItem {
                 from: url,
                 priority: .visible
             )
-        }) { [weak self] image in
+        }, decoder: steamWorkshopPreviewImage(from:)) { [weak self] image in
             guard let self, self.currentPreviewURL == url else { return }
             self.isPreviewLoadInFlight = false
             self.applyResolvedPreviewImage(image, url: url, cacheKey: cacheKey)

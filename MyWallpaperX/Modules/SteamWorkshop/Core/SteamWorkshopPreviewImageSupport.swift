@@ -1,5 +1,6 @@
 import AppKit
 import CoreGraphics
+import ImageIO
 
 enum SteamWorkshopPreviewImageCache {
     static let shared = ThumbnailCache(
@@ -73,10 +74,76 @@ func steamWorkshopPreviewImageLooksSuspicious(_ image: NSImage) -> Bool {
     return meanLuma < 0.03 && (maxLuma - minLuma) < 0.025
 }
 
+func steamWorkshopPreviewImage(from data: Data) -> NSImage? {
+    guard !steamWorkshopPreviewImageDataIsAnimated(data) else {
+        return NSImage(data: data)
+    }
+    guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+          let cgImage = CGImageSourceCreateImageAtIndex(source, 0, [
+              kCGImageSourceShouldCache: true,
+              kCGImageSourceShouldCacheImmediately: true
+          ] as CFDictionary) else {
+        return NSImage(data: data)
+    }
+    return steamWorkshopPreviewImage(from: cgImage)
+}
+
+func steamWorkshopPreviewImage(from url: URL) -> NSImage? {
+    guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else {
+        return NSImage(contentsOf: url)
+    }
+    if steamWorkshopPreviewImageSourceIsAnimated(source) {
+        return NSImage(contentsOf: url)
+    }
+    guard let cgImage = CGImageSourceCreateImageAtIndex(source, 0, [
+        kCGImageSourceShouldCache: true,
+        kCGImageSourceShouldCacheImmediately: true
+    ] as CFDictionary) else {
+        return NSImage(contentsOf: url)
+    }
+    return steamWorkshopPreviewImage(from: cgImage)
+}
+
+func steamWorkshopPreviewImage(from cgImage: CGImage) -> NSImage? {
+    let width = cgImage.width
+    let height = cgImage.height
+    guard width > 0, height > 0 else { return nil }
+
+    let bytesPerRow = width * 4
+    var pixels = [UInt8](repeating: 0, count: bytesPerRow * height)
+    guard let context = CGContext(
+        data: &pixels,
+        width: width,
+        height: height,
+        bitsPerComponent: 8,
+        bytesPerRow: bytesPerRow,
+        space: CGColorSpaceCreateDeviceRGB(),
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+    ) else {
+        return NSImage(cgImage: cgImage, size: NSSize(width: width, height: height))
+    }
+
+    context.interpolationQuality = .high
+    context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+    guard let normalized = context.makeImage() else {
+        return NSImage(cgImage: cgImage, size: NSSize(width: width, height: height))
+    }
+    return NSImage(cgImage: normalized, size: NSSize(width: width, height: height))
+}
+
 private func steamWorkshopPreviewImageIsAnimated(_ image: NSImage) -> Bool {
     image.representations.contains { representation in
         guard let bitmap = representation as? NSBitmapImageRep else { return false }
         let frameCount = bitmap.value(forProperty: .frameCount) as? Int ?? 1
         return frameCount > 1
     }
+}
+
+private func steamWorkshopPreviewImageDataIsAnimated(_ data: Data) -> Bool {
+    guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return false }
+    return steamWorkshopPreviewImageSourceIsAnimated(source)
+}
+
+private func steamWorkshopPreviewImageSourceIsAnimated(_ source: CGImageSource) -> Bool {
+    CGImageSourceGetCount(source) > 1
 }
