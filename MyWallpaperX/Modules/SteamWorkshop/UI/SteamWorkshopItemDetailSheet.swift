@@ -21,7 +21,7 @@ final class AppKitSteamWorkshopItemDetailView: NSView {
 
     private let rootStack = NSStackView()
     private let scrollView = InspectorFadingScrollView()
-    private let documentContainer = NSView()
+    private let documentContainer = SteamWorkshopDetailDocumentView()
     private let contentStack = NSStackView()
     private let footerView = NSView()
     private let previewView = SteamWorkshopPreviewImageContainerView()
@@ -42,8 +42,14 @@ final class AppKitSteamWorkshopItemDetailView: NSView {
     }
 
     func configure(item: SteamWorkshopBrowserItem) {
+        let isSameItem = item.id == currentItem.id
+        if !isSameItem {
+            webPropertiesExpanded = false
+            webAdvancedPropertiesExpanded = false
+            webDiagnosticsExpanded = false
+        }
         currentItem = resolvedCurrentItem(fallback: item)
-        rebuild()
+        rebuild(preservingScrollPosition: isSameItem)
     }
 
     private func observeService() {
@@ -222,11 +228,11 @@ final class AppKitSteamWorkshopItemDetailView: NSView {
         buildNoticeSection()
         pinContentSectionsToFullWidth()
         buildFooterActions()
-        restoreScrollPositionIfNeeded(preservedOrigin)
+        restoreScrollPositionIfNeeded(preservedOrigin ?? .zero)
     }
 
-    private func restoreScrollPositionIfNeeded(_ origin: NSPoint?) {
-        guard let origin, !isRestoringScrollPosition else { return }
+    private func restoreScrollPositionIfNeeded(_ origin: NSPoint) {
+        guard !isRestoringScrollPosition else { return }
         isRestoringScrollPosition = true
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
@@ -1367,6 +1373,10 @@ private final class SteamWorkshopDetailFooterButton: NSButton {
         layer?.borderColor = border.cgColor
         layer?.borderWidth = 0.7
     }
+}
+
+private final class SteamWorkshopDetailDocumentView: NSView {
+    override var isFlipped: Bool { true }
 }
 
 private extension WebRuntimeDiagnosticEvent {
