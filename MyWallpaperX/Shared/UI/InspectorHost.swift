@@ -354,10 +354,6 @@ private final class InspectorHostCardView: NSView {
     func refreshAppearance() {
         guard isViewLoadedInWindow || window != nil || superview != nil else { return }
         let isDark = InspectorGlassPalette.isDarkMode(for: self)
-        let forcedAppearance = NSAppearance(named: isDark ? .darkAqua : .aqua)
-        appearance = forcedAppearance
-        glassView.appearance = forcedAppearance
-        panelOverlayView.appearance = forcedAppearance
 
         glassView.cornerRadius = 22
         glassView.style = .regular
@@ -533,10 +529,6 @@ private final class InspectorHostCardView: NSView {
 
 private enum InspectorGlassPalette {
     static func isDarkMode(for view: NSView) -> Bool {
-        let appMatch = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua])
-        if let appMatch {
-            return appMatch == .darkAqua
-        }
         return view.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
     }
 
