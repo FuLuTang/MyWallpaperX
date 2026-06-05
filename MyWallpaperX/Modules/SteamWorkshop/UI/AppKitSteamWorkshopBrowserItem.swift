@@ -382,10 +382,11 @@ final class AppKitSteamWorkshopBrowserItem: NSCollectionViewItem {
             itemTitle: item.title
         )
 
-        titleMarqueeView.setActive(barState == .idle || barState == .ready || barState == .failed)
         refreshThemeAwareAppearance()
         if view.window != nil {
             applyHoverStyle(animated: false)
+        } else {
+            updateContinuousAnimationState()
         }
     }
 
@@ -500,7 +501,7 @@ final class AppKitSteamWorkshopBrowserItem: NSCollectionViewItem {
         )
         statusBadgeButton.iconTintColor = tintColor
         statusBadgeButton.setAccessibilityLabel(accessibilityLabel)
-        updateStatusBadgeLoadingIndicator()
+        updateContinuousAnimationState()
     }
 
     private func metrics(for cardSize: CGSize) -> Metrics {
@@ -694,7 +695,6 @@ final class AppKitSteamWorkshopBrowserItem: NSCollectionViewItem {
         overlayBarShadowView.layer?.shadowRadius = 18
         overlayBarShadowView.layer?.shadowOffset = CGSize(width: 0, height: -1)
         overlayBar.applyAccentStyle(barAccentStyle(for: currentBarState), animated: false)
-        overlayBar.setScanAnimationEnabled(currentBarState == .downloading || currentBarState == .queued)
 
         detailButton.normalBackgroundColor = .clear
         detailButton.hoverBackgroundColor = .clear
@@ -714,11 +714,18 @@ final class AppKitSteamWorkshopBrowserItem: NSCollectionViewItem {
         statusBadgeButton.borderWidth = 0
         statusBadgeButton.iconTintColor = fixedForeground
         statusBadgeButton.appearance = overlayBar.appearance
-        updateStatusBadgeLoadingIndicator()
+        updateContinuousAnimationState()
     }
 
-    private func updateStatusBadgeLoadingIndicator() {
-        let shouldSpin = currentActionKind == .cancel && currentBarState == .downloading
+    private func updateContinuousAnimationState(barVisible: Bool? = nil) {
+        let isBarVisible = barVisible ?? currentBarVisibility
+        titleMarqueeView.setActive(isBarVisible && (currentBarState == .idle || currentBarState == .ready || currentBarState == .failed))
+        overlayBar.setScanAnimationEnabled(isBarVisible && (currentBarState == .downloading || currentBarState == .queued))
+        updateStatusBadgeLoadingIndicator(barVisible: isBarVisible)
+    }
+
+    private func updateStatusBadgeLoadingIndicator(barVisible: Bool) {
+        let shouldSpin = barVisible && currentActionKind == .cancel && currentBarState == .downloading
         if shouldSpin {
             statusBadgeButton.image = nil
             statusSpinner.isHidden = false
@@ -765,6 +772,7 @@ final class AppKitSteamWorkshopBrowserItem: NSCollectionViewItem {
             currentCardScale = targetScale
             currentBarVisibility = shouldRevealBar
             isHoverOutlineVisible = shouldShowOutline
+            updateContinuousAnimationState(barVisible: shouldRevealBar)
             return
         }
 
@@ -780,6 +788,7 @@ final class AppKitSteamWorkshopBrowserItem: NSCollectionViewItem {
         applyBarTransform(isVisible: shouldRevealBar, duration: barDuration, timing: barTiming)
         currentBarVisibility = shouldRevealBar
         isHoverOutlineVisible = shouldShowOutline
+        updateContinuousAnimationState(barVisible: shouldRevealBar)
     }
 
     private func barAccentStyle(for state: BarState) -> SteamWorkshopGlassBarView.AccentStyle {
