@@ -293,6 +293,13 @@ private final class InspectorHostRootView: NSView {
     }
 
     override func mouseDown(with event: NSEvent) {
+        if let cardView {
+            let point = convert(event.locationInWindow, from: nil)
+            if cardView.frame.contains(point) {
+                super.mouseDown(with: event)
+                return
+            }
+        }
         NotificationCenter.default.post(name: .inspectorHostCloseRequested, object: nil)
     }
 }
