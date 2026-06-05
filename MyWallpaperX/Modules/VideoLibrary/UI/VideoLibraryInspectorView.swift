@@ -14,7 +14,7 @@ final class VideoLibraryInspectorView: NSView {
     private var loadingTask: Task<Void, Never>?
     private var loadedDetailsPath: String?
     private var contentStack: NSStackView?
-    private weak var favoriteButton: NSButton?
+    private weak var favoriteButton: InspectorFooterButton?
     private var cancellables = Set<AnyCancellable>()
 
     private var currentWallpaper: VideoWallpaper {
@@ -341,7 +341,7 @@ final class VideoLibraryInspectorView: NSView {
             $0.heightAnchor.constraint(equalToConstant: InspectorFooterMetrics.height).isActive = true
         }
         [favoriteButton, tagButton].forEach {
-            $0.widthAnchor.constraint(equalToConstant: 46).isActive = true
+            $0.widthAnchor.constraint(equalToConstant: InspectorFooterMetrics.iconWidth).isActive = true
         }
 
         NSLayoutConstraint.activate([
@@ -380,8 +380,8 @@ final class VideoLibraryInspectorView: NSView {
 
     private func refreshFooterActions() {
         let title = currentWallpaper.isFavorite ? "取消收藏" : "收藏"
-        favoriteButton?.image = NSImage(
-            systemSymbolName: currentWallpaper.isFavorite ? "heart.fill" : "heart",
+        favoriteButton?.setSymbol(
+            currentWallpaper.isFavorite ? "heart.fill" : "heart",
             accessibilityDescription: title
         )
         favoriteButton?.toolTip = title

@@ -132,7 +132,7 @@ enum SILInspectorViews {
         symbolName: String,
         target: AnyObject?,
         action: Selector
-    ) -> NSButton {
+    ) -> InspectorFooterButton {
         let button = InspectorFooterButton(
             title: title,
             image: NSImage(systemSymbolName: symbolName, accessibilityDescription: title),

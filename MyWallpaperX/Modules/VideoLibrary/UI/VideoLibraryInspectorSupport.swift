@@ -157,7 +157,7 @@ enum VideoLibraryInspectorViews {
         target: AnyObject?,
         action: Selector,
         kind: InspectorFooterButtonKind = .secondary
-    ) -> NSButton {
+    ) -> InspectorFooterButton {
         let button = InspectorFooterButton(
             title: title,
             image: NSImage(systemSymbolName: symbolName, accessibilityDescription: title),
@@ -174,7 +174,7 @@ enum VideoLibraryInspectorViews {
         title: String,
         target: AnyObject?,
         action: Selector
-    ) -> NSButton {
+    ) -> InspectorFooterButton {
         let button = InspectorFooterButton(
             title: "",
             image: NSImage(systemSymbolName: symbolName, accessibilityDescription: title),

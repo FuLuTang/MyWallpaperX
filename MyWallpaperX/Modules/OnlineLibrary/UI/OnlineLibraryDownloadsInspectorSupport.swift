@@ -132,7 +132,7 @@ enum OnlineLibraryDownloadsInspectorViews {
         target: AnyObject?,
         action: Selector,
         kind: InspectorFooterButtonKind = .secondary
-    ) -> NSButton {
+    ) -> InspectorFooterButton {
         let button = InspectorFooterButton(
             title: title,
             image: NSImage(systemSymbolName: symbolName, accessibilityDescription: title),

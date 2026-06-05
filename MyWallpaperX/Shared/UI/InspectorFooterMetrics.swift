@@ -18,14 +18,14 @@ enum InspectorFooterButtonKind {
     case danger
 }
 
-final class InspectorFooterButton: NSButton {
+final class InspectorFooterButton: NSControl {
     private let kind: InspectorFooterButtonKind
     private let rawTitle: String
-    private let rawImage: NSImage?
+    private var rawImage: NSImage?
     private let contentStack = NSStackView()
     private let iconView = NSImageView()
     private let titleLabel = NSTextField(labelWithString: "")
-    private var isVisuallyEnabled = true
+    private var isPressed = false
 
     init(
         title: String,
@@ -48,23 +48,18 @@ final class InspectorFooterButton: NSButton {
         nil
     }
 
-    override var isHighlighted: Bool {
+    override var isEnabled: Bool {
         didSet { updateStyle() }
     }
 
-    override var isEnabled: Bool {
-        get { isVisuallyEnabled }
-        set {
-            isVisuallyEnabled = newValue
-            super.isEnabled = true
-            updateStyle()
-        }
+    override var allowsVibrancy: Bool {
+        false
     }
 
     override var intrinsicContentSize: NSSize {
-        let base = super.intrinsicContentSize
+        let textWidth = rawTitle.isEmpty ? 0 : ceil(titleLabel.intrinsicContentSize.width + 40)
         return NSSize(
-            width: rawTitle.isEmpty ? InspectorFooterMetrics.iconWidth : max(base.width, InspectorFooterMetrics.textMinWidth),
+            width: rawTitle.isEmpty ? InspectorFooterMetrics.iconWidth : max(textWidth, InspectorFooterMetrics.textMinWidth),
             height: InspectorFooterMetrics.height
         )
     }
@@ -74,22 +69,16 @@ final class InspectorFooterButton: NSButton {
         updateStyle()
     }
 
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        updateStyle()
+    }
+
     private func setup() {
-        title = ""
-        image = nil
-        isBordered = false
-        bezelStyle = .regularSquare
-        controlSize = .large
         focusRingType = .none
-        imagePosition = rawTitle.isEmpty ? .imageOnly : .imageLeading
-        imageScaling = .scaleProportionallyDown
-        imageHugsTitle = true
-        font = .systemFont(ofSize: 13, weight: .semibold)
-        alignment = .center
         wantsLayer = true
         layer?.cornerRadius = 10
         layer?.borderWidth = 0.7
-        setButtonType(.momentaryPushIn)
         translatesAutoresizingMaskIntoConstraints = false
         setupContentViews()
         updateStyle()
@@ -101,7 +90,7 @@ final class InspectorFooterButton: NSButton {
         contentStack.spacing = rawTitle.isEmpty ? 0 : 7
         contentStack.translatesAutoresizingMaskIntoConstraints = false
 
-        iconView.image = rawImage
+        updateIconImage()
         iconView.imageScaling = .scaleProportionallyDown
         iconView.translatesAutoresizingMaskIntoConstraints = false
         contentStack.addArrangedSubview(iconView)
@@ -128,19 +117,45 @@ final class InspectorFooterButton: NSButton {
         ])
     }
 
+    func setSymbol(_ symbolName: String, accessibilityDescription: String?) {
+        rawImage = NSImage(systemSymbolName: symbolName, accessibilityDescription: accessibilityDescription)
+        updateIconImage()
+        updateStyle()
+    }
+
     override func hitTest(_ point: NSPoint) -> NSView? {
-        isVisuallyEnabled ? super.hitTest(point) : nil
+        isEnabled ? super.hitTest(point) : nil
     }
 
     override func mouseDown(with event: NSEvent) {
-        guard isVisuallyEnabled else { return }
-        super.mouseDown(with: event)
+        guard isEnabled else { return }
+        isPressed = true
+        updateStyle()
+
+        var shouldSendAction = false
+        while let nextEvent = window?.nextEvent(matching: [.leftMouseDragged, .leftMouseUp]) {
+            let localPoint = convert(nextEvent.locationInWindow, from: nil)
+            let inside = bounds.contains(localPoint)
+            isPressed = inside
+            updateStyle()
+
+            if nextEvent.type == .leftMouseUp {
+                shouldSendAction = inside
+                break
+            }
+        }
+
+        isPressed = false
+        updateStyle()
+        if shouldSendAction, let action {
+            NSApp.sendAction(action, to: target, from: self)
+        }
     }
 
     private func updateStyle() {
-        let enabledAlpha: CGFloat = isVisuallyEnabled ? 1 : 0.45
-        let pressedFactor: CGFloat = isHighlighted ? 0.88 : 1
-        let isDarkMode = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        let enabledAlpha: CGFloat = isEnabled ? 1 : 0.45
+        let pressedFactor: CGFloat = isPressed ? 0.88 : 1
+        let isDarkMode = resolvedIsDarkMode()
         let fill: NSColor
         let text: NSColor
         let border: NSColor
@@ -163,7 +178,6 @@ final class InspectorFooterButton: NSButton {
             border = NSColor.systemRed.withAlphaComponent(0.26 * enabledAlpha)
         }
 
-        contentTintColor = text
         iconView.contentTintColor = text
         iconView.symbolConfiguration = NSImage.SymbolConfiguration(
             pointSize: rawTitle.isEmpty ? 17 : 14,
@@ -172,5 +186,23 @@ final class InspectorFooterButton: NSButton {
         titleLabel.textColor = text
         layer?.backgroundColor = fill.cgColor
         layer?.borderColor = border.cgColor
+    }
+
+    private func updateIconImage() {
+        iconView.image = rawImage?.withSymbolConfiguration(
+            NSImage.SymbolConfiguration(
+                pointSize: rawTitle.isEmpty ? 17 : 14,
+                weight: rawTitle.isEmpty ? .regular : .semibold
+            )
+        )
+        iconView.image?.isTemplate = true
+    }
+
+    private func resolvedIsDarkMode() -> Bool {
+        let appMatch = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua])
+        if let appMatch {
+            return appMatch == .darkAqua
+        }
+        return effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
     }
 }
