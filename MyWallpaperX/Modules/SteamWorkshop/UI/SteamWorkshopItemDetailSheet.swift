@@ -615,22 +615,27 @@ final class AppKitSteamWorkshopItemDetailView: NSView {
             footerView.addSubview($0)
         }
 
+        let iconButtonWidth = Metrics.footerHeight
         NSLayoutConstraint.activate([
             primary.leadingAnchor.constraint(equalTo: footerView.leadingAnchor, constant: 2),
             primary.topAnchor.constraint(equalTo: footerView.topAnchor),
             primary.bottomAnchor.constraint(equalTo: footerView.bottomAnchor),
+            primary.heightAnchor.constraint(equalToConstant: Metrics.footerHeight),
             author.leadingAnchor.constraint(equalTo: primary.trailingAnchor, constant: 6),
             author.topAnchor.constraint(equalTo: footerView.topAnchor),
             author.bottomAnchor.constraint(equalTo: footerView.bottomAnchor),
+            author.heightAnchor.constraint(equalToConstant: Metrics.footerHeight),
             browser.leadingAnchor.constraint(equalTo: author.trailingAnchor, constant: 6),
             browser.topAnchor.constraint(equalTo: footerView.topAnchor),
             browser.bottomAnchor.constraint(equalTo: footerView.bottomAnchor),
-            browser.widthAnchor.constraint(equalToConstant: 58),
+            browser.widthAnchor.constraint(equalToConstant: iconButtonWidth),
+            browser.heightAnchor.constraint(equalToConstant: Metrics.footerHeight),
             refresh.leadingAnchor.constraint(equalTo: browser.trailingAnchor, constant: 6),
             refresh.trailingAnchor.constraint(equalTo: footerView.trailingAnchor, constant: -2),
             refresh.topAnchor.constraint(equalTo: footerView.topAnchor),
             refresh.bottomAnchor.constraint(equalTo: footerView.bottomAnchor),
-            refresh.widthAnchor.constraint(equalToConstant: 58),
+            refresh.widthAnchor.constraint(equalToConstant: iconButtonWidth),
+            refresh.heightAnchor.constraint(equalToConstant: Metrics.footerHeight),
             author.widthAnchor.constraint(equalTo: primary.widthAnchor)
         ])
     }
@@ -1329,6 +1334,7 @@ private final class SteamWorkshopDetailFooterButton: NSButton {
     private func commonInit() {
         isBordered = false
         bezelStyle = .regularSquare
+        controlSize = .large
         imagePosition = title.isEmpty ? .imageOnly : .imageLeading
         imageScaling = .scaleProportionallyDown
         font = .systemFont(ofSize: 13, weight: .semibold)
@@ -1338,6 +1344,14 @@ private final class SteamWorkshopDetailFooterButton: NSButton {
         layer?.cornerRadius = 10
         setButtonType(.momentaryPushIn)
         updateAppearance()
+    }
+
+    override var intrinsicContentSize: NSSize {
+        let base = super.intrinsicContentSize
+        return NSSize(
+            width: rawTitle.isEmpty ? InspectorFooterMetrics.height : max(base.width, 96),
+            height: InspectorFooterMetrics.height
+        )
     }
 
     private func updateAppearance() {
