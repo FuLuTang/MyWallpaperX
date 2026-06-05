@@ -71,7 +71,7 @@ final class OnlineLibraryDownloadsInspectorView: NSView {
         rootStack.spacing = 12
         rootStack.translatesAutoresizingMaskIntoConstraints = false
 
-        let scrollView = OnlineLibraryDownloadsInspectorFadingScrollView()
+        let scrollView = InspectorFadingScrollView()
         scrollView.drawsBackground = false
         scrollView.hasVerticalScroller = false
         scrollView.hasHorizontalScroller = false

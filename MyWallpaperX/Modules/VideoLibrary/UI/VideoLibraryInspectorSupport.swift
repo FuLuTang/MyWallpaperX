@@ -272,40 +272,6 @@ private final class VideoLibraryInspectorFooterButton: NSButton {
     }
 }
 
-final class VideoLibraryInspectorFadingScrollView: NSScrollView {
-    private let fadeMask = CAGradientLayer()
-
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        setupFadeMask()
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        nil
-    }
-
-    override func layout() {
-        super.layout()
-        fadeMask.frame = bounds
-    }
-
-    private func setupFadeMask() {
-        wantsLayer = true
-        contentView.wantsLayer = true
-        fadeMask.colors = [
-            NSColor.clear.cgColor,
-            NSColor.black.cgColor,
-            NSColor.black.cgColor,
-            NSColor.clear.cgColor
-        ]
-        fadeMask.locations = [0, 0.025, 0.965, 1]
-        fadeMask.startPoint = CGPoint(x: 0.5, y: 0)
-        fadeMask.endPoint = CGPoint(x: 0.5, y: 1)
-        layer?.mask = fadeMask
-    }
-}
-
 final class VideoLibraryInspectorPreviewSurfaceView: NSView {
     private let image: NSImage?
     private let placeholderView = NSImageView()

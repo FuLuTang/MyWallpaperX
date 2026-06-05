@@ -69,7 +69,7 @@ final class SILInspectorView: NSView {
         rootStack.spacing = 12
         rootStack.translatesAutoresizingMaskIntoConstraints = false
 
-        let scrollView = SILInspectorFadingScrollView()
+        let scrollView = InspectorFadingScrollView()
         scrollView.drawsBackground = false
         scrollView.hasVerticalScroller = false
         scrollView.hasHorizontalScroller = false

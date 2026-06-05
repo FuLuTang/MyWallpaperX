@@ -20,7 +20,7 @@ final class AppKitSteamWorkshopItemDetailView: NSView {
     private var webDiagnosticsExpanded = false
 
     private let rootStack = NSStackView()
-    private let scrollView = SteamWorkshopDetailFadingScrollView()
+    private let scrollView = InspectorFadingScrollView()
     private let documentContainer = NSView()
     private let contentStack = NSStackView()
     private let footerView = NSView()
@@ -1366,34 +1366,6 @@ private final class SteamWorkshopDetailFooterButton: NSButton {
         layer?.backgroundColor = fill.cgColor
         layer?.borderColor = border.cgColor
         layer?.borderWidth = 0.7
-    }
-}
-
-private final class SteamWorkshopDetailFadingScrollView: NSScrollView {
-    private let maskLayer = CAGradientLayer()
-
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        wantsLayer = true
-        maskLayer.colors = [
-            NSColor.clear.cgColor,
-            NSColor.black.cgColor,
-            NSColor.black.cgColor,
-            NSColor.clear.cgColor
-        ]
-        maskLayer.locations = [0, 0.04, 0.93, 1]
-        maskLayer.startPoint = CGPoint(x: 0.5, y: 0)
-        maskLayer.endPoint = CGPoint(x: 0.5, y: 1)
-        layer?.mask = maskLayer
-    }
-
-    required init?(coder: NSCoder) {
-        super.init(coder: coder)
-    }
-
-    override func layout() {
-        super.layout()
-        maskLayer.frame = bounds
     }
 }
 
