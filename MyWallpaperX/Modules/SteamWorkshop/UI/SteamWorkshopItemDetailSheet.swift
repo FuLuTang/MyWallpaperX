@@ -1,27 +1,84 @@
-import SwiftUI
 import AppKit
+import Combine
+import ObjectiveC
+import UniformTypeIdentifiers
 
-struct SteamWorkshopItemDetailSheet: View {
-    let item: SteamWorkshopBrowserItem
-    @ObservedObject private var service = SteamWorkshopService.shared
-    @State private var isWebDiagnosticsExpanded = false
+final class AppKitSteamWorkshopItemDetailView: NSView {
+    private enum Metrics {
+        static let previewHeight: CGFloat = 156
+        static let cornerRadius: CGFloat = 18
+        static let contentSpacing: CGFloat = 16
+        static let footerHeight: CGFloat = 38
+    }
 
-    private var currentItem: SteamWorkshopBrowserItem {
-        if let selected = service.selectedDownloadDetailItem, selected.id == item.id {
+    private let service = SteamWorkshopService.shared
+    private let initialItem: SteamWorkshopBrowserItem
+    private var currentItem: SteamWorkshopBrowserItem
+    private var cancellables = Set<AnyCancellable>()
+    private var webPropertiesExpanded = false
+    private var webAdvancedPropertiesExpanded = false
+    private var webDiagnosticsExpanded = false
+
+    private let rootStack = NSStackView()
+    private let scrollView = SteamWorkshopDetailFadingScrollView()
+    private let documentContainer = NSView()
+    private let contentStack = NSStackView()
+    private let footerView = NSView()
+    private let previewView = SteamWorkshopPreviewImageContainerView()
+    private var isRestoringScrollPosition = false
+
+    init(item: SteamWorkshopBrowserItem) {
+        self.initialItem = item
+        self.currentItem = item
+        super.init(frame: .zero)
+        setup()
+        observeService()
+        rebuild()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    func configure(item: SteamWorkshopBrowserItem) {
+        currentItem = resolvedCurrentItem(fallback: item)
+        rebuild()
+    }
+
+    private func observeService() {
+        service.objectWillChange
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self else { return }
+                self.currentItem = self.resolvedCurrentItem(fallback: self.currentItem)
+                self.rebuild()
+            }
+            .store(in: &cancellables)
+    }
+
+    private func resolvedCurrentItem(fallback: SteamWorkshopBrowserItem) -> SteamWorkshopBrowserItem {
+        if let selected = service.selectedDownloadDetailItem, selected.id == fallback.id {
             return selected
         }
-        if let selected = service.selectedBrowserItem, selected.id == item.id {
+        if let selected = service.selectedBrowserItem, selected.id == fallback.id {
             return selected
         }
-        return item
+        if let selected = service.selectedDownloadDetailItem, selected.id == initialItem.id {
+            return selected
+        }
+        if let selected = service.selectedBrowserItem, selected.id == initialItem.id {
+            return selected
+        }
+        return fallback
     }
 
     private var downloadRecord: SteamWorkshopDownloadRecord? {
-        service.playableDownloadRecord(for: item.id)
+        service.playableDownloadRecord(for: currentItem.id)
     }
 
     private var latestDownloadRecord: SteamWorkshopDownloadRecord? {
-        service.latestDownloadRecord(for: item.id)
+        service.latestDownloadRecord(for: currentItem.id)
     }
 
     private var latestDownloadFailure: String? {
@@ -29,68 +86,40 @@ struct SteamWorkshopItemDetailSheet: View {
     }
 
     private var webDownloadRecord: SteamWorkshopDownloadRecord? {
-        guard let latestDownloadRecord,
-              latestDownloadRecord.contentType == .web else {
-            return nil
-        }
+        guard let latestDownloadRecord, latestDownloadRecord.contentType == .web else { return nil }
         return latestDownloadRecord
     }
 
     private var sceneDownloadRecord: SteamWorkshopDownloadRecord? {
-        guard let latestDownloadRecord,
-              latestDownloadRecord.contentType == .scene else {
-            return nil
-        }
+        guard let latestDownloadRecord, latestDownloadRecord.contentType == .scene else { return nil }
         return latestDownloadRecord
     }
-
 
     private var webProjectDescriptor: ResolvedWebProjectDescriptor? {
         guard let webDownloadRecord else { return nil }
         return service.resolvedWebProjectDescriptor(for: webDownloadRecord)
     }
 
-    private var webValidationReport: SteamWorkshopWebValidationReport? {
-        guard isWebDiagnosticsExpanded,
-              let webDownloadRecord else { return nil }
-        return service.webValidationReport(for: webDownloadRecord)
-    }
-
-    private var sceneDiagnosticsReport: SceneDiagnosticsReport? {
-        guard let sceneDownloadRecord else { return nil }
-        return service.sceneDiagnosticsReport(for: sceneDownloadRecord)
-    }
-
     private var isRefreshingDetail: Bool {
-        if service.selectedDownloadInspectorItem?.id == item.id {
+        if service.selectedDownloadInspectorItem?.id == currentItem.id {
             return service.isRefreshingSelectedDownloadDetailItem
         }
-        return service.isRefreshingSelectedBrowserItem && service.selectedBrowserItem?.id == item.id
+        return service.isRefreshingSelectedBrowserItem && service.selectedBrowserItem?.id == currentItem.id
     }
 
     private var currentDetailError: String? {
-        if service.selectedDownloadInspectorItem?.id == item.id {
+        if service.selectedDownloadInspectorItem?.id == currentItem.id {
             return service.selectedDownloadDetailError
         }
-        guard service.selectedBrowserItem?.id == item.id else { return nil }
+        guard service.selectedBrowserItem?.id == currentItem.id else { return nil }
         return service.selectedBrowserItemError
     }
 
-    private var detailDescription: String? {
+    private var detailDescriptionLine: String {
         let summary = currentItem.summary.trimmingCharacters(in: .whitespacesAndNewlines)
         let description = currentItem.descriptionText.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !description.isEmpty, description != summary {
-            return description
-        }
-        if !summary.isEmpty {
-            return summary
-        }
-        return nil
-    }
-
-    private var detailDescriptionLine: String {
-        let trimmed = detailDescription?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return trimmed.isEmpty ? "暂无更多描述" : trimmed
+        let value = (!description.isEmpty && description != summary) ? description : summary
+        return value.isEmpty ? "暂无更多描述" : value
     }
 
     private var secondaryFactText: String? {
@@ -98,34 +127,24 @@ struct SteamWorkshopItemDetailSheet: View {
             currentItem.scoreText,
             currentItem.subscriptionsText.map { "订阅 \($0)" },
             currentItem.favoritesText.map { "收藏 \($0)" }
-        ]
-        .compactMap { $0 }
-
-        guard !values.isEmpty else { return nil }
-        return values.joined(separator: "  ·  ")
+        ].compactMap { $0 }
+        return values.isEmpty ? nil : values.joined(separator: "  ·  ")
     }
 
     private var statusFactText: String? {
-        let text = [
+        let values = [
             currentItem.visibilityText.map { "可见性 \($0)" },
             currentItem.moderationText.map { "状态 \($0)" }
-        ]
-        .compactMap { $0 }
-        .joined(separator: "  ·  ")
-        return text.isEmpty ? nil : text
+        ].compactMap { $0 }
+        return values.isEmpty ? nil : values.joined(separator: "  ·  ")
     }
 
     private var heroBadges: [String] {
-        [
-            currentItem.workshopTypeText,
-            currentItem.ageRatingText,
-            currentItem.genreText
-        ]
-        .compactMap { value in
-            guard let value else { return nil }
-            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-            return trimmed.isEmpty ? nil : trimmed
-        }
+        [currentItem.workshopTypeText, currentItem.ageRatingText, currentItem.genreText]
+            .compactMap { value in
+                let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                return trimmed.isEmpty ? nil : trimmed
+            }
     }
 
     private var statFacts: [(String, String)] {
@@ -134,376 +153,1264 @@ struct SteamWorkshopItemDetailSheet: View {
             ("文件大小", currentItem.fileSizeText),
             ("发布时间", currentItem.postedText),
             ("分类", currentItem.categoryText)
-        ]
-        .compactMap { label, value in
+        ].compactMap { label, value in
             guard let value, !value.isEmpty else { return nil }
             return (label, value)
         }
     }
 
-    private let topScrollFadeHeight: CGFloat = 12
-    private let bottomScrollFadeHeight: CGFloat = 20
+    private func setup() {
+        translatesAutoresizingMaskIntoConstraints = false
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.clear.cgColor
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            ScrollView(.vertical, showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 16) {
-                    previewSection
-                    metaSection
-                    contentSection
-                    webPropertiesSection
-                    webDiagnosticsSection
-                    sceneDiagnosticsSection
-                    noticeSection
-                }
-                .frame(maxWidth: .infinity, alignment: .topLeading)
-                .padding(.horizontal, 2)
-                .padding(.top, 10)
-            }
-            .mask {
-                SteamWorkshopScrollFadeMask(
-                    topFadeHeight: topScrollFadeHeight,
-                    bottomFadeHeight: bottomScrollFadeHeight
-                )
-            }
-            .frame(maxHeight: .infinity, alignment: .top)
+        rootStack.orientation = .vertical
+        rootStack.alignment = .leading
+        rootStack.spacing = 12
+        rootStack.translatesAutoresizingMaskIntoConstraints = false
 
-            footerActions
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        scrollView.drawsBackground = false
+        scrollView.hasVerticalScroller = false
+        scrollView.hasHorizontalScroller = false
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+
+        contentStack.orientation = .vertical
+        contentStack.alignment = .leading
+        contentStack.spacing = Metrics.contentSpacing
+        contentStack.edgeInsets = NSEdgeInsets(top: 10, left: 2, bottom: 0, right: 2)
+        contentStack.translatesAutoresizingMaskIntoConstraints = false
+
+        documentContainer.translatesAutoresizingMaskIntoConstraints = false
+        documentContainer.addSubview(contentStack)
+        scrollView.documentView = documentContainer
+
+        footerView.translatesAutoresizingMaskIntoConstraints = false
+
+        addSubview(rootStack)
+        rootStack.addArrangedSubview(scrollView)
+        rootStack.addArrangedSubview(footerView)
+
+        NSLayoutConstraint.activate([
+            rootStack.leadingAnchor.constraint(equalTo: leadingAnchor),
+            rootStack.trailingAnchor.constraint(equalTo: trailingAnchor),
+            rootStack.topAnchor.constraint(equalTo: topAnchor),
+            rootStack.bottomAnchor.constraint(equalTo: bottomAnchor),
+            scrollView.widthAnchor.constraint(equalTo: rootStack.widthAnchor),
+            documentContainer.widthAnchor.constraint(equalTo: scrollView.contentView.widthAnchor),
+            documentContainer.heightAnchor.constraint(greaterThanOrEqualTo: scrollView.contentView.heightAnchor),
+            contentStack.leadingAnchor.constraint(equalTo: documentContainer.leadingAnchor),
+            contentStack.trailingAnchor.constraint(equalTo: documentContainer.trailingAnchor),
+            contentStack.topAnchor.constraint(equalTo: documentContainer.topAnchor),
+            contentStack.bottomAnchor.constraint(lessThanOrEqualTo: documentContainer.bottomAnchor),
+            footerView.widthAnchor.constraint(equalTo: rootStack.widthAnchor),
+            footerView.heightAnchor.constraint(equalToConstant: Metrics.footerHeight)
+        ])
     }
 
-    private var metaSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            if !heroBadges.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(heroBadges, id: \.self) { badge in
-                            Text(badge)
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(.primary)
-                                .padding(.horizontal, 15)
-                                .padding(.vertical, 7)
-                                .background(
-                                    Capsule(style: .continuous)
-                                        .fill(Color.black.opacity(0.12))
-                                )
-                                .overlay {
-                                    Capsule(style: .continuous)
-                                        .stroke(Color.white.opacity(0.12), lineWidth: 0.6)
-                                }
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
+    private func rebuild(preservingScrollPosition: Bool = true) {
+        let preservedOrigin = preservingScrollPosition ? scrollView.contentView.bounds.origin : nil
+        currentItem = resolvedCurrentItem(fallback: currentItem)
+        contentStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        footerView.subviews.forEach { $0.removeFromSuperview() }
 
-            if let statusFactText {
-                Text(statusFactText)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-            }
+        buildPreviewSection()
+        buildMetaSection()
+        buildContentSection()
+        buildWebPropertiesSection()
+        buildWebDiagnosticsSection()
+        buildSceneDiagnosticsSection()
+        buildNoticeSection()
+        pinContentSectionsToFullWidth()
+        buildFooterActions()
+        restoreScrollPositionIfNeeded(preservedOrigin)
+    }
+
+    private func restoreScrollPositionIfNeeded(_ origin: NSPoint?) {
+        guard let origin, !isRestoringScrollPosition else { return }
+        isRestoringScrollPosition = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            let documentHeight = self.scrollView.documentView?.bounds.height ?? 0
+            let clipHeight = self.scrollView.contentView.bounds.height
+            let maxY = max(0, documentHeight - clipHeight)
+            let clampedOrigin = NSPoint(x: origin.x, y: min(max(origin.y, 0), maxY))
+            self.scrollView.contentView.scroll(to: clampedOrigin)
+            self.scrollView.reflectScrolledClipView(self.scrollView.contentView)
+            self.isRestoringScrollPosition = false
         }
     }
 
-    private var previewSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            SteamWorkshopPreviewSurface(
-                itemID: currentItem.id,
-                previewImageURL: currentItem.previewImageURL,
-                fallbackVideoURL: latestDownloadRecord?.videoURL,
-                previewAssetKind: currentItem.previewAssetKind
+    private func pinContentSectionsToFullWidth() {
+        contentStack.arrangedSubviews.forEach { section in
+            section.widthAnchor.constraint(equalTo: contentStack.widthAnchor).isActive = true
+        }
+    }
+
+    private func buildPreviewSection() {
+        let stack = verticalStack(spacing: 8)
+
+        previewView.configure(
+            itemID: currentItem.id,
+            previewImageURL: currentItem.previewImageURL,
+            fallbackVideoURL: latestDownloadRecord?.videoURL,
+            refreshToken: service.previewReloadToken
+        )
+        previewView.translatesAutoresizingMaskIntoConstraints = false
+        stack.addArrangedSubview(previewView)
+        NSLayoutConstraint.activate([
+            previewView.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            previewView.heightAnchor.constraint(equalToConstant: Metrics.previewHeight)
+        ])
+
+        let title = label(
+            currentItem.title,
+            font: .systemFont(ofSize: 19, weight: .semibold),
+            color: .labelColor,
+            lines: 2
+        )
+        stack.addArrangedSubview(title)
+
+        if !currentItem.author.isEmpty {
+            stack.addArrangedSubview(label(
+                currentItem.author,
+                font: .systemFont(ofSize: 12, weight: .medium),
+                color: .secondaryLabelColor,
+                lines: 1
+            ))
+        }
+
+        if let secondaryFactText {
+            stack.addArrangedSubview(label(
+                secondaryFactText,
+                font: .systemFont(ofSize: 11, weight: .medium),
+                color: .secondaryLabelColor,
+                lines: 2
+            ))
+        }
+
+        contentStack.addArrangedSubview(stack)
+    }
+
+    private func buildMetaSection() {
+        guard !heroBadges.isEmpty || statusFactText != nil else { return }
+        let stack = verticalStack(spacing: 10)
+
+        if !heroBadges.isEmpty {
+            let row = NSStackView()
+            row.orientation = .horizontal
+            row.alignment = .centerY
+            row.spacing = 8
+            row.translatesAutoresizingMaskIntoConstraints = false
+            heroBadges.forEach { row.addArrangedSubview(badge($0)) }
+            stack.addArrangedSubview(row)
+        }
+
+        if let statusFactText {
+            stack.addArrangedSubview(label(
+                statusFactText,
+                font: .systemFont(ofSize: 11, weight: .medium),
+                color: .secondaryLabelColor,
+                lines: 2
+            ))
+        }
+
+        contentStack.addArrangedSubview(stack)
+    }
+
+    private func buildContentSection() {
+        let stack = verticalStack(spacing: 14)
+
+        if !statFacts.isEmpty {
+            stack.addArrangedSubview(divider())
+            let grid = factsGrid(statFacts)
+            stack.addArrangedSubview(grid)
+        }
+
+        stack.addArrangedSubview(divider())
+        let descriptionStack = verticalStack(spacing: 6)
+        descriptionStack.addArrangedSubview(sectionTitle("描述"))
+        descriptionStack.addArrangedSubview(label(
+            detailDescriptionLine,
+            font: .systemFont(ofSize: 13),
+            color: .labelColor,
+            lines: 3
+        ))
+        stack.addArrangedSubview(descriptionStack)
+
+        contentStack.addArrangedSubview(stack)
+    }
+
+    private func buildNoticeSection() {
+        let stack = verticalStack(spacing: 8)
+
+        if let currentDetailError, webDownloadRecord == nil {
+            stack.addArrangedSubview(errorNotice(message: currentDetailError) { [weak self] in
+                guard let self else { return }
+                self.service.retryInspectorDetailRefresh(for: self.currentItem.id)
+            })
+        }
+
+        if let latestDownloadFailure,
+           !service.isDownloading(itemID: currentItem.id),
+           downloadRecord == nil {
+            stack.addArrangedSubview(errorNotice(message: "上次下载失败：\(latestDownloadFailure)") { [weak self] in
+                guard let self else { return }
+                self.service.requestDownloadForBrowserItem(self.currentItem)
+            })
+        }
+
+        if isRefreshingDetail, webDownloadRecord == nil {
+            stack.addArrangedSubview(notice(icon: "arrow.triangle.2.circlepath", text: "正在补全该项目的详情信息…"))
+        }
+
+        if let record = latestDownloadRecord,
+           case let .missing(itemID) = record.dependencyStatus {
+            stack.addArrangedSubview(notice(
+                icon: "shippingbox",
+                text: record.isDependencyBackedWeb
+                    ? "这是依赖型 WEB 预设壳，当前缺少基础依赖宿主 \(itemID)，因此暂时无法播放。"
+                    : "当前 WEB 项目声明依赖包 \(itemID)，本地尚未满足该依赖。"
+            ))
+        }
+
+        if let record = sceneDownloadRecord {
+            stack.addArrangedSubview(notice(icon: "square.stack.3d.up", text: service.sceneDiagnosticsSummary(for: record)))
+        }
+
+        if !currentItem.dependencyIDs.isEmpty {
+            stack.addArrangedSubview(notice(
+                icon: "link.badge.plus",
+                text: "该项目依赖以下 Workshop 项：\(currentItem.dependencyIDs.joined(separator: "、"))"
+            ))
+        }
+
+        if currentItem.hasAdultContent {
+            stack.addArrangedSubview(notice(icon: "exclamationmark.triangle.fill", text: "此项目被 Steam 标记为成人内容"))
+        }
+
+        guard !stack.arrangedSubviews.isEmpty else { return }
+        contentStack.addArrangedSubview(stack)
+    }
+
+    private func buildWebDiagnosticsSection() {
+        guard let webDownloadRecord else { return }
+        contentStack.addArrangedSubview(divider())
+
+        let stack = verticalStack(spacing: 10)
+        let header = NSStackView()
+        header.orientation = .horizontal
+        header.alignment = .firstBaseline
+        header.spacing = 12
+        header.translatesAutoresizingMaskIntoConstraints = false
+
+        let titleStack = verticalStack(spacing: 4)
+        titleStack.addArrangedSubview(sectionTitle("WEB 诊断"))
+        titleStack.addArrangedSubview(label(
+            webDiagnosticsExpanded ? "已展开详细诊断与兼容提示" : "默认不立即执行重扫描，按需展开以避免打开详情时卡顿",
+            font: .systemFont(ofSize: 12),
+            color: .secondaryLabelColor,
+            lines: 0
+        ))
+        header.addArrangedSubview(titleStack)
+        header.addArrangedSubview(spacer())
+
+        let toggle = NSButton(title: webDiagnosticsExpanded ? "收起" : "展开", target: self, action: #selector(toggleWebDiagnostics))
+        toggle.bezelStyle = .rounded
+        toggle.controlSize = .small
+        header.addArrangedSubview(toggle)
+        stack.addArrangedSubview(header)
+
+        if webDiagnosticsExpanded,
+           let report = service.webValidationReport(for: webDownloadRecord) {
+            buildWebDiagnosticsReport(report, record: webDownloadRecord, descriptor: webProjectDescriptor, in: stack)
+        }
+
+        contentStack.addArrangedSubview(stack)
+    }
+
+    private func buildWebPropertiesSection() {
+        guard let record = webDownloadRecord,
+              let descriptor = webProjectDescriptor else { return }
+
+        let values = service.effectiveWebPropertyValues(for: record, descriptor: descriptor)
+        let renderableDefinitions = descriptor.propertyDefinitions.filter {
+            service.shouldRenderWebPropertyControl($0) && service.shouldDisplayWebProperty($0, values: values)
+        }
+        guard !renderableDefinitions.isEmpty else { return }
+
+        contentStack.addArrangedSubview(divider())
+
+        let shouldUseCollapsedPresentation = renderableDefinitions.count > 8
+        if !shouldUseCollapsedPresentation {
+            webPropertiesExpanded = true
+        }
+
+        let stack = verticalStack(spacing: 12)
+        let header = NSStackView()
+        header.orientation = .horizontal
+        header.alignment = .firstBaseline
+        header.spacing = 12
+        header.translatesAutoresizingMaskIntoConstraints = false
+
+        let titleStack = verticalStack(spacing: 4)
+        titleStack.addArrangedSubview(sectionTitle("WEB 属性"))
+        titleStack.addArrangedSubview(label(
+            record.isDependencyBackedWeb
+                ? "属性定义来自依赖宿主，当前修改会写回这个补丁壳样本"
+                : "根据当前壁纸的 project.json 动态生成调节项",
+            font: .systemFont(ofSize: 12),
+            color: .secondaryLabelColor,
+            lines: 0
+        ))
+        header.addArrangedSubview(titleStack)
+        header.addArrangedSubview(spacer())
+
+        if shouldUseCollapsedPresentation {
+            let toggle = NSButton(
+                title: webPropertiesExpanded ? "收起" : "展开 \(renderableDefinitions.count) 项",
+                target: self,
+                action: #selector(toggleWebProperties)
             )
-            .frame(maxWidth: .infinity)
-            .frame(height: 156)
-            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(Color.white.opacity(0.09), lineWidth: 0.45)
-            }
-
-            Text(currentItem.title)
-                .font(.system(size: 19, weight: .semibold))
-                .foregroundStyle(.primary)
-                .lineLimit(2)
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-            if !currentItem.author.isEmpty {
-                Text(currentItem.author)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-
-            if let secondaryFactText {
-                Text(secondaryFactText)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-            }
+            toggle.bezelStyle = .rounded
+            toggle.controlSize = .small
+            header.addArrangedSubview(toggle)
         }
-    }
+        stack.addArrangedSubview(header)
 
-    private var contentSection: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            if !statFacts.isEmpty {
-                Divider()
-                    .overlay(Color.white.opacity(0.035))
+        if webPropertiesExpanded {
+            let resetRow = NSStackView()
+            resetRow.orientation = .horizontal
+            resetRow.alignment = .centerY
+            resetRow.translatesAutoresizingMaskIntoConstraints = false
+            resetRow.addArrangedSubview(spacer())
+            let reset = NSButton(title: "重置", target: self, action: #selector(resetWebProperties))
+            reset.bezelStyle = .rounded
+            reset.controlSize = .small
+            resetRow.addArrangedSubview(reset)
+            stack.addArrangedSubview(resetRow)
 
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 2), spacing: 12) {
-                    ForEach(Array(statFacts.enumerated()), id: \.offset) { _, fact in
-                        SteamWorkshopSingleFactCard(label: fact.0, value: fact.1)
+            let primary = renderableDefinitions.filter { service.isPrimaryWebPropertyControl($0) }
+            let advanced = renderableDefinitions.filter { !service.isPrimaryWebPropertyControl($0) }
+            let visibleOptionsByKey = Dictionary(uniqueKeysWithValues: renderableDefinitions.map {
+                ($0.key, service.visibleWebPropertyOptions(for: $0, values: values))
+            })
+
+            primary.forEach {
+                stack.addArrangedSubview(webPropertyControl(definition: $0, value: values[$0.key] ?? $0.defaultValue, visibleOptions: visibleOptionsByKey[$0.key] ?? [], record: record))
+            }
+
+            if !advanced.isEmpty {
+                let advancedToggle = NSButton(
+                    title: webAdvancedPropertiesExpanded ? "收起高级参数" : "展开高级参数 \(advanced.count) 项",
+                    target: self,
+                    action: #selector(toggleAdvancedWebProperties)
+                )
+                advancedToggle.bezelStyle = .inline
+                advancedToggle.alignment = .left
+                stack.addArrangedSubview(advancedToggle)
+
+                if webAdvancedPropertiesExpanded {
+                    advanced.forEach {
+                        stack.addArrangedSubview(webPropertyControl(definition: $0, value: values[$0.key] ?? $0.defaultValue, visibleOptions: visibleOptionsByKey[$0.key] ?? [], record: record))
                     }
                 }
             }
-
-            Divider()
-                .overlay(Color.white.opacity(0.035))
-
-            VStack(alignment: .leading, spacing: 6) {
-                Text("描述")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.secondary)
-
-                Text(detailDescriptionLine)
-                    .font(.system(size: 13))
-                    .foregroundStyle(.primary)
-                    .lineLimit(3)
-                    .truncationMode(.tail)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
         }
-        .padding(.horizontal, 2)
+
+        contentStack.addArrangedSubview(stack)
     }
 
-    private var noticeSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if let currentDetailError, webDownloadRecord == nil {
-                SteamWorkshopInlineErrorNotice(message: currentDetailError) {
-                    service.retryInspectorDetailRefresh(for: item.id)
-                }
-            }
+    private func buildWebDiagnosticsReport(
+        _ report: SteamWorkshopWebValidationReport,
+        record: SteamWorkshopDownloadRecord?,
+        descriptor: ResolvedWebProjectDescriptor?,
+        in stack: NSStackView
+    ) {
+        let resolvedEntryPath = descriptor?.resolvedEntryRelativePath ?? report.entryRelativePath
+        let entrySummary = resolvedEntryPath.isEmpty ? "未解析到入口" : resolvedEntryPath
+        let runtimeEvents = WebRuntimeDiagnosticsStore.shared.recentEvents(recordID: record?.id, limit: 12)
 
-            if let latestDownloadFailure,
-               !service.isDownloading(itemID: item.id),
-               downloadRecord == nil {
-                SteamWorkshopInlineErrorNotice(message: "上次下载失败：\(latestDownloadFailure)") {
-                    service.requestDownloadForBrowserItem(currentItem)
-                }
-            }
+        stack.addArrangedSubview(sectionTitle("WEB 诊断"))
+        stack.addArrangedSubview(notice(
+            icon: "square.stack.3d.up",
+            text: "属性来源：\(descriptor?.propertySource.displayName ?? report.propertySource.displayName)"
+                + ((descriptor?.presetOverrideMap.count ?? report.presetOverrideCount) > 0
+                   ? "  ·  壳 preset 覆盖 \(descriptor?.presetOverrideMap.count ?? report.presetOverrideCount) 条"
+                   : "")
+        ))
+        stack.addArrangedSubview(notice(
+            icon: "doc.text.magnifyingglass",
+            text: "样本结构：\(descriptor?.sampleStructure.displayName ?? report.sampleStructure.displayName)  ·  入口：\(entrySummary)  ·  扫描文件：\(report.scannedFileCount)"
+        ))
 
-            if isRefreshingDetail, webDownloadRecord == nil {
-                SteamWorkshopInlineNotice(
-                    icon: "arrow.triangle.2.circlepath",
-                    text: "正在补全该项目的详情信息…"
-                )
-            }
-
-            if let record = latestDownloadRecord,
-               case let .missing(itemID) = record.dependencyStatus {
-                SteamWorkshopInlineNotice(
-                    icon: "shippingbox",
-                    text: record.isDependencyBackedWeb
-                        ? "这是依赖型 WEB 预设壳，当前缺少基础依赖宿主 \(itemID)，因此暂时无法播放。"
-                        : "当前 WEB 项目声明依赖包 \(itemID)，本地尚未满足该依赖。"
-                )
-            }
-
-            if let record = sceneDownloadRecord {
-                SteamWorkshopInlineNotice(
-                    icon: "square.stack.3d.up",
-                    text: service.sceneDiagnosticsSummary(for: record)
-                )
-            }
-
-            if !currentItem.dependencyIDs.isEmpty {
-                SteamWorkshopInlineNotice(
-                    icon: "link.badge.plus",
-                    text: "该项目依赖以下 Workshop 项：\(currentItem.dependencyIDs.joined(separator: "、"))"
-                )
-            }
-
-            if currentItem.hasAdultContent {
-                SteamWorkshopInlineNotice(
-                    icon: "exclamationmark.triangle.fill",
-                    text: "此项目被 Steam 标记为成人内容"
-                )
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    @ViewBuilder
-    private var webDiagnosticsSection: some View {
-        if webDownloadRecord != nil {
-            Divider()
-                .overlay(Color.white.opacity(0.035))
-
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(alignment: .firstTextBaseline) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("WEB 诊断")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(.secondary)
-                        Text(isWebDiagnosticsExpanded
-                             ? "已展开详细诊断与兼容提示"
-                             : "默认不立即执行重扫描，按需展开以避免打开详情时卡顿")
-                            .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
-                    }
-
-                    Spacer(minLength: 12)
-
-                    Button(isWebDiagnosticsExpanded ? "收起" : "展开") {
-                        isWebDiagnosticsExpanded.toggle()
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                }
-
-                if let report = webValidationReport {
-                    SteamWorkshopItemDetailWebDiagnosticsSection(
-                        report: report,
-                        record: webDownloadRecord,
-                        descriptor: webProjectDescriptor
-                    )
-                }
-            }
-            .padding(.horizontal, 2)
-        }
-    }
-
-    @ViewBuilder
-    private var webPropertiesSection: some View {
-        if let record = webDownloadRecord {
-            SteamWorkshopItemDetailWebPropertiesSection(
-                record: record,
-                descriptor: webProjectDescriptor
-            )
-        }
-    }
-
-    @ViewBuilder
-    private var sceneDiagnosticsSection: some View {
-        if let record = sceneDownloadRecord,
-           let report = sceneDiagnosticsReport {
-            SteamWorkshopSceneDetailSection(record: record, report: report)
-        }
-    }
-
-    private var footerActions: some View {
-        HStack(spacing: 6) {
-            detailPrimaryActionButton(downloadRecord: latestDownloadRecord ?? downloadRecord)
-                .frame(maxWidth: .infinity)
-
-            footerTextButton(
-                symbolName: "person.crop.circle.fill",
-                title: "作者工坊",
-                kind: .secondary,
-                disabled: currentItem.authorProfileURL == nil && currentItem.authorWorkshopURL == nil
-            ) {
-                service.openAuthorWorksPage(for: currentItem)
-            }
-            .frame(maxWidth: .infinity)
-
-            footerIconButton(symbolName: "safari", help: "网页浏览") {
-                service.openWorkshopDetailPage(for: currentItem)
-            }
-
-            footerIconButton(
-                symbolName: "arrow.clockwise",
-                help: "刷新详情",
-                disabled: isRefreshingDetail
-            ) {
-                service.retryInspectorDetailRefresh(for: item.id)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 2)
-    }
-
-    @ViewBuilder
-    private func detailPrimaryActionButton(downloadRecord: SteamWorkshopDownloadRecord?) -> some View {
-        if service.isDownloading(itemID: item.id) || service.isQueuedForDownload(itemID: item.id) {
-            footerTextButton(
-                symbolName: "hourglass.circle.fill",
-                title: service.isQueuedForDownload(itemID: item.id) ? "取消队列" : "取消下载",
-                kind: .danger
-            ) {
-                service.cancelDownload(itemID: item.id)
-            }
-        } else if let downloadRecord {
-            if downloadRecord.contentType == .scene {
-                footerTextButton(symbolName: "play.circle.fill", title: "设为壁纸", kind: .primary) {
-                    service.setAsWallpaper(downloadRecord)
-                }
-            } else {
-                footerTextButton(symbolName: "photo.fill", title: "设为壁纸", kind: .primary) {
-                    service.setAsWallpaper(downloadRecord)
-                }
-            }
-        } else if let latestDownloadRecord,
-                  latestDownloadRecord.contentType == .web,
-                  case let .missing(itemID) = latestDownloadRecord.dependencyStatus {
-            footerTextButton(
-                symbolName: "shippingbox",
-                title: "下载依赖 \(itemID)",
-                kind: .secondary
-            ) {
-                service.setAsWallpaper(latestDownloadRecord)
-            }
+        if report.issues.isEmpty {
+            stack.addArrangedSubview(validationPill(severity: .info, levelTitle: SteamWorkshopWebValidationLevel.info.displayName, message: "未发现明显的本地资源缺失或外部依赖风险"))
         } else {
-            let isSceneItem = currentItem.workshopTypeText?.localizedCaseInsensitiveCompare("Scene") == .orderedSame
-            footerTextButton(
-                symbolName: latestDownloadFailure != nil ? "arrow.clockwise.circle.fill" : "arrow.down.circle.fill",
-                title: latestDownloadFailure != nil ? "重新下载" : (isSceneItem ? "下载 Scene" : "下载视频"),
+            report.issues.forEach {
+                stack.addArrangedSubview(validationPill(severity: $0.severity, levelTitle: $0.level.displayName, message: $0.message))
+            }
+        }
+
+        if let record, case let .missing(itemID) = record.dependencyStatus {
+            stack.addArrangedSubview(validationPill(
+                severity: .warning,
+                levelTitle: SteamWorkshopWebValidationLevel.preconditionUnmet.displayName,
+                message: record.isDependencyBackedWeb
+                    ? "当前样本属于依赖型 WEB 预设壳，需先下载依赖宿主 \(itemID) 才能运行"
+                    : "当前项目声明依赖包 \(itemID)，但本地未找到该依赖的可启动 WEB 入口"
+            ))
+        }
+
+        if !runtimeEvents.isEmpty {
+            stack.addArrangedSubview(sectionTitle("最近运行事件"))
+            runtimeEvents.forEach {
+                stack.addArrangedSubview(validationPill(severity: $0.validationSeverity, levelTitle: $0.type, message: $0.displayMessage))
+            }
+        }
+    }
+
+    private func buildSceneDiagnosticsSection() {
+        guard let record = sceneDownloadRecord,
+              let report = service.sceneDiagnosticsReport(for: record) else { return }
+
+        contentStack.addArrangedSubview(divider())
+        let stack = verticalStack(spacing: 10)
+        stack.addArrangedSubview(sectionTitle("Scene 诊断"))
+
+        sceneDiagnosticsRows(record: record, report: report).forEach {
+            stack.addArrangedSubview(notice(icon: "square.stack.3d.up", text: "\($0.0)：\($0.1)"))
+        }
+        report.issues.forEach {
+            stack.addArrangedSubview(notice(
+                icon: $0.severity == .blocking ? "exclamationmark.triangle.fill" : "info.circle",
+                text: $0.message
+            ))
+        }
+        contentStack.addArrangedSubview(stack)
+    }
+
+    private func buildFooterActions() {
+        let primary = primaryFooterButton()
+        let author = footerButton(
+            title: "作者工坊",
+            symbolName: "person.crop.circle.fill",
+            kind: .secondary,
+            target: self,
+            action: #selector(openAuthorWorkshop)
+        )
+        author.isEnabled = currentItem.authorProfileURL != nil || currentItem.authorWorkshopURL != nil
+        let browser = footerIconButton(symbolName: "safari", help: "网页浏览", action: #selector(openWorkshopDetail))
+        let refresh = footerIconButton(symbolName: "arrow.clockwise", help: "刷新详情", action: #selector(refreshDetail))
+        refresh.isEnabled = !isRefreshingDetail
+
+        [primary, author, browser, refresh].forEach {
+            $0.translatesAutoresizingMaskIntoConstraints = false
+            footerView.addSubview($0)
+        }
+
+        NSLayoutConstraint.activate([
+            primary.leadingAnchor.constraint(equalTo: footerView.leadingAnchor, constant: 2),
+            primary.topAnchor.constraint(equalTo: footerView.topAnchor),
+            primary.bottomAnchor.constraint(equalTo: footerView.bottomAnchor),
+            author.leadingAnchor.constraint(equalTo: primary.trailingAnchor, constant: 6),
+            author.topAnchor.constraint(equalTo: footerView.topAnchor),
+            author.bottomAnchor.constraint(equalTo: footerView.bottomAnchor),
+            browser.leadingAnchor.constraint(equalTo: author.trailingAnchor, constant: 6),
+            browser.topAnchor.constraint(equalTo: footerView.topAnchor),
+            browser.bottomAnchor.constraint(equalTo: footerView.bottomAnchor),
+            browser.widthAnchor.constraint(equalToConstant: 58),
+            refresh.leadingAnchor.constraint(equalTo: browser.trailingAnchor, constant: 6),
+            refresh.trailingAnchor.constraint(equalTo: footerView.trailingAnchor, constant: -2),
+            refresh.topAnchor.constraint(equalTo: footerView.topAnchor),
+            refresh.bottomAnchor.constraint(equalTo: footerView.bottomAnchor),
+            refresh.widthAnchor.constraint(equalToConstant: 58),
+            author.widthAnchor.constraint(equalTo: primary.widthAnchor)
+        ])
+    }
+
+    private func primaryFooterButton() -> SteamWorkshopDetailFooterButton {
+        if service.isDownloading(itemID: currentItem.id) || service.isQueuedForDownload(itemID: currentItem.id) {
+            return footerButton(
+                title: service.isQueuedForDownload(itemID: currentItem.id) ? "取消队列" : "取消下载",
+                symbolName: "hourglass.circle.fill",
+                kind: .danger,
+                target: self,
+                action: #selector(cancelDownload)
+            )
+        }
+
+        let record = latestDownloadRecord ?? downloadRecord
+        if let record {
+            return footerButton(
+                title: "设为壁纸",
+                symbolName: record.contentType == .scene ? "play.circle.fill" : "photo.fill",
                 kind: .primary,
-                disabled: !service.canRequestDownload(id: item.id)
-            ) {
-                service.requestDownloadForBrowserItem(currentItem)
+                target: self,
+                action: #selector(setAsWallpaper)
+            )
+        }
+
+        if let latestDownloadRecord,
+           latestDownloadRecord.contentType == .web,
+           case let .missing(itemID) = latestDownloadRecord.dependencyStatus {
+            return footerButton(
+                title: "下载依赖 \(itemID)",
+                symbolName: "shippingbox",
+                kind: .secondary,
+                target: self,
+                action: #selector(setAsWallpaper)
+            )
+        }
+
+        let isSceneItem = currentItem.workshopTypeText?.localizedCaseInsensitiveCompare("Scene") == .orderedSame
+        let button = footerButton(
+            title: latestDownloadFailure != nil ? "重新下载" : (isSceneItem ? "下载 Scene" : "下载视频"),
+            symbolName: latestDownloadFailure != nil ? "arrow.clockwise.circle.fill" : "arrow.down.circle.fill",
+            kind: .primary,
+            target: self,
+            action: #selector(requestDownload)
+        )
+        button.isEnabled = service.canRequestDownload(id: currentItem.id)
+        return button
+    }
+
+    private func webPropertyControl(
+        definition: SteamWorkshopWebPropertyDefinition,
+        value: SteamWorkshopWebPropertyValue,
+        visibleOptions: [SteamWorkshopWebPropertyOption],
+        record: SteamWorkshopDownloadRecord
+    ) -> NSView {
+        let card = NSStackView()
+        card.orientation = .vertical
+        card.alignment = .leading
+        card.spacing = 8
+        card.edgeInsets = NSEdgeInsets(top: 12, left: 12, bottom: 12, right: 12)
+        card.translatesAutoresizingMaskIntoConstraints = false
+        card.wantsLayer = true
+        card.layer?.cornerRadius = 12
+        card.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.10).cgColor
+        card.layer?.borderWidth = 0.7
+        card.layer?.borderColor = NSColor.white.withAlphaComponent(0.06).cgColor
+
+        if definition.kind != .group && definition.kind != .label {
+            let row = NSStackView()
+            row.orientation = .horizontal
+            row.alignment = .firstBaseline
+            row.spacing = 8
+            row.translatesAutoresizingMaskIntoConstraints = false
+            row.addArrangedSubview(label(definition.title, font: .systemFont(ofSize: 12, weight: .semibold), color: .labelColor, lines: 1))
+            row.addArrangedSubview(spacer())
+            row.addArrangedSubview(label(valueSummary(value, definition: definition), font: .systemFont(ofSize: 11, weight: .medium), color: .secondaryLabelColor, lines: 1))
+            card.addArrangedSubview(row)
+        }
+
+        card.addArrangedSubview(controlView(definition: definition, value: value, visibleOptions: visibleOptions, record: record))
+
+        if let footnote = propertyFootnote(definition: definition, visibleOptions: visibleOptions) {
+            card.addArrangedSubview(label(footnote, font: .systemFont(ofSize: 10, weight: .medium), color: .secondaryLabelColor, lines: 0))
+        }
+
+        return card
+    }
+
+    private func controlView(
+        definition: SteamWorkshopWebPropertyDefinition,
+        value: SteamWorkshopWebPropertyValue,
+        visibleOptions: [SteamWorkshopWebPropertyOption],
+        record: SteamWorkshopDownloadRecord
+    ) -> NSView {
+        switch definition.kind {
+        case .slider:
+            let target = WebPropertyActionTarget(view: self, record: record, definition: definition)
+            let slider = NSSlider(value: value.numberValue ?? definition.defaultValue.numberValue ?? definition.minimumValue ?? 0,
+                                  minValue: definition.minimumValue ?? 0,
+                                  maxValue: definition.maximumValue ?? max((definition.minimumValue ?? 0) + 1, value.numberValue ?? 1),
+                                  target: target,
+                                  action: #selector(WebPropertyActionTarget.sliderChanged(_:)))
+            slider.identifier = NSUserInterfaceItemIdentifier(definition.key)
+            slider.translatesAutoresizingMaskIntoConstraints = false
+            retainActionTarget(target, for: slider)
+            return slider
+        case .toggle:
+            let checkbox = NSButton(checkboxWithTitle: "", target: nil, action: nil)
+            checkbox.state = (value.boolValue ?? definition.defaultValue.boolValue ?? false) ? .on : .off
+            let target = WebPropertyActionTarget(view: self, record: record, definition: definition)
+            checkbox.target = target
+            checkbox.action = #selector(WebPropertyActionTarget.toggleChanged(_:))
+            retainActionTarget(target, for: checkbox)
+            return checkbox
+        case .combo:
+            let popup = NSPopUpButton()
+            if visibleOptions.isEmpty {
+                popup.addItem(withTitle: "当前没有可选项")
+                popup.isEnabled = false
+            } else {
+                visibleOptions.forEach { popup.addItem(withTitle: $0.label) }
+                if let selectedIndex = visibleOptions.firstIndex(where: { $0.value == value }) {
+                    popup.selectItem(at: selectedIndex)
+                }
+            }
+            let target = WebPropertyActionTarget(view: self, record: record, definition: definition, visibleOptions: visibleOptions)
+            popup.target = target
+            popup.action = #selector(WebPropertyActionTarget.popupChanged(_:))
+            retainActionTarget(target, for: popup)
+            return popup
+        case .file, .directory:
+            let row = NSStackView()
+            row.orientation = .vertical
+            row.alignment = .leading
+            row.spacing = 8
+            let buttonRow = NSStackView()
+            buttonRow.orientation = .horizontal
+            buttonRow.spacing = 10
+            let choose = NSButton(title: definition.kind == .directory ? "选择文件夹" : "选择文件", target: nil, action: nil)
+            choose.bezelStyle = .rounded
+            choose.controlSize = .small
+            let target = WebPropertyActionTarget(view: self, record: record, definition: definition)
+            choose.target = target
+            choose.action = #selector(WebPropertyActionTarget.choosePath(_:))
+            retainActionTarget(target, for: choose)
+            buttonRow.addArrangedSubview(choose)
+            if !(value.stringValue ?? "").isEmpty {
+                let clear = NSButton(title: "清空", target: target, action: #selector(WebPropertyActionTarget.clearPath(_:)))
+                clear.bezelStyle = .rounded
+                clear.controlSize = .small
+                buttonRow.addArrangedSubview(clear)
+            }
+            buttonRow.addArrangedSubview(spacer())
+            row.addArrangedSubview(buttonRow)
+            row.addArrangedSubview(textField(textValue(value, definition: definition), placeholder: definition.kind == .directory ? "选择目录路径" : "选择文件路径", target: target, action: #selector(WebPropertyActionTarget.textChanged(_:))))
+            return row
+        case .label, .group:
+            return label(definition.title, font: definition.kind == .group ? .systemFont(ofSize: 13, weight: .semibold) : .systemFont(ofSize: 12), color: .labelColor, lines: 0)
+        case .color:
+            return colorControl(value: value, definition: definition, record: record)
+        case .text, .unknown:
+            let target = WebPropertyActionTarget(view: self, record: record, definition: definition)
+            return textField(textValue(value, definition: definition), placeholder: definition.title, target: target, action: #selector(WebPropertyActionTarget.textChanged(_:)))
+        }
+    }
+
+    private func colorControl(
+        value: SteamWorkshopWebPropertyValue,
+        definition: SteamWorkshopWebPropertyDefinition,
+        record: SteamWorkshopDownloadRecord
+    ) -> NSView {
+        let row = NSStackView()
+        row.orientation = .horizontal
+        row.alignment = .centerY
+        row.spacing = 10
+        row.translatesAutoresizingMaskIntoConstraints = false
+
+        let target = WebPropertyActionTarget(view: self, record: record, definition: definition)
+        let colorWell = NSColorWell(frame: NSRect(x: 0, y: 0, width: 42, height: 26))
+        colorWell.color = color(from: value.stringValue ?? definition.defaultValue.stringValue ?? "0 0 0")
+        colorWell.target = target
+        colorWell.action = #selector(WebPropertyActionTarget.colorChanged(_:))
+        colorWell.translatesAutoresizingMaskIntoConstraints = false
+        retainActionTarget(target, for: colorWell)
+        row.addArrangedSubview(colorWell)
+
+        let field = textField(
+            textValue(value, definition: definition),
+            placeholder: "R G B",
+            target: target,
+            action: #selector(WebPropertyActionTarget.textChanged(_:))
+        )
+        row.addArrangedSubview(field)
+
+        NSLayoutConstraint.activate([
+            colorWell.widthAnchor.constraint(equalToConstant: 42),
+            colorWell.heightAnchor.constraint(equalToConstant: 26)
+        ])
+        return row
+    }
+
+    private func retainActionTarget(_ target: WebPropertyActionTarget, for control: NSControl) {
+        objc_setAssociatedObject(control, "[\(Unmanaged.passUnretained(control).toOpaque())].target", target, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+    }
+
+    @objc private func toggleWebProperties() {
+        webPropertiesExpanded.toggle()
+        rebuild(preservingScrollPosition: true)
+    }
+
+    @objc private func toggleAdvancedWebProperties() {
+        webAdvancedPropertiesExpanded.toggle()
+        rebuild(preservingScrollPosition: true)
+    }
+
+    @objc private func toggleWebDiagnostics() {
+        webDiagnosticsExpanded.toggle()
+        rebuild(preservingScrollPosition: true)
+    }
+
+    @objc private func resetWebProperties() {
+        guard let webDownloadRecord else { return }
+        service.resetWebPropertyValues(for: webDownloadRecord)
+        rebuild(preservingScrollPosition: true)
+    }
+
+    @objc private func requestDownload() {
+        service.requestDownloadForBrowserItem(currentItem)
+    }
+
+    @objc private func cancelDownload() {
+        service.cancelDownload(itemID: currentItem.id)
+    }
+
+    @objc private func setAsWallpaper() {
+        if let latestDownloadRecord,
+           latestDownloadRecord.contentType == .web,
+           case .missing = latestDownloadRecord.dependencyStatus,
+           downloadRecord == nil {
+            service.setAsWallpaper(latestDownloadRecord)
+            return
+        }
+        guard let record = latestDownloadRecord ?? downloadRecord else { return }
+        service.setAsWallpaper(record)
+    }
+
+    @objc private func openAuthorWorkshop() {
+        service.openAuthorWorksPage(for: currentItem)
+    }
+
+    @objc private func openWorkshopDetail() {
+        service.openWorkshopDetailPage(for: currentItem)
+    }
+
+    @objc private func refreshDetail() {
+        service.retryInspectorDetailRefresh(for: currentItem.id)
+    }
+
+    private func updateWebProperty(_ value: SteamWorkshopWebPropertyValue, definition: SteamWorkshopWebPropertyDefinition, record: SteamWorkshopDownloadRecord, preview: Bool = false) {
+        if preview {
+            service.previewWebPropertyValue(value, for: definition, record: record)
+        } else {
+            service.updateWebPropertyValue(value, for: definition, record: record)
+        }
+        rebuild(preservingScrollPosition: true)
+    }
+
+    private func verticalStack(spacing: CGFloat) -> NSStackView {
+        let stack = NSStackView()
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = spacing
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        return stack
+    }
+
+    private func spacer() -> NSView {
+        let view = NSView()
+        view.translatesAutoresizingMaskIntoConstraints = false
+        view.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        return view
+    }
+
+    private func label(_ text: String, font: NSFont, color: NSColor, lines: Int) -> NSTextField {
+        let label = NSTextField(labelWithString: text)
+        label.font = font
+        label.textColor = color
+        label.maximumNumberOfLines = lines
+        label.lineBreakMode = lines == 1 ? .byTruncatingTail : .byWordWrapping
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        return label
+    }
+
+    private func sectionTitle(_ text: String) -> NSTextField {
+        label(text, font: .systemFont(ofSize: 11, weight: .semibold), color: .secondaryLabelColor, lines: 1)
+    }
+
+    private func divider() -> NSView {
+        let view = NSBox()
+        view.boxType = .separator
+        view.translatesAutoresizingMaskIntoConstraints = false
+        view.heightAnchor.constraint(equalToConstant: 1).isActive = true
+        return view
+    }
+
+    private func badge(_ text: String) -> NSView {
+        let label = label(text, font: .systemFont(ofSize: 11, weight: .semibold), color: .labelColor, lines: 1)
+        label.alignment = .center
+        let container = NSView()
+        container.wantsLayer = true
+        container.layer?.cornerRadius = 15
+        container.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.12).cgColor
+        container.layer?.borderWidth = 0.6
+        container.layer?.borderColor = NSColor.white.withAlphaComponent(0.12).cgColor
+        container.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(label)
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 15),
+            label.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -15),
+            label.topAnchor.constraint(equalTo: container.topAnchor, constant: 7),
+            label.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -7)
+        ])
+        return container
+    }
+
+    private func factsGrid(_ facts: [(String, String)]) -> NSView {
+        let grid = NSStackView()
+        grid.orientation = .vertical
+        grid.alignment = .leading
+        grid.spacing = 12
+        grid.translatesAutoresizingMaskIntoConstraints = false
+
+        var index = 0
+        while index < facts.count {
+            let row = NSStackView()
+            row.orientation = .horizontal
+            row.alignment = .top
+            row.spacing = 12
+            row.distribution = .fillEqually
+            row.translatesAutoresizingMaskIntoConstraints = false
+            row.addArrangedSubview(factView(label: facts[index].0, value: facts[index].1))
+            if index + 1 < facts.count {
+                row.addArrangedSubview(factView(label: facts[index + 1].0, value: facts[index + 1].1))
+            } else {
+                row.addArrangedSubview(NSView())
+            }
+            grid.addArrangedSubview(row)
+            row.widthAnchor.constraint(equalTo: grid.widthAnchor).isActive = true
+            index += 2
+        }
+        return grid
+    }
+
+    private func factView(label title: String, value: String) -> NSView {
+        let stack = verticalStack(spacing: 4)
+        stack.addArrangedSubview(label(title, font: .systemFont(ofSize: 11, weight: .medium), color: .secondaryLabelColor, lines: 1))
+        stack.addArrangedSubview(label(value, font: .systemFont(ofSize: 13, weight: .semibold), color: .labelColor, lines: 0))
+        return stack
+    }
+
+    private func notice(icon: String, text: String) -> NSView {
+        let row = NSStackView()
+        row.orientation = .horizontal
+        row.alignment = .top
+        row.spacing = 8
+        row.translatesAutoresizingMaskIntoConstraints = false
+        let imageView = NSImageView(image: NSImage(systemSymbolName: icon, accessibilityDescription: nil) ?? NSImage())
+        imageView.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 12, weight: .semibold)
+        imageView.contentTintColor = .secondaryLabelColor
+        row.addArrangedSubview(imageView)
+        row.addArrangedSubview(label(text, font: .systemFont(ofSize: 12, weight: .semibold), color: .secondaryLabelColor, lines: 0))
+        return row
+    }
+
+    private func errorNotice(message: String, retry: @escaping () -> Void) -> NSView {
+        let row = NSStackView()
+        row.orientation = .horizontal
+        row.alignment = .centerY
+        row.spacing = 10
+        row.translatesAutoresizingMaskIntoConstraints = false
+        let textStack = verticalStack(spacing: 4)
+        textStack.addArrangedSubview(label("详情补全失败", font: .systemFont(ofSize: 12, weight: .semibold), color: .labelColor, lines: 1))
+        textStack.addArrangedSubview(label(message, font: .systemFont(ofSize: 11), color: .secondaryLabelColor, lines: 2))
+        row.addArrangedSubview(textStack)
+        row.addArrangedSubview(spacer())
+        let button = ClosureButton(title: "重试", actionHandler: retry)
+        button.bezelStyle = .rounded
+        row.addArrangedSubview(button)
+        return row
+    }
+
+    private func validationPill(severity: SteamWorkshopWebValidationSeverity, levelTitle: String?, message: String) -> NSView {
+        let row = NSStackView()
+        row.orientation = .horizontal
+        row.alignment = .top
+        row.spacing = 8
+        row.edgeInsets = NSEdgeInsets(top: 9, left: 10, bottom: 9, right: 10)
+        row.translatesAutoresizingMaskIntoConstraints = false
+        row.wantsLayer = true
+        let tint = validationTint(severity)
+        row.layer?.cornerRadius = 10
+        row.layer?.backgroundColor = tint.withAlphaComponent(0.10).cgColor
+        row.layer?.borderColor = tint.withAlphaComponent(0.20).cgColor
+        row.layer?.borderWidth = 0.7
+
+        let iconName: String
+        switch severity {
+        case .error: iconName = "xmark.octagon.fill"
+        case .warning: iconName = "exclamationmark.triangle.fill"
+        case .info: iconName = "info.circle.fill"
+        }
+        let icon = NSImageView(image: NSImage(systemSymbolName: iconName, accessibilityDescription: nil) ?? NSImage())
+        icon.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 11, weight: .semibold)
+        icon.contentTintColor = tint
+        row.addArrangedSubview(icon)
+        let textStack = verticalStack(spacing: 4)
+        if let levelTitle, !levelTitle.isEmpty {
+            textStack.addArrangedSubview(label(levelTitle, font: .systemFont(ofSize: 10, weight: .semibold), color: tint, lines: 1))
+        }
+        textStack.addArrangedSubview(label(message, font: .systemFont(ofSize: 12), color: .labelColor, lines: 0))
+        row.addArrangedSubview(textStack)
+        return row
+    }
+
+    private func validationTint(_ severity: SteamWorkshopWebValidationSeverity) -> NSColor {
+        switch severity {
+        case .error: return .systemRed
+        case .warning: return .systemOrange
+        case .info: return .secondaryLabelColor
+        }
+    }
+
+    private func footerButton(title: String, symbolName: String, kind: SteamWorkshopDetailFooterButton.Kind, target: AnyObject, action: Selector) -> SteamWorkshopDetailFooterButton {
+        SteamWorkshopDetailFooterButton(title: title, image: NSImage(systemSymbolName: symbolName, accessibilityDescription: title), kind: kind, target: target, action: action)
+    }
+
+    private func footerIconButton(symbolName: String, help: String, action: Selector) -> SteamWorkshopDetailFooterButton {
+        let button = SteamWorkshopDetailFooterButton(title: "", image: NSImage(systemSymbolName: symbolName, accessibilityDescription: help), kind: .secondary, target: self, action: action)
+        button.toolTip = help
+        button.setAccessibilityLabel(help)
+        return button
+    }
+
+    private func textField(_ value: String, placeholder: String, target: AnyObject, action: Selector) -> NSTextField {
+        let field = NSTextField(string: value)
+        field.placeholderString = placeholder
+        field.target = target
+        field.action = action
+        field.translatesAutoresizingMaskIntoConstraints = false
+        retainActionTarget(target as! WebPropertyActionTarget, for: field)
+        return field
+    }
+
+    private func textValue(_ value: SteamWorkshopWebPropertyValue, definition: SteamWorkshopWebPropertyDefinition) -> String {
+        if let stringValue = value.stringValue { return stringValue }
+        if let numberValue = value.numberValue { return formattedNumber(numberValue, allowsFractional: true, precision: definition.fractionalPrecision) }
+        if let boolValue = value.boolValue { return boolValue ? "true" : "false" }
+        return ""
+    }
+
+    private func color(from raw: String) -> NSColor {
+        guard let components = SteamWorkshopService.parseWebColorComponents(from: raw) else {
+            return .black
+        }
+        return NSColor(
+            deviceRed: components.red,
+            green: components.green,
+            blue: components.blue,
+            alpha: 1
+        )
+    }
+
+    private func colorString(from color: NSColor) -> String {
+        let resolved = color.usingColorSpace(.deviceRGB) ?? .black
+        return String(
+            format: "%.6f %.6f %.6f",
+            resolved.redComponent,
+            resolved.greenComponent,
+            resolved.blueComponent
+        )
+    }
+
+    private func valueSummary(_ value: SteamWorkshopWebPropertyValue, definition: SteamWorkshopWebPropertyDefinition) -> String {
+        if let stringValue = value.stringValue { return SteamWorkshopService.normalizedWebDisplayText(stringValue) }
+        if let numberValue = value.numberValue { return formattedNumber(numberValue, allowsFractional: definition.allowsFractionalValues, precision: definition.fractionalPrecision) }
+        if let boolValue = value.boolValue { return boolValue ? "开" : "关" }
+        return "-"
+    }
+
+    private func propertyFootnote(definition: SteamWorkshopWebPropertyDefinition, visibleOptions: [SteamWorkshopWebPropertyOption]) -> String? {
+        switch definition.kind {
+        case .combo where !visibleOptions.isEmpty:
+            return "\(visibleOptions.count) options"
+        case .color:
+            return "Wallpaper Engine RGB string"
+        case .file:
+            return "Wallpaper Engine file path string"
+        case .directory:
+            if let mode = definition.directoryMode {
+                return "Wallpaper Engine directory path string  ·  mode \(mode)"
+            }
+            return "Wallpaper Engine directory path string"
+        case .slider, .label, .group, .toggle, .text, .unknown, .combo:
+            return nil
+        }
+    }
+
+    private func formattedNumber(_ value: Double, allowsFractional: Bool, precision: Int?) -> String {
+        if !allowsFractional {
+            return String(Int(value.rounded()))
+        }
+        let digits = max(precision ?? 2, 0)
+        return String(format: "%.\(digits)f", value)
+    }
+
+    private func normalizedSliderValue(_ value: Double, definition: SteamWorkshopWebPropertyDefinition) -> Double {
+        if definition.allowsFractionalValues {
+            let precision = SteamWorkshopService.effectiveWebSliderPrecision(for: definition) ?? 2
+            guard precision >= 0 else { return value }
+            let scale = pow(10.0, Double(precision))
+            return (value * scale).rounded() / scale
+        }
+        return value.rounded()
+    }
+
+    private func allowedContentTypes(for fileType: String?) -> [UTType] {
+        guard let normalized = fileType?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+              !normalized.isEmpty else { return [] }
+        switch normalized {
+        case "image": return [.image]
+        case "video": return [.movie, .video, .mpeg4Movie, .quickTimeMovie]
+        case "audio", "music": return [.audio, .mp3, .mpeg4Audio]
+        default: return []
+        }
+    }
+
+    private func sceneDiagnosticsRows(record: SteamWorkshopDownloadRecord, report: SceneDiagnosticsReport) -> [(String, String)] {
+        let capabilityProfile = report.capabilityProfile
+        let renderDescriptor = report.renderDescriptor
+        return [
+            ("入口", report.project?.entryPath ?? "未解析"),
+            ("资源数", "\(report.resourceIndex.resources.count)"),
+            ("对象数", "\(report.sceneDocument?.objectCount ?? 0)"),
+            ("effect", "\(report.sceneDocument?.effectCount ?? 0)"),
+            ("模型", "\(report.assetCatalog?.models.count ?? 0)"),
+            ("材质", "\(report.assetCatalog?.materials.count ?? 0)"),
+            ("材质 pass", "\(report.assetCatalog?.materialPassCount ?? 0)"),
+            ("shader 引用", "\(report.assetCatalog?.shaderReferences.count ?? 0)"),
+            ("资源引用", "\(report.sceneDocument?.referencedResourcePaths.count ?? 0)"),
+            ("引用命中", "\(report.resourceReferences?.resolvedCount ?? 0)"),
+            ("内置引用", "\(report.resourceReferences?.builtInReferenceCount ?? 0)"),
+            ("引用缺失", "\(report.resourceReferences?.missingReferences.count ?? 0)"),
+            ("scene.pkg", record.scenePackageURL == nil ? "缺失" : "已找到"),
+            ("PKGV 索引", "\(report.packageReport?.packageIndex?.entries.count ?? 0)"),
+            ("缓存解包", "\(report.packageReport?.discoveredPaths.count ?? 0)"),
+            ("shader blob", "\(report.resourceIndex.count(kind: .shaderBlob))"),
+            ("脚本", capabilityProfile?.hasScripts == true ? "有" : "无"),
+            ("粒子", capabilityProfile?.hasParticles == true ? "有" : "无"),
+            ("音频处理", capabilityProfile?.supportsAudioProcessing == true ? "声明支持" : "未声明"),
+            ("阻塞能力", capabilityProfile?.firstStageRendererGaps.joined(separator: "、") ?? "未解析"),
+            ("render layer", "\(renderDescriptor?.layers.count ?? 0)"),
+            ("root layer", "\(renderDescriptor?.rootLayerIDs.count ?? 0)"),
+            ("render order", renderDescriptor?.renderOrderPolicy ?? "未解析"),
+            ("render pass", "\(renderDescriptor?.materialPasses.count ?? 0)"),
+            ("effect pass", "\(report.sceneDocument?.objects.flatMap { $0.effects }.reduce(0) { $0 + $1.passes.count } ?? 0)"),
+            ("解释文件", report.interpretationFileURL?.lastPathComponent ?? report.interpretationFileError ?? "未生成"),
+            ("内联脚本", "\(report.sceneDocument?.objects.filter(\.hasInlineScript).count ?? 0)")
+        ]
+    }
+
+    private final class WebPropertyActionTarget: NSObject {
+        weak var view: AppKitSteamWorkshopItemDetailView?
+        let record: SteamWorkshopDownloadRecord
+        let definition: SteamWorkshopWebPropertyDefinition
+        let visibleOptions: [SteamWorkshopWebPropertyOption]
+
+        init(view: AppKitSteamWorkshopItemDetailView, record: SteamWorkshopDownloadRecord, definition: SteamWorkshopWebPropertyDefinition, visibleOptions: [SteamWorkshopWebPropertyOption] = []) {
+            self.view = view
+            self.record = record
+            self.definition = definition
+            self.visibleOptions = visibleOptions
+        }
+
+        @objc func toggleChanged(_ sender: NSButton) {
+            view?.updateWebProperty(.bool(sender.state == .on), definition: definition, record: record)
+        }
+
+        @objc func popupChanged(_ sender: NSPopUpButton) {
+            guard sender.indexOfSelectedItem >= 0, sender.indexOfSelectedItem < visibleOptions.count else { return }
+            view?.updateWebProperty(visibleOptions[sender.indexOfSelectedItem].value, definition: definition, record: record)
+        }
+
+        @objc func sliderChanged(_ sender: NSSlider) {
+            let normalized = view?.normalizedSliderValue(sender.doubleValue, definition: definition) ?? sender.doubleValue
+            view?.updateWebProperty(.number(normalized), definition: definition, record: record, preview: true)
+            if !sender.isHighlighted {
+                view?.updateWebProperty(.number(normalized), definition: definition, record: record)
             }
         }
-    }
 
-    private func footerTextButton(
-        symbolName: String,
-        title: String,
-        kind: SteamWorkshopFooterButtonKind,
-        disabled: Bool = false,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            HStack(spacing: 6) {
-                Image(systemName: symbolName)
-                    .font(.system(size: 14, weight: .semibold))
-                Text(title)
-                    .lineLimit(1)
+        @objc func textChanged(_ sender: NSTextField) {
+            if definition.kind == .slider, let value = Double(sender.stringValue) {
+                view?.updateWebProperty(.number(value), definition: definition, record: record)
+            } else {
+                view?.updateWebProperty(.string(sender.stringValue), definition: definition, record: record)
             }
-            .frame(maxWidth: .infinity)
-            .frame(height: 38)
         }
-        .buttonStyle(SteamWorkshopFooterButtonStyle(kind: kind))
-        .disabled(disabled)
+
+        @objc func colorChanged(_ sender: NSColorWell) {
+            guard let colorString = view?.colorString(from: sender.color) else { return }
+            view?.updateWebProperty(.string(colorString), definition: definition, record: record)
+        }
+
+        @objc func choosePath(_ sender: NSButton) {
+            let panel = NSOpenPanel()
+            let selectsDirectories = definition.kind == .directory
+            panel.canChooseFiles = !selectsDirectories
+            panel.canChooseDirectories = selectsDirectories
+            panel.allowsMultipleSelection = false
+            panel.resolvesAliases = true
+            panel.canCreateDirectories = selectsDirectories
+            panel.prompt = selectsDirectories ? "选择目录" : "选择文件"
+            if !selectsDirectories {
+                panel.allowedContentTypes = view?.allowedContentTypes(for: definition.fileType) ?? []
+            }
+            if panel.runModal() == .OK, let url = panel.url {
+                view?.updateWebProperty(.string(url.path), definition: definition, record: record)
+            }
+        }
+
+        @objc func clearPath(_ sender: NSButton) {
+            view?.updateWebProperty(.string(""), definition: definition, record: record)
+        }
+    }
+}
+
+private final class ClosureButton: NSButton {
+    private let actionHandler: () -> Void
+
+    init(title: String, actionHandler: @escaping () -> Void) {
+        self.actionHandler = actionHandler
+        super.init(frame: .zero)
+        self.title = title
+        target = self
+        action = #selector(runAction)
     }
 
-    private func footerIconButton(
-        symbolName: String,
-        help: String,
-        disabled: Bool = false,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            Image(systemName: symbolName)
-                .frame(width: 18, height: 18)
-                .frame(width: 46, height: 38)
-        }
-        .buttonStyle(SteamWorkshopFooterButtonStyle(kind: .secondary))
-        .help(help)
-        .accessibilityLabel(help)
-        .disabled(disabled)
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        nil
     }
 
+    @objc private func runAction() {
+        actionHandler()
+    }
+}
+
+private final class SteamWorkshopDetailFooterButton: NSButton {
+    enum Kind {
+        case primary
+        case secondary
+        case danger
+    }
+
+    private let kind: Kind
+    private let rawTitle: String
+    private let rawImage: NSImage?
+
+    init(title: String, image: NSImage?, kind: Kind, target: AnyObject?, action: Selector) {
+        self.kind = kind
+        self.rawTitle = title
+        self.rawImage = image
+        super.init(frame: .zero)
+        self.title = title
+        self.image = image
+        self.target = target
+        self.action = action
+        commonInit()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    override var isHighlighted: Bool {
+        didSet { updateAppearance() }
+    }
+
+    override var isEnabled: Bool {
+        didSet { updateAppearance() }
+    }
+
+    private func commonInit() {
+        isBordered = false
+        bezelStyle = .regularSquare
+        imagePosition = title.isEmpty ? .imageOnly : .imageLeading
+        imageScaling = .scaleProportionallyDown
+        font = .systemFont(ofSize: 13, weight: .semibold)
+        alignment = .center
+        imageHugsTitle = true
+        wantsLayer = true
+        layer?.cornerRadius = 10
+        setButtonType(.momentaryPushIn)
+        updateAppearance()
+    }
+
+    private func updateAppearance() {
+        let enabledAlpha: CGFloat = isEnabled ? 1 : 0.45
+        let pressedFactor: CGFloat = isHighlighted ? 0.88 : 1
+        let fill: NSColor
+        let text: NSColor
+        let border: NSColor
+        switch kind {
+        case .primary:
+            fill = NSColor.systemBlue.withAlphaComponent(enabledAlpha * pressedFactor)
+            text = .white
+            border = NSColor.systemBlue.withAlphaComponent(0.42 * enabledAlpha)
+        case .secondary:
+            fill = NSColor.black.withAlphaComponent(0.14 * enabledAlpha * pressedFactor)
+            text = NSColor.labelColor.withAlphaComponent(enabledAlpha)
+            border = NSColor.white.withAlphaComponent(0.16 * enabledAlpha)
+        case .danger:
+            fill = NSColor.systemRed.withAlphaComponent(0.68 * enabledAlpha * pressedFactor)
+            text = .white
+            border = NSColor.systemRed.withAlphaComponent(0.24 * enabledAlpha)
+        }
+        contentTintColor = text
+        image = rawImage?.withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: rawTitle.isEmpty ? 17 : 14, weight: .semibold))
+        attributedTitle = NSAttributedString(
+            string: rawTitle,
+            attributes: [
+                .font: NSFont.systemFont(ofSize: 13, weight: .semibold),
+                .foregroundColor: text,
+                .kern: 0
+            ]
+        )
+        layer?.backgroundColor = fill.cgColor
+        layer?.borderColor = border.cgColor
+        layer?.borderWidth = 0.7
+    }
+}
+
+private final class SteamWorkshopDetailFadingScrollView: NSScrollView {
+    private let maskLayer = CAGradientLayer()
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        maskLayer.colors = [
+            NSColor.clear.cgColor,
+            NSColor.black.cgColor,
+            NSColor.black.cgColor,
+            NSColor.clear.cgColor
+        ]
+        maskLayer.locations = [0, 0.04, 0.93, 1]
+        maskLayer.startPoint = CGPoint(x: 0.5, y: 0)
+        maskLayer.endPoint = CGPoint(x: 0.5, y: 1)
+        layer?.mask = maskLayer
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+    }
+
+    override func layout() {
+        super.layout()
+        maskLayer.frame = bounds
+    }
+}
+
+private extension WebRuntimeDiagnosticEvent {
+    var validationSeverity: SteamWorkshopWebValidationSeverity {
+        switch severity {
+        case .error:
+            return .error
+        case .warning:
+            return .warning
+        case .info:
+            return .info
+        }
+    }
+
+    var displayMessage: String {
+        let urlText = url.map { "  ·  \($0)" } ?? ""
+        return "\(message)\(urlText)"
+    }
 }

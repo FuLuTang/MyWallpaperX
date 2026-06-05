@@ -10,7 +10,7 @@ import SwiftUI
 final class AppKitSteamWorkshopDownloadsView: NSView {
     private let service = SteamWorkshopService.shared
     private var cancellables = Set<AnyCancellable>()
-    private var inspectorHostingView: NSHostingView<SteamWorkshopItemDetailSheet>?
+    private var inspectorDetailView: AppKitSteamWorkshopItemDetailView?
     private var loginHostingView: NSHostingView<SteamWorkshopLoginOverlay>?
     private var lastRequestedCardID: String?
     private var visibleCardID: String?
@@ -198,26 +198,26 @@ final class AppKitSteamWorkshopDownloadsView: NSView {
     }
 
     private func installInspectorContent(for item: SteamWorkshopBrowserItem) {
-        let hostingView: NSHostingView<SteamWorkshopItemDetailSheet>
-        if let existing = inspectorHostingView {
-            existing.rootView = SteamWorkshopItemDetailSheet(item: item)
-            hostingView = existing
+        let detailView: AppKitSteamWorkshopItemDetailView
+        if let existing = inspectorDetailView {
+            existing.configure(item: item)
+            detailView = existing
         } else {
-            let created = NSHostingView(rootView: SteamWorkshopItemDetailSheet(item: item))
-            inspectorHostingView = created
-            hostingView = created
+            let created = AppKitSteamWorkshopItemDetailView(item: item)
+            inspectorDetailView = created
+            detailView = created
         }
 
         InspectorHostActions.postMount(
             module: .steamWorkshop,
             cardID: makePresentation(for: item).cardID,
-            hostedView: hostingView
+            hostedView: detailView
         )
     }
 
     private func removeInspectorContent() {
-        inspectorHostingView?.removeFromSuperview()
-        inspectorHostingView = nil
+        inspectorDetailView?.removeFromSuperview()
+        inspectorDetailView = nil
     }
 
     private func syncLoginOverlay(isPresented: Bool) {
