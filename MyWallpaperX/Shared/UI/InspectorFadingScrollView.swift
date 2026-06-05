@@ -9,30 +9,23 @@ import QuartzCore
 class InspectorFadingScrollView: NSScrollView {
     private let fadeMask = CAGradientLayer()
     private let fadeRatio: CGFloat
-    private var boundsObserver: NSObjectProtocol?
 
-    init(fadeRatio: CGFloat = 0.025) {
+    init(fadeRatio: CGFloat = 0.035) {
         self.fadeRatio = fadeRatio
         super.init(frame: .zero)
         setupFadeMask()
     }
 
     override init(frame frameRect: NSRect) {
-        self.fadeRatio = 0.025
+        self.fadeRatio = 0.035
         super.init(frame: frameRect)
         setupFadeMask()
     }
 
     required init?(coder: NSCoder) {
-        self.fadeRatio = 0.025
+        self.fadeRatio = 0.035
         super.init(coder: coder)
         setupFadeMask()
-    }
-
-    deinit {
-        if let boundsObserver {
-            NotificationCenter.default.removeObserver(boundsObserver)
-        }
     }
 
     override var documentView: NSView? {
@@ -55,53 +48,24 @@ class InspectorFadingScrollView: NSScrollView {
     private func setupFadeMask() {
         wantsLayer = true
         contentView.wantsLayer = true
-        contentView.postsBoundsChangedNotifications = true
         fadeMask.startPoint = CGPoint(x: 0.5, y: 0)
         fadeMask.endPoint = CGPoint(x: 0.5, y: 1)
+        fadeMask.colors = [
+            NSColor.clear.cgColor,
+            NSColor.black.cgColor,
+            NSColor.black.cgColor,
+            NSColor.clear.cgColor
+        ]
         layer?.mask = fadeMask
-        boundsObserver = NotificationCenter.default.addObserver(
-            forName: NSView.boundsDidChangeNotification,
-            object: contentView,
-            queue: .main
-        ) { [weak self] _ in
-            self?.updateFadeMask()
-        }
         updateFadeMask()
     }
 
     private func updateFadeMask() {
-        let shouldFadeTop = canScrollTowardTop()
-        let shouldFadeBottom = canScrollTowardBottom()
-        let lowerOpaqueLocation: NSNumber = shouldFadeBottom ? NSNumber(value: Double(fadeRatio)) : 0
-        let upperOpaqueLocation: NSNumber = shouldFadeTop ? NSNumber(value: Double(1 - fadeRatio)) : 1
-        fadeMask.colors = [
-            (shouldFadeBottom ? NSColor.clear : NSColor.black).cgColor,
-            NSColor.black.cgColor,
-            NSColor.black.cgColor,
-            (shouldFadeTop ? NSColor.clear : NSColor.black).cgColor
+        fadeMask.locations = [
+            0,
+            NSNumber(value: Double(fadeRatio)),
+            NSNumber(value: Double(1 - fadeRatio)),
+            1
         ]
-        fadeMask.locations = [0, lowerOpaqueLocation, upperOpaqueLocation, 1]
-    }
-
-    private func canScrollTowardTop() -> Bool {
-        guard let documentView else { return false }
-        let visible = contentView.bounds
-        let documentBounds = documentView.bounds
-        guard documentBounds.height > visible.height + 1 else { return false }
-        if documentView.isFlipped {
-            return visible.minY > documentBounds.minY + 1
-        }
-        return visible.maxY < documentBounds.maxY - 1
-    }
-
-    private func canScrollTowardBottom() -> Bool {
-        guard let documentView else { return false }
-        let visible = contentView.bounds
-        let documentBounds = documentView.bounds
-        guard documentBounds.height > visible.height + 1 else { return false }
-        if documentView.isFlipped {
-            return visible.maxY < documentBounds.maxY - 1
-        }
-        return visible.minY > documentBounds.minY + 1
     }
 }

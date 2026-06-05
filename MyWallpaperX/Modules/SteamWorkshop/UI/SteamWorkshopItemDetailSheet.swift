@@ -8,6 +8,7 @@ final class AppKitSteamWorkshopItemDetailView: NSView {
         static let previewHeight: CGFloat = 156
         static let cornerRadius: CGFloat = 18
         static let contentSpacing: CGFloat = 16
+        static let contentTopInset: CGFloat = 22
         static let footerHeight: CGFloat = InspectorFooterMetrics.height
     }
 
@@ -183,7 +184,7 @@ final class AppKitSteamWorkshopItemDetailView: NSView {
         contentStack.orientation = .vertical
         contentStack.alignment = .leading
         contentStack.spacing = Metrics.contentSpacing
-        contentStack.edgeInsets = NSEdgeInsets(top: 10, left: 0, bottom: 0, right: 0)
+        contentStack.edgeInsets = NSEdgeInsets(top: Metrics.contentTopInset, left: 0, bottom: 0, right: 0)
         contentStack.translatesAutoresizingMaskIntoConstraints = false
 
         documentContainer.translatesAutoresizingMaskIntoConstraints = false
