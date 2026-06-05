@@ -640,7 +640,7 @@ final class AppKitSteamWorkshopItemDetailView: NSView {
         ])
     }
 
-    private func primaryFooterButton() -> SteamWorkshopDetailFooterButton {
+    private func primaryFooterButton() -> InspectorFooterButton {
         if service.isDownloading(itemID: currentItem.id) || service.isQueuedForDownload(itemID: currentItem.id) {
             return footerButton(
                 title: service.isQueuedForDownload(itemID: currentItem.id) ? "取消队列" : "取消下载",
@@ -1070,12 +1070,12 @@ final class AppKitSteamWorkshopItemDetailView: NSView {
         }
     }
 
-    private func footerButton(title: String, symbolName: String, kind: SteamWorkshopDetailFooterButton.Kind, target: AnyObject, action: Selector) -> SteamWorkshopDetailFooterButton {
-        SteamWorkshopDetailFooterButton(title: title, image: NSImage(systemSymbolName: symbolName, accessibilityDescription: title), kind: kind, target: target, action: action)
+    private func footerButton(title: String, symbolName: String, kind: InspectorFooterButtonKind, target: AnyObject, action: Selector) -> InspectorFooterButton {
+        InspectorFooterButton(title: title, image: NSImage(systemSymbolName: symbolName, accessibilityDescription: title), kind: kind, target: target, action: action)
     }
 
-    private func footerIconButton(symbolName: String, help: String, action: Selector) -> SteamWorkshopDetailFooterButton {
-        let button = SteamWorkshopDetailFooterButton(title: "", image: NSImage(systemSymbolName: symbolName, accessibilityDescription: help), kind: .secondary, target: self, action: action)
+    private func footerIconButton(symbolName: String, help: String, action: Selector) -> InspectorFooterButton {
+        let button = InspectorFooterButton(title: "", image: NSImage(systemSymbolName: symbolName, accessibilityDescription: help), kind: .secondary, target: self, action: action)
         button.toolTip = help
         button.setAccessibilityLabel(help)
         return button
@@ -1292,101 +1292,6 @@ private final class ClosureButton: NSButton {
 
     @objc private func runAction() {
         actionHandler()
-    }
-}
-
-private final class SteamWorkshopDetailFooterButton: NSButton {
-    enum Kind {
-        case primary
-        case secondary
-        case danger
-    }
-
-    private let kind: Kind
-    private let rawTitle: String
-    private let rawImage: NSImage?
-
-    init(title: String, image: NSImage?, kind: Kind, target: AnyObject?, action: Selector) {
-        self.kind = kind
-        self.rawTitle = title
-        self.rawImage = image
-        super.init(frame: .zero)
-        self.title = title
-        self.image = image
-        self.target = target
-        self.action = action
-        commonInit()
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        nil
-    }
-
-    override var isHighlighted: Bool {
-        didSet { updateAppearance() }
-    }
-
-    override var isEnabled: Bool {
-        didSet { updateAppearance() }
-    }
-
-    private func commonInit() {
-        isBordered = false
-        bezelStyle = .regularSquare
-        controlSize = .large
-        imagePosition = title.isEmpty ? .imageOnly : .imageLeading
-        imageScaling = .scaleProportionallyDown
-        font = .systemFont(ofSize: 13, weight: .semibold)
-        alignment = .center
-        imageHugsTitle = true
-        wantsLayer = true
-        layer?.cornerRadius = 10
-        setButtonType(.momentaryPushIn)
-        updateAppearance()
-    }
-
-    override var intrinsicContentSize: NSSize {
-        let base = super.intrinsicContentSize
-        return NSSize(
-            width: rawTitle.isEmpty ? InspectorFooterMetrics.height : max(base.width, 96),
-            height: InspectorFooterMetrics.height
-        )
-    }
-
-    private func updateAppearance() {
-        let enabledAlpha: CGFloat = isEnabled ? 1 : 0.45
-        let pressedFactor: CGFloat = isHighlighted ? 0.88 : 1
-        let fill: NSColor
-        let text: NSColor
-        let border: NSColor
-        switch kind {
-        case .primary:
-            fill = NSColor.systemBlue.withAlphaComponent(enabledAlpha * pressedFactor)
-            text = .white
-            border = NSColor.systemBlue.withAlphaComponent(0.42 * enabledAlpha)
-        case .secondary:
-            fill = NSColor.black.withAlphaComponent(0.14 * enabledAlpha * pressedFactor)
-            text = NSColor.labelColor.withAlphaComponent(enabledAlpha)
-            border = NSColor.white.withAlphaComponent(0.16 * enabledAlpha)
-        case .danger:
-            fill = NSColor.systemRed.withAlphaComponent(0.68 * enabledAlpha * pressedFactor)
-            text = .white
-            border = NSColor.systemRed.withAlphaComponent(0.24 * enabledAlpha)
-        }
-        contentTintColor = text
-        image = rawImage?.withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: rawTitle.isEmpty ? 17 : 14, weight: .semibold))
-        attributedTitle = NSAttributedString(
-            string: rawTitle,
-            attributes: [
-                .font: NSFont.systemFont(ofSize: 13, weight: .semibold),
-                .foregroundColor: text,
-                .kern: 0
-            ]
-        )
-        layer?.backgroundColor = fill.cgColor
-        layer?.borderColor = border.cgColor
-        layer?.borderWidth = 0.7
     }
 }
 

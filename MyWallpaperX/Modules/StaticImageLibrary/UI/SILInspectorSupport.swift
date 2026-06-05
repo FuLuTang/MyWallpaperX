@@ -133,75 +133,15 @@ enum SILInspectorViews {
         target: AnyObject?,
         action: Selector
     ) -> NSButton {
-        let button = SILInspectorFooterButton(
+        let button = InspectorFooterButton(
             title: title,
             image: NSImage(systemSymbolName: symbolName, accessibilityDescription: title),
+            kind: .secondary,
             target: target,
             action: action
         )
         button.translatesAutoresizingMaskIntoConstraints = false
         return button
-    }
-}
-
-private final class SILInspectorFooterButton: NSButton {
-    init(title: String, image: NSImage?, target: AnyObject?, action: Selector) {
-        super.init(frame: .zero)
-        self.title = title
-        self.image = image
-        self.target = target
-        self.action = action
-        setup()
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        nil
-    }
-
-    override var isHighlighted: Bool {
-        didSet { updateStyle() }
-    }
-
-    override var isEnabled: Bool {
-        didSet { updateStyle() }
-    }
-
-    private func setup() {
-        isBordered = false
-        imagePosition = .imageLeading
-        imageScaling = .scaleProportionallyDown
-        imageHugsTitle = true
-        font = .systemFont(ofSize: 13, weight: .semibold)
-        wantsLayer = true
-        layer?.cornerRadius = 10
-        layer?.borderWidth = 0.7
-        translatesAutoresizingMaskIntoConstraints = false
-        updateStyle()
-    }
-
-    private func updateStyle() {
-        let enabledAlpha: CGFloat = isEnabled ? 1 : 0.45
-        let isDarkMode = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-        let textColor = NSColor.labelColor.withAlphaComponent(enabledAlpha)
-        attributedTitle = NSAttributedString(
-            string: title,
-            attributes: [
-                .font: NSFont.systemFont(ofSize: 13, weight: .semibold),
-                .foregroundColor: textColor
-            ]
-        )
-        contentTintColor = textColor
-        let pressedFactor: CGFloat = isHighlighted ? 0.92 : 1
-        layer?.backgroundColor = (isDarkMode ? NSColor.black : NSColor.controlBackgroundColor)
-            .withAlphaComponent((isDarkMode ? 0.26 : 0.78) * enabledAlpha * pressedFactor).cgColor
-        layer?.borderColor = (isDarkMode ? NSColor.white : NSColor.black)
-            .withAlphaComponent((isDarkMode ? 0.16 : 0.10) * enabledAlpha).cgColor
-    }
-
-    override func viewDidChangeEffectiveAppearance() {
-        super.viewDidChangeEffectiveAppearance()
-        updateStyle()
     }
 }
 

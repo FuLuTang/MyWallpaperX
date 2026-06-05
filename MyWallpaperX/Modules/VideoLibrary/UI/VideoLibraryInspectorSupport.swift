@@ -156,14 +156,14 @@ enum VideoLibraryInspectorViews {
         symbolName: String,
         target: AnyObject?,
         action: Selector,
-        kind: VideoLibraryInspectorFooterButtonKind = .secondary
+        kind: InspectorFooterButtonKind = .secondary
     ) -> NSButton {
-        let button = VideoLibraryInspectorFooterButton(
+        let button = InspectorFooterButton(
             title: title,
             image: NSImage(systemSymbolName: symbolName, accessibilityDescription: title),
+            kind: kind,
             target: target,
-            action: action,
-            kind: kind
+            action: action
         )
         button.translatesAutoresizingMaskIntoConstraints = false
         return button
@@ -175,100 +175,17 @@ enum VideoLibraryInspectorViews {
         target: AnyObject?,
         action: Selector
     ) -> NSButton {
-        let button = VideoLibraryInspectorFooterButton(
+        let button = InspectorFooterButton(
             title: "",
             image: NSImage(systemSymbolName: symbolName, accessibilityDescription: title),
+            kind: .secondary,
             target: target,
-            action: action,
-            kind: .secondary
+            action: action
         )
         button.toolTip = title
         button.setAccessibilityLabel(title)
         button.translatesAutoresizingMaskIntoConstraints = false
         return button
-    }
-}
-
-enum VideoLibraryInspectorFooterButtonKind {
-    case primary
-    case secondary
-}
-
-private final class VideoLibraryInspectorFooterButton: NSButton {
-    private let kind: VideoLibraryInspectorFooterButtonKind
-
-    init(title: String, image: NSImage?, target: AnyObject?, action: Selector, kind: VideoLibraryInspectorFooterButtonKind) {
-        self.kind = kind
-        super.init(frame: .zero)
-        self.title = title
-        self.image = image
-        self.target = target
-        self.action = action
-        setup()
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        nil
-    }
-
-    override var isHighlighted: Bool {
-        didSet { updateStyle() }
-    }
-
-    override var isEnabled: Bool {
-        didSet { updateStyle() }
-    }
-
-    private func setup() {
-        isBordered = false
-        imagePosition = title.isEmpty ? .imageOnly : .imageLeading
-        imageScaling = .scaleProportionallyDown
-        imageHugsTitle = true
-        font = .systemFont(ofSize: 13, weight: .semibold)
-        wantsLayer = true
-        layer?.cornerRadius = 10
-        layer?.borderWidth = 0.7
-        translatesAutoresizingMaskIntoConstraints = false
-        updateStyle()
-    }
-
-    private func updateStyle() {
-        let enabledAlpha: CGFloat = isEnabled ? 1 : 0.45
-        let isDarkMode = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-        let pressedFactor: CGFloat = isHighlighted ? 0.92 : 1
-        let textColor: NSColor
-        let fillColor: NSColor
-        let borderColor: NSColor
-
-        switch kind {
-        case .primary:
-            textColor = .white.withAlphaComponent(enabledAlpha)
-            fillColor = .systemBlue.withAlphaComponent((isDarkMode ? 0.95 : 0.88) * enabledAlpha * pressedFactor)
-            borderColor = .systemBlue.withAlphaComponent(0.42 * enabledAlpha)
-        case .secondary:
-            textColor = .labelColor.withAlphaComponent(enabledAlpha)
-            fillColor = (isDarkMode ? NSColor.black : NSColor.controlBackgroundColor)
-                .withAlphaComponent((isDarkMode ? 0.26 : 0.78) * enabledAlpha * pressedFactor)
-            borderColor = (isDarkMode ? NSColor.white : NSColor.black)
-                .withAlphaComponent((isDarkMode ? 0.16 : 0.10) * enabledAlpha)
-        }
-
-        attributedTitle = NSAttributedString(
-            string: title,
-            attributes: [
-                .font: NSFont.systemFont(ofSize: 13, weight: .semibold),
-                .foregroundColor: textColor
-            ]
-        )
-        contentTintColor = textColor
-        layer?.backgroundColor = fillColor.cgColor
-        layer?.borderColor = borderColor.cgColor
-    }
-
-    override func viewDidChangeEffectiveAppearance() {
-        super.viewDidChangeEffectiveAppearance()
-        updateStyle()
     }
 }
 
