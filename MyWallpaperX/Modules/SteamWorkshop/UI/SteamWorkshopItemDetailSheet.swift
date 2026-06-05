@@ -8,7 +8,7 @@ final class AppKitSteamWorkshopItemDetailView: NSView {
         static let previewHeight: CGFloat = 156
         static let cornerRadius: CGFloat = 18
         static let contentSpacing: CGFloat = 16
-        static let footerHeight: CGFloat = 38
+        static let footerHeight: CGFloat = InspectorFooterMetrics.height
     }
 
     private let service = SteamWorkshopService.shared

@@ -338,13 +338,14 @@ final class VideoLibraryInspectorView: NSView {
             $0.setContentCompressionResistancePriority(.required, for: .horizontal)
         }
         [setButton, revealButton, favoriteButton, tagButton].forEach {
-            $0.heightAnchor.constraint(equalToConstant: 38).isActive = true
+            $0.heightAnchor.constraint(equalToConstant: InspectorFooterMetrics.height).isActive = true
         }
         [favoriteButton, tagButton].forEach {
             $0.widthAnchor.constraint(equalToConstant: 46).isActive = true
         }
 
         NSLayoutConstraint.activate([
+            stack.heightAnchor.constraint(equalToConstant: InspectorFooterMetrics.height),
             textGroup.leadingAnchor.constraint(equalTo: stack.leadingAnchor),
             textGroup.topAnchor.constraint(equalTo: stack.topAnchor),
             textGroup.bottomAnchor.constraint(equalTo: stack.bottomAnchor),

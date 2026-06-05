@@ -253,6 +253,7 @@ final class SILInspectorView: NSView {
         stack.addArrangedSubview(buttonGroup)
 
         NSLayoutConstraint.activate([
+            stack.heightAnchor.constraint(equalToConstant: InspectorFooterMetrics.height),
             buttonGroup.leadingAnchor.constraint(equalTo: stack.leadingAnchor),
             buttonGroup.trailingAnchor.constraint(equalTo: stack.trailingAnchor),
             buttonGroup.topAnchor.constraint(equalTo: stack.topAnchor),
@@ -261,13 +262,13 @@ final class SILInspectorView: NSView {
             revealButton.leadingAnchor.constraint(equalTo: buttonGroup.leadingAnchor),
             revealButton.topAnchor.constraint(equalTo: buttonGroup.topAnchor),
             revealButton.bottomAnchor.constraint(equalTo: buttonGroup.bottomAnchor),
-            revealButton.heightAnchor.constraint(equalToConstant: 38),
+            revealButton.heightAnchor.constraint(equalToConstant: InspectorFooterMetrics.height),
 
             tagButton.leadingAnchor.constraint(equalTo: revealButton.trailingAnchor, constant: 6),
             tagButton.trailingAnchor.constraint(equalTo: buttonGroup.trailingAnchor),
             tagButton.topAnchor.constraint(equalTo: buttonGroup.topAnchor),
             tagButton.bottomAnchor.constraint(equalTo: buttonGroup.bottomAnchor),
-            tagButton.heightAnchor.constraint(equalToConstant: 38),
+            tagButton.heightAnchor.constraint(equalToConstant: InspectorFooterMetrics.height),
             revealButton.widthAnchor.constraint(equalTo: tagButton.widthAnchor)
         ])
         return stack

@@ -306,17 +306,17 @@ final class OnlineLibraryDownloadsInspectorView: NSView {
         footer.addSubview(revealButton)
 
         NSLayoutConstraint.activate([
-            footer.heightAnchor.constraint(equalToConstant: 38),
+            footer.heightAnchor.constraint(equalToConstant: InspectorFooterMetrics.height),
             setButton.leadingAnchor.constraint(equalTo: footer.leadingAnchor),
             setButton.topAnchor.constraint(equalTo: footer.topAnchor),
             setButton.bottomAnchor.constraint(equalTo: footer.bottomAnchor),
-            setButton.heightAnchor.constraint(equalToConstant: 38),
+            setButton.heightAnchor.constraint(equalToConstant: InspectorFooterMetrics.height),
 
             revealButton.leadingAnchor.constraint(equalTo: setButton.trailingAnchor, constant: 6),
             revealButton.trailingAnchor.constraint(equalTo: footer.trailingAnchor),
             revealButton.topAnchor.constraint(equalTo: footer.topAnchor),
             revealButton.bottomAnchor.constraint(equalTo: footer.bottomAnchor),
-            revealButton.heightAnchor.constraint(equalToConstant: 38)
+            revealButton.heightAnchor.constraint(equalToConstant: InspectorFooterMetrics.height)
         ])
         revealButton.widthAnchor.constraint(equalTo: setButton.widthAnchor).isActive = true
         return footer
