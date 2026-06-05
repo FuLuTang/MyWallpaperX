@@ -27,6 +27,7 @@ final class AppKitSteamWorkshopBrowserContainerView: NSView, ModuleFocusable, NS
     private var pendingFooterSnapshotRefresh = false
     private var moduleActivationObserver: NSObjectProtocol?
     private var lastPrioritizedVisibleIDs: [String] = []
+    private var pendingLayoutInvalidation = false
 
     private let scrollView: NSScrollView = {
         let scrollView = NSScrollView()
@@ -381,7 +382,17 @@ final class AppKitSteamWorkshopBrowserContainerView: NSView, ModuleFocusable, NS
 
         guard flowLayout.itemSize != newSize else { return }
         flowLayout.itemSize = newSize
-        collectionView.collectionViewLayout?.invalidateLayout()
+        scheduleLayoutInvalidation()
+    }
+
+    private func scheduleLayoutInvalidation() {
+        guard pendingLayoutInvalidation == false else { return }
+        pendingLayoutInvalidation = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.pendingLayoutInvalidation = false
+            self.collectionView.collectionViewLayout?.invalidateLayout()
+        }
     }
 
     private func restoreScrollOffset(_ offsetY: CGFloat) {

@@ -105,6 +105,7 @@ final class AppKitSteamWorkshopDownloadsContainerView: NSView, ModuleFocusable {
     private var currentColumnCount = 1
     private var moduleActivationObserver: NSObjectProtocol?
     private var isApplyingSelectionSnapshot = false
+    private var pendingLayoutInvalidation = false
 
     private let scrollView: NSScrollView = {
         let s = NSScrollView()
@@ -364,7 +365,17 @@ final class AppKitSteamWorkshopDownloadsContainerView: NSView, ModuleFocusable {
         let newSize = metrics.itemSize
         guard flowLayout.itemSize != newSize else { return }
         flowLayout.itemSize = newSize
-        collectionView.collectionViewLayout?.invalidateLayout()
+        scheduleLayoutInvalidation()
+    }
+
+    private func scheduleLayoutInvalidation() {
+        guard pendingLayoutInvalidation == false else { return }
+        pendingLayoutInvalidation = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.pendingLayoutInvalidation = false
+            self.collectionView.collectionViewLayout?.invalidateLayout()
+        }
     }
 
     private func ensureKeyboardFocus() {
