@@ -28,6 +28,7 @@ final class AppKitSteamWorkshopBrowserContainerView: NSView, ModuleFocusable, NS
     private var moduleActivationObserver: NSObjectProtocol?
     private var lastPrioritizedVisibleIDs: [String] = []
     private var pendingLayoutInvalidation = false
+    private var lastNonZeroLayoutWidth: CGFloat = 0
 
     private let scrollView: NSScrollView = {
         let scrollView = NSScrollView()
@@ -112,6 +113,10 @@ final class AppKitSteamWorkshopBrowserContainerView: NSView, ModuleFocusable, NS
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        if window != nil {
+            layoutSubtreeIfNeeded()
+            updateLayoutItemSize(invalidateImmediately: true)
+        }
         syncVisiblePreviewAnimationStates(isVisible: window != nil)
     }
 
@@ -210,6 +215,7 @@ final class AppKitSteamWorkshopBrowserContainerView: NSView, ModuleFocusable, NS
     }
 
     private func applyItems(_ items: [SteamWorkshopBrowserItem]) {
+        updateLayoutItemSize(invalidateImmediately: true)
         let previousItemsByID = itemsByID
         let previousOrderedIDs = orderedIDs
         let previousFooterState = footerState
@@ -381,9 +387,10 @@ final class AppKitSteamWorkshopBrowserContainerView: NSView, ModuleFocusable, NS
         service.prioritizeVisibleBrowserItemIDs(prioritized)
     }
 
-    private func updateLayoutItemSize() {
+    private func updateLayoutItemSize(invalidateImmediately: Bool = false) {
+        let layoutWidth = resolvedLayoutWidth()
         let metrics = SteamWorkshopGridLayoutSupport.metrics(
-            boundsWidth: bounds.width,
+            boundsWidth: layoutWidth,
             zoomOffset: service.zoomOffset,
             hoverScale: AppKitSteamWorkshopBrowserItem.hoverScale,
             sectionInset: flowLayout.sectionInset
@@ -394,7 +401,29 @@ final class AppKitSteamWorkshopBrowserContainerView: NSView, ModuleFocusable, NS
 
         guard flowLayout.itemSize != newSize else { return }
         flowLayout.itemSize = newSize
-        scheduleLayoutInvalidation()
+        if invalidateImmediately {
+            collectionView.collectionViewLayout?.invalidateLayout()
+        } else {
+            scheduleLayoutInvalidation()
+        }
+    }
+
+    private func resolvedLayoutWidth() -> CGFloat {
+        let candidates = [
+            bounds.width,
+            scrollView.bounds.width,
+            scrollView.contentView.bounds.width,
+            superview?.bounds.width ?? 0,
+            window?.contentLayoutRect.width ?? 0
+        ]
+        if let width = candidates.first(where: { $0.isFinite && $0 > 1 }) {
+            lastNonZeroLayoutWidth = width
+            return width
+        }
+        if lastNonZeroLayoutWidth > 1 {
+            return lastNonZeroLayoutWidth
+        }
+        return 900
     }
 
     private func scheduleLayoutInvalidation() {
