@@ -20,6 +20,7 @@ nonisolated final class ThumbnailCache: @unchecked Sendable {
     private let decodeQueue: DispatchQueue
     private let imageCache = NSCache<NSString, NSImage>()
     private var inFlight: [String: [(NSImage?) -> Void]] = [:]
+    private var rawDataPrefetchInFlight = Set<String>()
     private let lock = NSLock()
 
     /// 磁盘缓存目录
@@ -276,6 +277,40 @@ nonisolated final class ThumbnailCache: @unchecked Sendable {
         }
     }
 
+    /// 异步预取原始图片数据，只写入磁盘，不解码进内存缓存。
+    /// 适合可见区域外的预热，避免 GIF 等资源在后台产生持续动画/解码压力。
+    func prefetchRawDataAsync(
+        forKey key: String,
+        loader: @escaping @Sendable () async -> Data?
+    ) {
+        guard imageCache.object(forKey: key as NSString) == nil else { return }
+
+        lock.lock()
+        guard !rawDataPrefetchInFlight.contains(key) else { lock.unlock(); return }
+        rawDataPrefetchInFlight.insert(key)
+        lock.unlock()
+
+        decodeQueue.async { [weak self] in
+            guard let self else { return }
+            let diskURL = Self.diskCacheURL(for: key)
+            if FileManager.default.fileExists(atPath: diskURL.path) {
+                self.finishRawDataPrefetch(key: key)
+                return
+            }
+
+            Task { [weak self] in
+                guard let self else { return }
+                guard let data = await loader() else {
+                    self.finishRawDataPrefetch(key: key)
+                    return
+                }
+
+                try? data.write(to: diskURL, options: .atomic)
+                self.finishRawDataPrefetch(key: key)
+            }
+        }
+    }
+
     /// 清空内存缓存（磁盘缓存保留）
     func removeAll() {
         imageCache.removeAllObjects()
@@ -323,6 +358,12 @@ nonisolated final class ThumbnailCache: @unchecked Sendable {
         DispatchQueue.main.async {
             completions.forEach { $0(image) }
         }
+    }
+
+    private func finishRawDataPrefetch(key: String) {
+        lock.lock()
+        rawDataPrefetchInFlight.remove(key)
+        lock.unlock()
     }
 
     private static func diskCacheURL(for key: String) -> URL {

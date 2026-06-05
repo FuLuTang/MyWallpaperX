@@ -101,7 +101,7 @@ extension SteamWorkshopService {
 
         for (_, url) in deltaCandidates {
             let cacheKey = steamWorkshopPreviewCacheKey(for: url)
-            SteamWorkshopPreviewImageCache.shared.prefetchImageDataAsync(forKey: cacheKey) {
+            SteamWorkshopPreviewImageCache.shared.prefetchRawDataAsync(forKey: cacheKey) {
                 await SteamWorkshopPreviewRequestCoordinator.shared.loadData(
                     from: url,
                     priority: .prefetch

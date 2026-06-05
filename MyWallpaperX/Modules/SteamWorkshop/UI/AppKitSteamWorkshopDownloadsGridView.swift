@@ -206,6 +206,7 @@ final class AppKitSteamWorkshopDownloadsContainerView: NSView, ModuleFocusable {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         SteamWorkshopDownloadsBridge.shared.isActive = (window != nil)
+        syncVisiblePreviewAnimationStates(isVisible: window != nil)
     }
 
     private func setup() {
@@ -349,6 +350,13 @@ final class AppKitSteamWorkshopDownloadsContainerView: NSView, ModuleFocusable {
             let id = orderedIDs[indexPath.item]
             guard let record = recordsByID[id] else { continue }
             configureDownloadItem(item, for: record)
+        }
+    }
+
+    private func syncVisiblePreviewAnimationStates(isVisible: Bool) {
+        for visibleItem in collectionView.visibleItems() {
+            guard let item = visibleItem as? AppKitSteamWorkshopBrowserItem else { continue }
+            item.setPreviewVisible(isVisible)
         }
     }
 
@@ -629,6 +637,24 @@ extension AppKitSteamWorkshopDownloadsContainerView: SteamWorkshopKeyboardDelega
 }
 
 extension AppKitSteamWorkshopDownloadsContainerView: NSCollectionViewDelegateFlowLayout {
+    func collectionView(
+        _ collectionView: NSCollectionView,
+        willDisplay item: NSCollectionViewItem,
+        forRepresentedObjectAt indexPath: IndexPath
+    ) {
+        guard let item = item as? AppKitSteamWorkshopBrowserItem else { return }
+        item.setPreviewVisible(true)
+    }
+
+    func collectionView(
+        _ collectionView: NSCollectionView,
+        didEndDisplaying item: NSCollectionViewItem,
+        forRepresentedObjectAt indexPath: IndexPath
+    ) {
+        guard let item = item as? AppKitSteamWorkshopBrowserItem else { return }
+        item.setPreviewVisible(false)
+    }
+
     func collectionView(_ collectionView: NSCollectionView, didSelectItemsAt indexPaths: Set<IndexPath>) {
         guard !isApplyingSelectionSnapshot else { return }
         let selectedIDs = Set<String>(collectionView.selectionIndexPaths.compactMap { indexPath in

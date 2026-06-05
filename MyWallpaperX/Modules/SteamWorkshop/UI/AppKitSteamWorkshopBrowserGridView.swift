@@ -110,6 +110,11 @@ final class AppKitSteamWorkshopBrowserContainerView: NSView, ModuleFocusable, NS
         updateLayoutItemSize()
     }
 
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        syncVisiblePreviewAnimationStates(isVisible: window != nil)
+    }
+
     private func setup() {
         wantsLayer = true
         layer?.backgroundColor = NSColor.clear.cgColor
@@ -283,6 +288,13 @@ final class AppKitSteamWorkshopBrowserContainerView: NSView, ModuleFocusable, NS
             guard let cell = collectionView.item(at: indexPath) as? AppKitSteamWorkshopBrowserItem else { continue }
             guard itemsByID[id] != nil else { continue }
             cell.forceReloadPreview()
+        }
+    }
+
+    private func syncVisiblePreviewAnimationStates(isVisible: Bool) {
+        for visibleItem in collectionView.visibleItems() {
+            guard let item = visibleItem as? AppKitSteamWorkshopBrowserItem else { continue }
+            item.setPreviewVisible(isVisible)
         }
     }
 
@@ -482,8 +494,18 @@ final class AppKitSteamWorkshopBrowserContainerView: NSView, ModuleFocusable, NS
             return
         }
 
-        guard item is AppKitSteamWorkshopBrowserItem else { return }
+        guard let item = item as? AppKitSteamWorkshopBrowserItem else { return }
+        item.setPreviewVisible(true)
         prioritizeVisibleItemsForHydration()
+    }
+
+    func collectionView(
+        _ collectionView: NSCollectionView,
+        didEndDisplaying item: NSCollectionViewItem,
+        forRepresentedObjectAt indexPath: IndexPath
+    ) {
+        guard let item = item as? AppKitSteamWorkshopBrowserItem else { return }
+        item.setPreviewVisible(false)
     }
 }
 
