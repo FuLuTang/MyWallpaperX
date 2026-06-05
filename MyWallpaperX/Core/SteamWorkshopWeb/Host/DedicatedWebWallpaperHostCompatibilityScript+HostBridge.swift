@@ -54,13 +54,18 @@ let webCompatibilityScriptHostBridge = #"""
       for (const [key, rawValue] of Object.entries(properties || {})) {
         if (rawValue && typeof rawValue === 'object' && Object.prototype.hasOwnProperty.call(rawValue, 'value')) {
           const boxedValue = Object.assign({}, rawValue);
-          const scalarValue = rawValue.value;
-          const colorComponents = String(rawValue.type || '').toLowerCase() === 'color' && typeof scalarValue === 'string'
-            ? scalarValue.trim().split(/\s+/).map((item) => Number(item)).filter((item) => Number.isFinite(item))
-            : null;
-          if (colorComponents && colorComponents.length >= 3) {
-            boxedValue.value = colorComponents.slice(0, 3);
-          }
+          try {
+            Object.defineProperty(boxedValue, 'valueOf', {
+              configurable: true,
+              enumerable: false,
+              value: function() { return this.value; }
+            });
+            Object.defineProperty(boxedValue, 'toString', {
+              configurable: true,
+              enumerable: false,
+              value: function() { return String(this.value); }
+            });
+          } catch (_) {}
           normalizedProperties[key] = boxedValue;
         } else {
           normalizedProperties[key] = rawValue;

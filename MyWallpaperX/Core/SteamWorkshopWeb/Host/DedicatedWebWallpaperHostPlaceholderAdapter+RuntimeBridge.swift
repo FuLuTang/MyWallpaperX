@@ -35,7 +35,7 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
 
     func resolvedGeneralFPSValue(for screen: NSScreen?) -> Int {
         guard let screen else { return 60 }
-        return max(1, screen.maximumFramesPerSecond)
+        return max(1, min(60, screen.maximumFramesPerSecond))
     }
 
     var currentGeneralPropertiesJSON: String {
