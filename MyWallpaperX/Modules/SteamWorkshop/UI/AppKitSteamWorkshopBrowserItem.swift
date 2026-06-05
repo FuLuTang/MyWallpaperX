@@ -181,7 +181,7 @@ final class AppKitSteamWorkshopBrowserItem: NSCollectionViewItem {
         currentPreviewSourceURL = item.previewImageURL
         currentDebugID = item.id
         prefersCircularPlayBadge = false
-        previewImageView.animates = true
+        previewImageView.animates = false
         applyContent(
             item: item,
             downloadRecord: downloadRecord,
@@ -217,7 +217,7 @@ final class AppKitSteamWorkshopBrowserItem: NSCollectionViewItem {
         currentPreviewSourceURL = item.previewImageURL
         currentDebugID = item.id
         prefersCircularPlayBadge = false
-        previewImageView.animates = true
+        previewImageView.animates = false
         applyContent(
             item: item,
             downloadRecord: downloadRecord,
@@ -600,7 +600,7 @@ final class AppKitSteamWorkshopBrowserItem: NSCollectionViewItem {
 
         previewImageView.imageScaling = .scaleProportionallyUpOrDown
         previewImageView.imageAlignment = .alignCenter
-        previewImageView.animates = true
+        previewImageView.animates = false
         previewContainer.addSubview(previewImageView)
         previewContainer.addSubview(previewPlaceholderView)
 

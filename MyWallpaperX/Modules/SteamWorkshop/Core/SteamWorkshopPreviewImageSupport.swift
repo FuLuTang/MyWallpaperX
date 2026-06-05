@@ -108,27 +108,7 @@ func steamWorkshopPreviewImage(from cgImage: CGImage) -> NSImage? {
     let width = cgImage.width
     let height = cgImage.height
     guard width > 0, height > 0 else { return nil }
-
-    let bytesPerRow = width * 4
-    var pixels = [UInt8](repeating: 0, count: bytesPerRow * height)
-    guard let context = CGContext(
-        data: &pixels,
-        width: width,
-        height: height,
-        bitsPerComponent: 8,
-        bytesPerRow: bytesPerRow,
-        space: CGColorSpaceCreateDeviceRGB(),
-        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-    ) else {
-        return NSImage(cgImage: cgImage, size: NSSize(width: width, height: height))
-    }
-
-    context.interpolationQuality = .high
-    context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
-    guard let normalized = context.makeImage() else {
-        return NSImage(cgImage: cgImage, size: NSSize(width: width, height: height))
-    }
-    return NSImage(cgImage: normalized, size: NSSize(width: width, height: height))
+    return NSImage(cgImage: cgImage, size: NSSize(width: width, height: height))
 }
 
 private func steamWorkshopPreviewImageIsAnimated(_ image: NSImage) -> Bool {
