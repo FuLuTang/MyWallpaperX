@@ -153,6 +153,13 @@ final class InspectorFooterButton: NSControl {
     }
 
     private func updateStyle() {
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { [weak self] in
+                self?.updateStyle()
+            }
+            return
+        }
+
         let enabledAlpha: CGFloat = isEnabled ? 1 : 0.45
         let pressedFactor: CGFloat = isPressed ? 0.88 : 1
         let isDarkMode = resolvedIsDarkMode()
@@ -169,7 +176,8 @@ final class InspectorFooterButton: NSControl {
             fill = isDarkMode
                 ? NSColor.black.withAlphaComponent(0.26 * enabledAlpha * pressedFactor)
                 : NSColor.black.withAlphaComponent(0.06 * enabledAlpha * pressedFactor)
-            text = NSColor.labelColor.withAlphaComponent(enabledAlpha)
+            text = (isDarkMode ? NSColor.white : NSColor.black)
+                .withAlphaComponent(enabledAlpha)
             border = (isDarkMode ? NSColor.white : NSColor.black)
                 .withAlphaComponent((isDarkMode ? 0.16 : 0.08) * enabledAlpha)
         case .danger:
@@ -199,10 +207,6 @@ final class InspectorFooterButton: NSControl {
     }
 
     private func resolvedIsDarkMode() -> Bool {
-        let appMatch = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua])
-        if let appMatch {
-            return appMatch == .darkAqua
-        }
-        return effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        UserDefaults.standard.string(forKey: "AppleInterfaceStyle") == "Dark"
     }
 }
