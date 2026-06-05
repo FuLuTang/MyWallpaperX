@@ -345,6 +345,12 @@ final class AppKitSteamWorkshopBrowserContainerView: NSView, ModuleFocusable, NS
     }
 
     private func checkLoadMore() {
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { [weak self] in
+                self?.checkLoadMore()
+            }
+            return
+        }
         guard service.hasMoreBrowserItems, !service.isLoadingMoreBrowserItems else { return }
         guard let documentView = scrollView.documentView else { return }
         let contentHeight = documentView.frame.height
@@ -388,7 +394,7 @@ final class AppKitSteamWorkshopBrowserContainerView: NSView, ModuleFocusable, NS
     }
 
     private func updateLayoutItemSize(invalidateImmediately: Bool = false) {
-        let layoutWidth = resolvedLayoutWidth()
+        guard let layoutWidth = resolvedLayoutWidth() else { return }
         let metrics = SteamWorkshopGridLayoutSupport.metrics(
             boundsWidth: layoutWidth,
             zoomOffset: service.zoomOffset,
@@ -408,7 +414,7 @@ final class AppKitSteamWorkshopBrowserContainerView: NSView, ModuleFocusable, NS
         }
     }
 
-    private func resolvedLayoutWidth() -> CGFloat {
+    private func resolvedLayoutWidth() -> CGFloat? {
         let candidates = [
             bounds.width,
             scrollView.bounds.width,
@@ -423,7 +429,7 @@ final class AppKitSteamWorkshopBrowserContainerView: NSView, ModuleFocusable, NS
         if lastNonZeroLayoutWidth > 1 {
             return lastNonZeroLayoutWidth
         }
-        return 900
+        return nil
     }
 
     private func scheduleLayoutInvalidation() {
@@ -437,6 +443,12 @@ final class AppKitSteamWorkshopBrowserContainerView: NSView, ModuleFocusable, NS
     }
 
     private func restoreScrollOffset(_ offsetY: CGFloat) {
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { [weak self] in
+                self?.restoreScrollOffset(offsetY)
+            }
+            return
+        }
         guard let documentView = scrollView.documentView else {
             service.consumePendingBrowserScrollRestoreOffset()
             return
@@ -450,6 +462,12 @@ final class AppKitSteamWorkshopBrowserContainerView: NSView, ModuleFocusable, NS
     }
 
     private func updateBrowserScrollMetrics() {
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { [weak self] in
+                self?.updateBrowserScrollMetrics()
+            }
+            return
+        }
         guard let documentView = scrollView.documentView else { return }
         service.updateBrowserScrollMetrics(
             offsetY: scrollView.contentView.bounds.origin.y,
