@@ -620,8 +620,30 @@ enum MainWindowCoordinator {
         if mainWindowController === controller {
             mainWindowController = nil
         }
+        resetModuleStateForClosedMainWindow()
         // 关闭主窗口时隐藏 Dock 图标，维持“窗口即应用入口”的表现。
         setDockIconVisible(false)
+    }
+
+    private static func resetModuleStateForClosedMainWindow() {
+        activeModule = .videoLibrary
+        isSteamDownloadsMode = false
+
+        NotificationCenter.default.post(
+            name: .staticImageLibraryModeDidChange,
+            object: nil,
+            userInfo: ["enabled": false]
+        )
+        NotificationCenter.default.post(
+            name: .onlineLibraryModeDidChange,
+            object: nil,
+            userInfo: ["enabled": false, "isDownloads": false]
+        )
+        NotificationCenter.default.post(
+            name: .steamWorkshopModeDidChange,
+            object: nil,
+            userInfo: ["enabled": false, "isDownloads": false]
+        )
     }
 
     private static func makeMainWindowController() -> MainWindowController {
