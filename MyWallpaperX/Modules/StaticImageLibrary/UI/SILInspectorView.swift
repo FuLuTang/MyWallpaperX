@@ -254,8 +254,8 @@ final class SILInspectorView: NSView {
 
         NSLayoutConstraint.activate([
             stack.heightAnchor.constraint(equalToConstant: InspectorFooterMetrics.height),
-            buttonGroup.leadingAnchor.constraint(equalTo: stack.leadingAnchor),
-            buttonGroup.trailingAnchor.constraint(equalTo: stack.trailingAnchor),
+            buttonGroup.leadingAnchor.constraint(equalTo: stack.leadingAnchor, constant: 2),
+            buttonGroup.trailingAnchor.constraint(equalTo: stack.trailingAnchor, constant: -2),
             buttonGroup.topAnchor.constraint(equalTo: stack.topAnchor),
             buttonGroup.bottomAnchor.constraint(equalTo: stack.bottomAnchor),
 

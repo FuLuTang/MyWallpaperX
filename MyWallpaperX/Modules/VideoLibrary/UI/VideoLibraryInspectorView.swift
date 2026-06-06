@@ -346,7 +346,7 @@ final class VideoLibraryInspectorView: NSView {
 
         NSLayoutConstraint.activate([
             stack.heightAnchor.constraint(equalToConstant: InspectorFooterMetrics.height),
-            textGroup.leadingAnchor.constraint(equalTo: stack.leadingAnchor),
+            textGroup.leadingAnchor.constraint(equalTo: stack.leadingAnchor, constant: 2),
             textGroup.topAnchor.constraint(equalTo: stack.topAnchor),
             textGroup.bottomAnchor.constraint(equalTo: stack.bottomAnchor),
 
@@ -361,7 +361,7 @@ final class VideoLibraryInspectorView: NSView {
             setButton.widthAnchor.constraint(equalTo: revealButton.widthAnchor),
 
             iconGroup.leadingAnchor.constraint(equalTo: textGroup.trailingAnchor, constant: 6),
-            iconGroup.trailingAnchor.constraint(equalTo: stack.trailingAnchor),
+            iconGroup.trailingAnchor.constraint(equalTo: stack.trailingAnchor, constant: -2),
             iconGroup.topAnchor.constraint(equalTo: stack.topAnchor),
             iconGroup.bottomAnchor.constraint(equalTo: stack.bottomAnchor),
 
