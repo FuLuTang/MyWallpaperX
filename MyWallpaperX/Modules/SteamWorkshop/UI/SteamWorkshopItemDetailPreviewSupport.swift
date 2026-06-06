@@ -101,7 +101,7 @@ private struct SteamWorkshopCachedPreviewImage: NSViewRepresentable {
             )
         }, decoder: steamWorkshopPreviewImage(from:)) { image in
             guard context.coordinator.currentURL == url else { return }
-            if let image, !steamWorkshopPreviewImageLooksSuspicious(image) {
+            if let image, steamWorkshopPreviewImageIsUsable(image) {
                 nsView.setImage(image)
             } else {
                 if image != nil {
@@ -209,7 +209,7 @@ final class SteamWorkshopPreviewImageContainerView: NSView {
                 priority: .userInitiated
             )
         }, decoder: steamWorkshopPreviewImage(from:)) { [weak self] image in
-            if let image, !steamWorkshopPreviewImageLooksSuspicious(image) {
+            if let image, steamWorkshopPreviewImageIsUsable(image) {
                 self?.setImage(image)
             } else {
                 if image != nil {

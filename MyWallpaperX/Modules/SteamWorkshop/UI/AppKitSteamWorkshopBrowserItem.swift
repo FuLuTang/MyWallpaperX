@@ -894,7 +894,7 @@ final class AppKitSteamWorkshopBrowserItem: NSCollectionViewItem {
         let cacheKey = steamWorkshopPreviewCacheKey(for: url)
         if !SteamWorkshopPreviewRequestCoordinator.shared.shouldBypassCachedImage(forKey: cacheKey),
            let cached = SteamWorkshopPreviewImageCache.shared.cachedOrDiskImage(forKey: cacheKey),
-           !steamWorkshopPreviewImageLooksSuspicious(cached) {
+           steamWorkshopPreviewImageIsUsable(cached) {
             previewImageView.image = cached
             syncPreviewAnimationState()
             previewPlaceholderView.setState(.hidden)
@@ -903,7 +903,7 @@ final class AppKitSteamWorkshopBrowserItem: NSCollectionViewItem {
             return
         }
         if let cached = SteamWorkshopPreviewImageCache.shared.cachedImage(forKey: cacheKey),
-           steamWorkshopPreviewImageLooksSuspicious(cached) {
+           !steamWorkshopPreviewImageIsUsable(cached) {
             SteamWorkshopPreviewRequestCoordinator.shared.markCachedImageSuspicious(forKey: cacheKey)
         }
 
@@ -1041,7 +1041,7 @@ final class AppKitSteamWorkshopBrowserItem: NSCollectionViewItem {
     }
 
     private func applyResolvedPreviewImage(_ image: NSImage?, url: URL, cacheKey: String) {
-        if let image, !steamWorkshopPreviewImageLooksSuspicious(image) {
+        if let image, steamWorkshopPreviewImageIsUsable(image) {
             previewImageView.image = image
             syncPreviewAnimationState()
             previewPlaceholderView.setState(.hidden)
