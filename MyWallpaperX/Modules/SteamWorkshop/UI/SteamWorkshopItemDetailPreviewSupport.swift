@@ -88,7 +88,10 @@ private struct SteamWorkshopCachedPreviewImage: NSViewRepresentable {
         }
 
         let cacheKey = steamWorkshopPreviewCacheKey(for: url)
-        if let cached = SteamWorkshopPreviewImageCache.shared.cachedOrDiskImage(forKey: cacheKey) {
+        if let cached = SteamWorkshopPreviewImageCache.shared.cachedOrDiskImage(
+            forKey: cacheKey,
+            decoder: steamWorkshopPreviewImage(from:)
+        ) {
             nsView.setImage(cached)
             return
         }
@@ -197,7 +200,10 @@ final class SteamWorkshopPreviewImageContainerView: NSView {
         }
 
         let cacheKey = steamWorkshopPreviewCacheKey(for: targetURL)
-        if let cached = SteamWorkshopPreviewImageCache.shared.cachedOrDiskImage(forKey: cacheKey) {
+        if let cached = SteamWorkshopPreviewImageCache.shared.cachedOrDiskImage(
+            forKey: cacheKey,
+            decoder: steamWorkshopPreviewImage(from:)
+        ) {
             setImage(cached)
             return
         }

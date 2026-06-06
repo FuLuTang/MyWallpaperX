@@ -893,7 +893,10 @@ final class AppKitSteamWorkshopBrowserItem: NSCollectionViewItem {
 
         let cacheKey = steamWorkshopPreviewCacheKey(for: url)
         if !SteamWorkshopPreviewRequestCoordinator.shared.shouldBypassCachedImage(forKey: cacheKey),
-           let cached = SteamWorkshopPreviewImageCache.shared.cachedOrDiskImage(forKey: cacheKey),
+           let cached = SteamWorkshopPreviewImageCache.shared.cachedOrDiskImage(
+            forKey: cacheKey,
+            decoder: steamWorkshopPreviewImage(from:)
+           ),
            steamWorkshopPreviewImageIsUsable(cached) {
             previewImageView.image = cached
             syncPreviewAnimationState()

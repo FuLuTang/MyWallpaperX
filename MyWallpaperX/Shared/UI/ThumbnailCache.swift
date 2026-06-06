@@ -328,14 +328,17 @@ nonisolated final class ThumbnailCache: @unchecked Sendable {
 
     /// 同步读取缓存，优先内存，其次磁盘。
     /// 适合需要避免首次占位闪烁的场景。
-    func cachedOrDiskImage(forKey key: String) -> NSImage? {
+    func cachedOrDiskImage(
+        forKey key: String,
+        decoder: (Data) -> NSImage? = { NSImage(data: $0) }
+    ) -> NSImage? {
         let cacheKey = key as NSString
         if let cached = imageCache.object(forKey: cacheKey) {
             return cached
         }
         let diskURL = Self.diskCacheURL(for: key)
         guard let data = try? Data(contentsOf: diskURL),
-              let image = NSImage(data: data) else {
+              let image = decoder(data) else {
             return nil
         }
         imageCache.setObject(image, forKey: cacheKey)
