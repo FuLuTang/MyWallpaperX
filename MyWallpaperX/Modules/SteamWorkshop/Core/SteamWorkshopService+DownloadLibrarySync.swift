@@ -102,6 +102,10 @@ extension SteamWorkshopService {
 
     func persistDownloadMetadataIfPossible(for id: String, targetURL: URL) {
         guard let item = browserItemForDownload(id: id) else { return }
+        persistDownloadMetadata(item: item, id: id, targetURL: targetURL)
+    }
+
+    func persistDownloadMetadata(item: SteamWorkshopBrowserItem, id: String, targetURL: URL) {
         let existingSnapshot = loadExistingDownloadMetadataSnapshot(at: targetURL)
         let project = Self.loadWorkshopProject(from: targetURL.appendingPathComponent("project.json"))
         try? FileManager.default.createDirectory(at: downloadMetadataIndexDirectoryURL(), withIntermediateDirectories: true)

@@ -605,7 +605,9 @@ final class AppKitSteamWorkshopItemDetailView: NSView {
             target: self,
             action: #selector(openAuthorWorkshop)
         )
-        author.isEnabled = currentItem.authorProfileURL != nil || currentItem.authorWorkshopURL != nil
+        let canResolveAuthorWorkshop = SteamWorkshopService.resolvedAuthorWorkshopURL(for: currentItem) != nil
+        let isDownloadInspectorItem = service.selectedDownloadInspectorItem?.id == currentItem.id
+        author.isEnabled = !isRefreshingDetail && (isDownloadInspectorItem || canResolveAuthorWorkshop)
         let browser = footerIconButton(symbolName: "safari", help: "网页浏览", action: #selector(openWorkshopDetail))
         let refresh = footerIconButton(symbolName: "arrow.clockwise", help: "刷新详情", action: #selector(refreshDetail))
         refresh.isEnabled = !isRefreshingDetail
@@ -884,6 +886,10 @@ final class AppKitSteamWorkshopItemDetailView: NSView {
     }
 
     @objc private func openAuthorWorkshop() {
+        if service.selectedDownloadInspectorItem?.id == currentItem.id {
+            service.openAuthorWorkshopFromDownloadInspector(for: currentItem)
+            return
+        }
         service.openAuthorWorksPage(for: currentItem)
     }
 
