@@ -41,7 +41,7 @@ enum SteamWorkshopBrowserFooterSupport {
         case .loading:
             return "正在加载更多项目…"
         case .exhausted:
-            return "已到达当前可抓取内容底部。受 Steam 官方页面可见性与分页限制影响，部分作品可能无法完整抓取；如需核对，请以 Steam 官方网页为准。"
+            return "已到达底部，更多作品请以 Steam 官方页面为准。"
         }
     }
 
