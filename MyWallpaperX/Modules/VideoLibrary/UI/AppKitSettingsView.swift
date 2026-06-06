@@ -27,6 +27,16 @@ final class AppKitSettingsContainerView: NSView {
 
     private final class FlippedDocumentView: NSView {
         override var isFlipped: Bool { true }
+
+        override init(frame frameRect: NSRect) {
+            super.init(frame: frameRect)
+            translatesAutoresizingMaskIntoConstraints = false
+        }
+
+        @available(*, unavailable)
+        required init?(coder: NSCoder) {
+            nil
+        }
     }
 
     private let wallpaperManager: WallpaperManager
