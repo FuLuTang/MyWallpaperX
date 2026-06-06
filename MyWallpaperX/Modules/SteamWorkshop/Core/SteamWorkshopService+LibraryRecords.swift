@@ -159,8 +159,12 @@ extension SteamWorkshopService {
     func buildInstalledRecord(at directory: URL) -> SteamWorkshopDownloadRecord? {
         let projectURL = directory.appendingPathComponent("project.json")
         let metadataURL = Self.legacyDownloadMetadataFileURL(for: directory)
-        guard FileManager.default.fileExists(atPath: projectURL.path)
-                || FileManager.default.fileExists(atPath: metadataURL.path) else {
+        let hasProject = FileManager.default.fileExists(atPath: projectURL.path)
+        let hasMetadata = FileManager.default.fileExists(atPath: metadataURL.path)
+        let hasScenePackage = FileManager.default.fileExists(atPath: directory.appendingPathComponent("scene.pkg").path)
+        let hasHTML = resolveHTMLURL(in: directory, preferredFileName: nil) != nil
+        let hasVideo = resolveVideoURL(in: directory, preferredFileName: nil) != nil
+        guard hasProject || hasMetadata || hasScenePackage || hasHTML || hasVideo else {
             return nil
         }
         let project = Self.loadWorkshopProject(from: projectURL)
@@ -386,14 +390,13 @@ extension SteamWorkshopService {
             return
         }
 
-        let folderURL = libraryRootURL.appendingPathComponent(id, isDirectory: true)
         downloads.insert(
             SteamWorkshopDownloadRecord(
                 id: id,
                 title: title,
                 description: "",
                 tags: [],
-                folderURL: folderURL,
+                folderURL: libraryRootURL,
                 projectFileURL: nil,
                 ownEntryHTMLURL: nil,
                 dependencyHostEntryHTMLURL: nil,
@@ -507,7 +510,8 @@ extension SteamWorkshopService {
             guard let dependencyItemID,
                   dependencyItemID != identifier else { return nil }
             return latestDownloadRecord(for: dependencyItemID)
-                ?? buildInstalledRecord(at: libraryRootURL.appendingPathComponent(dependencyItemID, isDirectory: true))
+                ?? buildInstalledRecord(at: webLibraryRootURL.appendingPathComponent(dependencyItemID, isDirectory: true))
+                ?? buildInstalledRecord(at: sceneLibraryRootURL.appendingPathComponent(dependencyItemID, isDirectory: true))
         }()
 
         let dependencyEntryHTMLURL = dependencyRecord?.webEntryURL
@@ -794,10 +798,8 @@ extension SteamWorkshopService {
     }
 
     private func loadDownloadMetadataSnapshot(legacyDirectory: URL?, id: String) -> SteamWorkshopDownloadMetadataSnapshot? {
-        let metadataURL = downloadMetadataFileURL(for: id)
-        if let data = try? Data(contentsOf: metadataURL),
-           let snapshot = try? JSONDecoder().decode(SteamWorkshopDownloadMetadataSnapshot.self, from: data) {
-            return snapshot
+        if let entry = loadDownloadMetadataEntry(forItemID: id) {
+            return entry.snapshot
         }
 
         if let legacyDirectory {

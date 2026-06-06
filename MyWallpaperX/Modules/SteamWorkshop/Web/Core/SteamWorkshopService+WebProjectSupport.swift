@@ -146,7 +146,8 @@ extension SteamWorkshopService {
         guard record.isDependencyBackedWeb else { return record }
         guard case let .available(itemID) = record.dependencyStatus else { return record }
         let dependencyRecord = latestDownloadRecord(for: itemID)
-            ?? buildInstalledRecord(at: libraryRootURL.appendingPathComponent(itemID, isDirectory: true))
+            ?? buildInstalledRecord(at: webLibraryRootURL.appendingPathComponent(itemID, isDirectory: true))
+            ?? buildInstalledRecord(at: sceneLibraryRootURL.appendingPathComponent(itemID, isDirectory: true))
         guard let dependencyRecord,
               dependencyRecord.contentType == .web,
               dependencyRecord.webEntryURL != nil else {

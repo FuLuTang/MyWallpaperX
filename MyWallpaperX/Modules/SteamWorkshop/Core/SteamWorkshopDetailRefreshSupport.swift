@@ -11,7 +11,8 @@ nonisolated enum SteamWorkshopDetailRefreshSupport {
     }
 
     static func needsDownloadedMetadataRefresh(_ item: SteamWorkshopBrowserItem) -> Bool {
-        needsListRefresh(item)
+        item.author == "未知作者"
+            || (item.authorProfileURL == nil && item.authorWorkshopURL == nil)
     }
 
     static func needsListRefresh(_ item: SteamWorkshopBrowserItem) -> Bool {

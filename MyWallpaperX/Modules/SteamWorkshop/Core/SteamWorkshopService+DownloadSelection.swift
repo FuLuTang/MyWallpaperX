@@ -243,21 +243,18 @@ extension SteamWorkshopService {
         }
 
         let fileManager = FileManager.default
-        if let exportedVideoURL = record.exportedVideoURL,
-           fileManager.fileExists(atPath: exportedVideoURL.path) {
-            try? fileManager.removeItem(at: exportedVideoURL)
-        }
-        if let snapshot = loadExistingDownloadMetadataSnapshot(at: record.folderURL),
-           let legacyFolderURL = snapshot.legacyFolderURL,
-           fileManager.fileExists(atPath: legacyFolderURL.path),
-           legacyFolderURL != libraryRootURL {
-            try? fileManager.removeItem(at: legacyFolderURL)
+        if record.contentType == .video {
+            if let videoURL = record.exportedVideoURL ?? record.sourceVideoURL,
+               fileManager.fileExists(atPath: videoURL.path) {
+                try? fileManager.removeItem(at: videoURL)
+            }
         } else if fileManager.fileExists(atPath: record.folderURL.path),
-                  record.folderURL != libraryRootURL,
-                  record.folderURL.lastPathComponent == itemID {
+                  record.folderURL.lastPathComponent == itemID,
+                  (record.folderURL.deletingLastPathComponent() == webLibraryRootURL
+                   || record.folderURL.deletingLastPathComponent() == sceneLibraryRootURL) {
             try? fileManager.removeItem(at: record.folderURL)
         }
-        try? fileManager.removeItem(at: downloadMetadataFileURL(for: itemID))
+        try? fileManager.removeItem(at: downloadMetadataFileURL(for: record))
 
         downloads.removeAll { $0.id == itemID }
         queuedDownloadRequests.removeAll { $0.id == itemID }

@@ -290,6 +290,10 @@ extension SteamWorkshopService {
     func ensureManagedSteamRuntime() async throws {
         let fileManager = FileManager.default
         try fileManager.createDirectory(at: libraryRootURL, withIntermediateDirectories: true)
+        try fileManager.createDirectory(at: videoLibraryRootURL, withIntermediateDirectories: true)
+        try fileManager.createDirectory(at: webLibraryRootURL, withIntermediateDirectories: true)
+        try fileManager.createDirectory(at: sceneLibraryRootURL, withIntermediateDirectories: true)
+        try fileManager.createDirectory(at: downloadMetadataIndexDirectoryURL(), withIntermediateDirectories: true)
         try fileManager.createDirectory(at: cacheDirectoryURL, withIntermediateDirectories: true)
         try fileManager.createDirectory(at: runtimeInstallRootURL, withIntermediateDirectories: true)
 

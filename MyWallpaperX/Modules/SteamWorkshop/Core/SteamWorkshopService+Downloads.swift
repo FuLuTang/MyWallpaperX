@@ -220,6 +220,7 @@ extension SteamWorkshopService {
 
         try await syncDownloadedItemToLibrary(request)
         appendSteamAuthDebugLog("DOWNLOAD SYNC OK: copied staged content into library for id=\(id)")
+        cleanupStagedDownload(id: id)
 
         finishActiveDownloadState()
         statusMessage = "已完成 Workshop #\(id) 下载"

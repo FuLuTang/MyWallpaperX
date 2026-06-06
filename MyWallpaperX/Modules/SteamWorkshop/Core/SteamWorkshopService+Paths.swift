@@ -57,7 +57,19 @@ extension SteamWorkshopService {
             .appendingPathComponent("创意工坊", isDirectory: true)
     }
 
-    var exportedVideosRootURL: URL { libraryRootURL }
+    var videoLibraryRootURL: URL {
+        libraryRootURL.appendingPathComponent("Video", isDirectory: true)
+    }
+
+    var webLibraryRootURL: URL {
+        libraryRootURL.appendingPathComponent("Web", isDirectory: true)
+    }
+
+    var sceneLibraryRootURL: URL {
+        libraryRootURL.appendingPathComponent("Scene", isDirectory: true)
+    }
+
+    var exportedVideosRootURL: URL { videoLibraryRootURL }
 
     var cacheDirectoryURL: URL {
         FileManager.default.homeDirectoryForCurrentUser
