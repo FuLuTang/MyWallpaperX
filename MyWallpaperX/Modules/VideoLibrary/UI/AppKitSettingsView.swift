@@ -271,7 +271,7 @@ final class AppKitSettingsContainerView: NSView {
 
     override func layout() {
         super.layout()
-        updateDocumentFrame()
+        scheduleDocumentFrameUpdate()
     }
 
     private func primeInitialDocumentFrame() {

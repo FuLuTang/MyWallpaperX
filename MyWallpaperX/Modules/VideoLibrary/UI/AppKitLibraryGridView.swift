@@ -38,6 +38,7 @@ final class AppKitLibraryGridContainerView: NSView, ModuleFocusable {
     private var visibleMissingWallpaperIDs = Set<String>()
     private var lastAppliedQuery: String = ""
     private var pendingVisibleColumnCount: Int?
+    private var isLayoutItemSizeUpdateScheduled = false
     private var lastPrefetchRange: ClosedRange<Int>?
     private var lastObservedPlayingNormalizedPath: String?
     private var lastObservedSelectedIDs = Set<String>()
@@ -187,7 +188,7 @@ final class AppKitLibraryGridContainerView: NSView, ModuleFocusable {
 
     override func layout() {
         super.layout()
-        updateLayoutItemSize()
+        scheduleLayoutItemSizeUpdate()
     }
 
     private func observeScrollToTopRequests() {
@@ -450,6 +451,16 @@ final class AppKitLibraryGridContainerView: NSView, ModuleFocusable {
             self.collectionView.collectionViewLayout?.invalidateLayout()
         }
         scheduleVisibleGridColumnCountUpdateIfNeeded(columnCount)
+    }
+
+    private func scheduleLayoutItemSizeUpdate() {
+        guard !isLayoutItemSizeUpdateScheduled else { return }
+        isLayoutItemSizeUpdateScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.isLayoutItemSizeUpdateScheduled = false
+            self.updateLayoutItemSize()
+        }
     }
 
     private func scrollToTop(animated: Bool) {

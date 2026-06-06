@@ -232,6 +232,7 @@ final class AppKitOLDownloadsContainerView: NSView, ModuleFocusable {
     private var lastComputedColumns: Int = 3
     private var lastAppliedSnapshotIDs: [Int] = []
     private var suppressDownloadedIDsReload = false
+    private var isLayoutItemSizeUpdateScheduled = false
     private var pendingPostDeletionSelectionIndex: Int?
     private var reloadEntriesTask: Task<Void, Never>?
     private var reloadEntriesGeneration: Int = 0
@@ -409,7 +410,7 @@ final class AppKitOLDownloadsContainerView: NSView, ModuleFocusable {
         // 观察 zoomOffset 和 downloadedIDs 变化
         OnlineLibraryService.shared.$zoomOffset
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in self?.updateLayoutItemSize() }
+            .sink { [weak self] _ in self?.scheduleLayoutItemSizeUpdate() }
             .store(in: &cancellables)
 
         OnlineLibraryService.shared.$downloadedIDs
@@ -601,7 +602,7 @@ final class AppKitOLDownloadsContainerView: NSView, ModuleFocusable {
 
     override func layout() {
         super.layout()
-        updateLayoutItemSize()
+        scheduleLayoutItemSizeUpdate()
     }
 
     private func updateLayoutItemSize() {
@@ -619,6 +620,16 @@ final class AppKitOLDownloadsContainerView: NSView, ModuleFocusable {
         flowLayout.itemSize = newSize
         // 布局变化与悬停视觉同步生效，避免渐变层在缩放期间出现跟随滞后。
         collectionView.collectionViewLayout?.invalidateLayout()
+    }
+
+    private func scheduleLayoutItemSizeUpdate() {
+        guard !isLayoutItemSizeUpdateScheduled else { return }
+        isLayoutItemSizeUpdateScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.isLayoutItemSizeUpdateScheduled = false
+            self.updateLayoutItemSize()
+        }
     }
 
     // MARK: - 外部接入 API（供主控层后续挂接）

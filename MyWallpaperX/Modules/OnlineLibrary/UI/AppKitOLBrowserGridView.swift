@@ -111,6 +111,7 @@ final class AppKitOLBrowserContainerView: NSView, ModuleFocusable {
     }()
 
     private var lastLoadedCount = 0
+    private var isLayoutItemSizeUpdateScheduled = false
 
     // MARK: - Init
 
@@ -176,7 +177,7 @@ final class AppKitOLBrowserContainerView: NSView, ModuleFocusable {
         // 订阅 zoomOffset
         service.$zoomOffset
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in self?.updateLayoutItemSize() }
+            .sink { [weak self] _ in self?.scheduleLayoutItemSizeUpdate() }
             .store(in: &cancellables)
 
         // 监听滚动，接近底部时触发下一页
@@ -289,7 +290,7 @@ final class AppKitOLBrowserContainerView: NSView, ModuleFocusable {
 
     override func layout() {
         super.layout()
-        updateLayoutItemSize()
+        scheduleLayoutItemSizeUpdate()
     }
 
     private func updateLayoutItemSize() {
@@ -306,5 +307,15 @@ final class AppKitOLBrowserContainerView: NSView, ModuleFocusable {
         flowLayout.itemSize = newSize
         // 布局变化与悬停视觉同步生效，避免渐变层在缩放期间出现跟随滞后。
         collectionView.collectionViewLayout?.invalidateLayout()
+    }
+
+    private func scheduleLayoutItemSizeUpdate() {
+        guard !isLayoutItemSizeUpdateScheduled else { return }
+        isLayoutItemSizeUpdateScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.isLayoutItemSizeUpdateScheduled = false
+            self.updateLayoutItemSize()
+        }
     }
 }

@@ -410,7 +410,6 @@ final class AppKitWallpaperItem: NSCollectionViewItem {
 
         let textMaxWidth = buttonX - pad - 12
 
-        metaLabel.sizeToFit()
         metaLabel.frame = NSRect(
             x: pad,
             y: buttonY,
@@ -418,7 +417,6 @@ final class AppKitWallpaperItem: NSCollectionViewItem {
             height: metaSize + 2
         )
 
-        titleLabel.sizeToFit()
         titleLabel.frame = NSRect(
             x: pad,
             y: metaLabel.frame.maxY + gap,

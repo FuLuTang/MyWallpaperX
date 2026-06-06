@@ -28,6 +28,7 @@ final class AppKitSteamWorkshopBrowserContainerView: NSView, ModuleFocusable, NS
     private var moduleActivationObserver: NSObjectProtocol?
     private var lastPrioritizedVisibleIDs: [String] = []
     private var pendingLayoutInvalidation = false
+    private var pendingLayoutItemSizeUpdate = false
     private var lastNonZeroLayoutWidth: CGFloat = 0
     private var hasResolvedInitialItemSize = false
     private var pendingItemsUntilInitialLayout: [SteamWorkshopBrowserItem]?
@@ -110,8 +111,7 @@ final class AppKitSteamWorkshopBrowserContainerView: NSView, ModuleFocusable, NS
 
     override func layout() {
         super.layout()
-        updateLayoutItemSize(invalidateImmediately: !hasResolvedInitialItemSize)
-        applyPendingItemsIfInitialLayoutIsReady()
+        scheduleLayoutItemSizeUpdate()
     }
 
     override func viewDidMoveToWindow() {
@@ -147,7 +147,7 @@ final class AppKitSteamWorkshopBrowserContainerView: NSView, ModuleFocusable, NS
 
         service.$zoomOffset
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in self?.updateLayoutItemSize() }
+            .sink { [weak self] _ in self?.scheduleLayoutItemSizeUpdate() }
             .store(in: &cancellables)
 
         service.$activeDownloadItemID
@@ -420,17 +420,23 @@ final class AppKitSteamWorkshopBrowserContainerView: NSView, ModuleFocusable, NS
         flowLayout.minimumInteritemSpacing = metrics.interitemSpacing
         flowLayout.minimumLineSpacing = metrics.lineSpacing
         let newSize = metrics.itemSize
-        let isInitialResolution = !hasResolvedInitialItemSize
         hasResolvedInitialItemSize = true
 
         guard flowLayout.itemSize != newSize else { return true }
         flowLayout.itemSize = newSize
-        if invalidateImmediately || isInitialResolution {
-            collectionView.collectionViewLayout?.invalidateLayout()
-        } else {
-            scheduleLayoutInvalidation()
-        }
+        scheduleLayoutInvalidation()
         return true
+    }
+
+    private func scheduleLayoutItemSizeUpdate() {
+        guard pendingLayoutItemSizeUpdate == false else { return }
+        pendingLayoutItemSizeUpdate = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.pendingLayoutItemSizeUpdate = false
+            self.updateLayoutItemSize()
+            self.applyPendingItemsIfInitialLayoutIsReady()
+        }
     }
 
     private func resolvedLayoutWidth() -> CGFloat? {
@@ -503,7 +509,7 @@ final class AppKitSteamWorkshopBrowserContainerView: NSView, ModuleFocusable, NS
         )
         let stateChanged = newState != footerState
         footerState = newState
-        updateLayoutItemSize()
+        scheduleLayoutItemSizeUpdate()
         guard stateChanged || forceReload else { return }
         let visibilityChanged = previousState == .hidden || newState == .hidden
         if stateChanged && visibilityChanged {

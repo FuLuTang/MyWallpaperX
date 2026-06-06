@@ -130,6 +130,7 @@ final class SILGridContainerView: NSView, ModuleFocusable {
     private var isVisibleRefreshScheduled = false
     private var isSelectionSyncScheduled = false
     private var isSelectionVisualUpdateScheduled = false
+    private var isLayoutItemSizeUpdateScheduled = false
     var isApplyingSelectionSnapshot = false
     private var lastObservedSelectedIDs = Set<String>()
     private var boxSelectionState: BoxSelectionState?
@@ -184,7 +185,7 @@ final class SILGridContainerView: NSView, ModuleFocusable {
 
     override func layout() {
         super.layout()
-        updateLayoutItemSize()
+        scheduleLayoutItemSizeUpdate()
     }
 
     // MARK: - 外部数据入口
@@ -201,7 +202,7 @@ final class SILGridContainerView: NSView, ModuleFocusable {
 
     /// 外部 zoomOffset 变化时调用，触发 layout 重新计算卡片尺寸
     func invalidateLayout() {
-        updateLayoutItemSize()
+        scheduleLayoutItemSizeUpdate()
     }
 
     // MARK: - Snapshot
@@ -331,6 +332,16 @@ extension SILGridContainerView {
 
 // MARK: - 布局 + 视图层级
 extension SILGridContainerView {
+    private func scheduleLayoutItemSizeUpdate() {
+        guard !isLayoutItemSizeUpdateScheduled else { return }
+        isLayoutItemSizeUpdateScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.isLayoutItemSizeUpdateScheduled = false
+            self.updateLayoutItemSize()
+        }
+    }
+
     func updateLayoutItemSize() {
         let inset = waterfallLayout.sectionInset
         let avail = max(0, bounds.width - inset.left - inset.right)
@@ -338,7 +349,8 @@ extension SILGridContainerView {
         // 同步到 SILService，供方向键导航使用
         SILService.shared.visibleGridColumnCount = cols
         guard waterfallLayout.columnCount != cols else { return }
-        waterfallLayout.columnCount = cols // 内部会自动 invalidateLayout
+        waterfallLayout.columnCount = cols
+        waterfallLayout.invalidateLayout()
     }
     private func setupViewHierarchy() {
         wantsLayer = true; layer?.backgroundColor = NSColor.clear.cgColor

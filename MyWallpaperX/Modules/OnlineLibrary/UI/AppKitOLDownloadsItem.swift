@@ -453,10 +453,14 @@ final class AppKitOLDownloadsItem: NSCollectionViewItem {
         overlayView.frame = imageContainer.bounds
         hoverOutlineView.frame = NSRect(x: 1, y: 1, width: width - 2, height: height - 2)
 
-        placeholderLabel.sizeToFit()
-        placeholderLabel.frame.origin = NSPoint(
-            x: floor((width - placeholderLabel.frame.width) / 2),
-            y: floor((height - placeholderLabel.frame.height) / 2)
+        let placeholderSize = placeholderLabel.stringValue.size(
+            withAttributes: [.font: placeholderLabel.font ?? NSFont.systemFont(ofSize: 12)]
+        )
+        placeholderLabel.frame = NSRect(
+            x: floor((width - placeholderSize.width) / 2),
+            y: floor((height - placeholderSize.height) / 2),
+            width: ceil(placeholderSize.width),
+            height: ceil(placeholderSize.height)
         )
 
         let (titleSize, metaSize) = fontSizeForWidth(width)
@@ -476,7 +480,6 @@ final class AppKitOLDownloadsItem: NSCollectionViewItem {
 
         let textMaxWidth = buttonX - pad - 12
 
-        metaLabel.sizeToFit()
         metaLabel.frame = NSRect(
             x: pad,
             y: buttonY,
@@ -484,7 +487,6 @@ final class AppKitOLDownloadsItem: NSCollectionViewItem {
             height: metaSize + 2
         )
 
-        titleLabel.sizeToFit()
         titleLabel.frame = NSRect(
             x: pad,
             y: metaLabel.frame.maxY + gap,

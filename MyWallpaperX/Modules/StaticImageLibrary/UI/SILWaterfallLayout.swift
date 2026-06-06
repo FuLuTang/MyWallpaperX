@@ -13,7 +13,7 @@ final class SILWaterfallLayout: NSCollectionViewLayout {
     // MARK: - 配置
 
     /// 列数（由 zoomOffset 驱动，外部设置后调用 invalidateLayout）
-    var columnCount: Int = 4 { didSet { if oldValue != columnCount { invalidateLayout() } } }
+    var columnCount: Int = 4
 
     /// 列间距
     var columnSpacing: CGFloat = 8

@@ -182,17 +182,17 @@ final class SILGridItem: NSCollectionViewItem {
         gradientLayer.frame = overlayView.bounds
         
         let pad: CGFloat = 8
-        metaLabel.sizeToFit()
-        metaLabel.frame = NSRect(x: pad, y: pad + 2, width: b.width - pad * 2, height: metaLabel.fittingSize.height)
+        metaLabel.frame = NSRect(x: pad, y: pad + 2, width: b.width - pad * 2, height: fontSizes.meta + 2)
         
-        titleLabel.sizeToFit()
-        titleLabel.frame = NSRect(x: pad, y: metaLabel.frame.maxY + 2, width: b.width - pad * 2, height: titleLabel.fittingSize.height)
+        titleLabel.frame = NSRect(x: pad, y: metaLabel.frame.maxY + 2, width: b.width - pad * 2, height: fontSizes.title + 3)
 
-        let labelSize = placeholderLabel.fittingSize
+        let labelSize = placeholderLabel.stringValue.size(
+            withAttributes: [.font: placeholderLabel.font ?? NSFont.systemFont(ofSize: 12)]
+        )
         placeholderLabel.frame = NSRect(
             x: (imageContainer.bounds.width - labelSize.width) / 2,
             y: (imageContainer.bounds.height - labelSize.height) / 2,
-            width: labelSize.width, height: labelSize.height)
+            width: ceil(labelSize.width), height: ceil(labelSize.height))
         let badgeSize: CGFloat = 24
         multiSelectBadge.frame = NSRect(
             x: (imageContainer.bounds.width - badgeSize) / 2,
