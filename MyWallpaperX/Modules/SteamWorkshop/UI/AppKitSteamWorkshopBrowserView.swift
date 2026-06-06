@@ -195,25 +195,41 @@ final class AppKitSteamWorkshopBrowserView: NSView {
         contentHost.subviews.forEach { $0.removeFromSuperview() }
 
         let contentView: NSView
+        let fillsHost: Bool
         switch nextState {
         case .loading:
             contentView = makeLoadingStateView(text: loadingText)
+            fillsHost = false
         case .error(let message):
             contentView = makeErrorStateView(message: message)
+            fillsHost = false
         case .empty(let message):
             contentView = makeCenteredStateView(symbolName: "square.grid.2x2", message: message)
+            fillsHost = false
         case .grid:
             contentView = gridView
+            fillsHost = true
         }
 
         contentView.translatesAutoresizingMaskIntoConstraints = false
         contentHost.addSubview(contentView)
-        NSLayoutConstraint.activate([
-            contentView.leadingAnchor.constraint(equalTo: contentHost.leadingAnchor),
-            contentView.trailingAnchor.constraint(equalTo: contentHost.trailingAnchor),
-            contentView.topAnchor.constraint(equalTo: contentHost.topAnchor),
-            contentView.bottomAnchor.constraint(equalTo: contentHost.bottomAnchor)
-        ])
+        if fillsHost {
+            NSLayoutConstraint.activate([
+                contentView.leadingAnchor.constraint(equalTo: contentHost.leadingAnchor),
+                contentView.trailingAnchor.constraint(equalTo: contentHost.trailingAnchor),
+                contentView.topAnchor.constraint(equalTo: contentHost.topAnchor),
+                contentView.bottomAnchor.constraint(equalTo: contentHost.bottomAnchor)
+            ])
+        } else {
+            NSLayoutConstraint.activate([
+                contentView.centerXAnchor.constraint(equalTo: contentHost.centerXAnchor),
+                contentView.centerYAnchor.constraint(equalTo: contentHost.centerYAnchor),
+                contentView.leadingAnchor.constraint(greaterThanOrEqualTo: contentHost.leadingAnchor, constant: 32),
+                contentView.trailingAnchor.constraint(lessThanOrEqualTo: contentHost.trailingAnchor, constant: -32),
+                contentView.topAnchor.constraint(greaterThanOrEqualTo: contentHost.topAnchor, constant: 32),
+                contentView.bottomAnchor.constraint(lessThanOrEqualTo: contentHost.bottomAnchor, constant: -32)
+            ])
+        }
     }
 
     private func makeLoadingStateView(text: String) -> NSView {
