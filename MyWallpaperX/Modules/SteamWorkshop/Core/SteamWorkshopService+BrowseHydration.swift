@@ -78,9 +78,9 @@ extension SteamWorkshopService {
         guard let firstVisibleIndex = visibleIndexes.first,
               let lastVisibleIndex = visibleIndexes.last else { return }
         let startIndex = max(0, firstVisibleIndex - 12)
-        let endIndex = min(items.count - 1, lastVisibleIndex + 24)
+        let endIndex = min(items.count - 1, lastVisibleIndex + 12)
         guard startIndex <= endIndex else { return }
-        prefetchBrowserPreviewImages(for: Array(items[startIndex...endIndex]), limit: 36)
+        prefetchBrowserPreviewImages(for: Array(items[startIndex...endIndex]), limit: 24)
     }
 
     func prefetchBrowserPreviewImages(for items: [SteamWorkshopBrowserItem], limit: Int) {
@@ -101,7 +101,7 @@ extension SteamWorkshopService {
 
         for (_, url) in deltaCandidates {
             let cacheKey = steamWorkshopPreviewCacheKey(for: url)
-            SteamWorkshopPreviewImageCache.shared.prefetchImageDataAsync(forKey: cacheKey) {
+            SteamWorkshopPreviewImageCache.shared.prefetchRawDataAsync(forKey: cacheKey) {
                 await SteamWorkshopPreviewRequestCoordinator.shared.loadData(
                     from: url,
                     priority: .prefetch
@@ -121,6 +121,7 @@ extension SteamWorkshopService {
     func enqueueBrowserDetailHydration(
         stubs: [SteamWorkshopBrowseStub],
         context: SteamWorkshopBrowseContext,
+        browserContentMode: SteamWorkshopBrowserContentMode,
         navigationVersion: Int,
         resetQueue: Bool
     ) {
@@ -142,6 +143,7 @@ extension SteamWorkshopService {
         browserDetailHydrationTask = Task(priority: .utility) { [weak self] in
             await self?.runBrowserDetailHydrationQueue(
                 context: context,
+                browserContentMode: browserContentMode,
                 navigationVersion: navigationVersion
             )
         }

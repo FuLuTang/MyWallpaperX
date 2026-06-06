@@ -14,7 +14,7 @@ final class VideoLibraryInspectorView: NSView {
     private var loadingTask: Task<Void, Never>?
     private var loadedDetailsPath: String?
     private var contentStack: NSStackView?
-    private weak var favoriteButton: NSButton?
+    private weak var favoriteButton: InspectorFooterButton?
     private var cancellables = Set<AnyCancellable>()
 
     private var currentWallpaper: VideoWallpaper {
@@ -104,7 +104,7 @@ final class VideoLibraryInspectorView: NSView {
         rootStack.spacing = 12
         rootStack.translatesAutoresizingMaskIntoConstraints = false
 
-        let scrollView = VideoLibraryInspectorFadingScrollView()
+        let scrollView = InspectorFadingScrollView()
         scrollView.drawsBackground = false
         scrollView.hasVerticalScroller = false
         scrollView.hasHorizontalScroller = false
@@ -338,14 +338,15 @@ final class VideoLibraryInspectorView: NSView {
             $0.setContentCompressionResistancePriority(.required, for: .horizontal)
         }
         [setButton, revealButton, favoriteButton, tagButton].forEach {
-            $0.heightAnchor.constraint(equalToConstant: 38).isActive = true
+            $0.heightAnchor.constraint(equalToConstant: InspectorFooterMetrics.height).isActive = true
         }
         [favoriteButton, tagButton].forEach {
-            $0.widthAnchor.constraint(equalToConstant: 46).isActive = true
+            $0.widthAnchor.constraint(equalToConstant: InspectorFooterMetrics.iconWidth).isActive = true
         }
 
         NSLayoutConstraint.activate([
-            textGroup.leadingAnchor.constraint(equalTo: stack.leadingAnchor),
+            stack.heightAnchor.constraint(equalToConstant: InspectorFooterMetrics.height),
+            textGroup.leadingAnchor.constraint(equalTo: stack.leadingAnchor, constant: 2),
             textGroup.topAnchor.constraint(equalTo: stack.topAnchor),
             textGroup.bottomAnchor.constraint(equalTo: stack.bottomAnchor),
 
@@ -360,7 +361,7 @@ final class VideoLibraryInspectorView: NSView {
             setButton.widthAnchor.constraint(equalTo: revealButton.widthAnchor),
 
             iconGroup.leadingAnchor.constraint(equalTo: textGroup.trailingAnchor, constant: 6),
-            iconGroup.trailingAnchor.constraint(equalTo: stack.trailingAnchor),
+            iconGroup.trailingAnchor.constraint(equalTo: stack.trailingAnchor, constant: -2),
             iconGroup.topAnchor.constraint(equalTo: stack.topAnchor),
             iconGroup.bottomAnchor.constraint(equalTo: stack.bottomAnchor),
 
@@ -379,8 +380,8 @@ final class VideoLibraryInspectorView: NSView {
 
     private func refreshFooterActions() {
         let title = currentWallpaper.isFavorite ? "取消收藏" : "收藏"
-        favoriteButton?.image = NSImage(
-            systemSymbolName: currentWallpaper.isFavorite ? "heart.fill" : "heart",
+        favoriteButton?.setSymbol(
+            currentWallpaper.isFavorite ? "heart.fill" : "heart",
             accessibilityDescription: title
         )
         favoriteButton?.toolTip = title

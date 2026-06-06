@@ -188,6 +188,21 @@ extension SteamWorkshopService {
             appendIssue(.info, .info, "检测到样本依赖浏览器持久化存储（localStorage/IndexedDB）；这类页面会把用户事件、布局或运行态保存在页面私有存储中")
             appendIssue(.warning, .warning, "若页面数据丢失、重置或与 Wallpaper Engine 的 wpcache 行为不一致，应优先按持久化环境差异评估，而不应直接判为宿主桥接失败")
         }
+        if flags.contains(.serviceWorkerRegistration) {
+            appendIssue(.warning, .warning, "检测到 Service Worker 注册；自定义 scheme 无法提供该能力，当前会建议使用本地 HTTP loopback 兼容模式")
+        }
+        if flags.contains(.esModuleDependency) {
+            appendIssue(.info, .info, "检测到 ES module 依赖；当前会建议使用本地 HTTP loopback 兼容模式降低 custom scheme 差异")
+        }
+        if flags.contains(.dynamicImportUsage) {
+            appendIssue(.info, .info, "检测到动态 import()；当前会建议使用本地 HTTP loopback 兼容模式")
+        }
+        if flags.contains(.wasmUsage) {
+            appendIssue(.info, .info, "检测到 WASM 资源或 WebAssembly API；当前会按 WASM MIME 与 streaming 行为记录兼容诊断")
+        }
+        if flags.contains(.wasmStreamingUsage) {
+            appendIssue(.warning, .warning, "检测到 WebAssembly streaming 编译；custom scheme 兼容性较弱，当前会建议使用本地 HTTP loopback")
+        }
     }
 
     func webValidationLevelForEmptyPropertyValue(

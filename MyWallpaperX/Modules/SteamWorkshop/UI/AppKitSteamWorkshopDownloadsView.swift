@@ -5,13 +5,11 @@
 
 import AppKit
 import Combine
-import SwiftUI
 
 final class AppKitSteamWorkshopDownloadsView: NSView {
     private let service = SteamWorkshopService.shared
     private var cancellables = Set<AnyCancellable>()
-    private var inspectorHostingView: NSHostingView<SteamWorkshopItemDetailSheet>?
-    private var loginHostingView: NSHostingView<SteamWorkshopLoginOverlay>?
+    private var inspectorDetailView: AppKitSteamWorkshopItemDetailView?
     private var lastRequestedCardID: String?
     private var visibleCardID: String?
     private var latestInspectorItem: SteamWorkshopBrowserItem?
@@ -48,14 +46,13 @@ final class AppKitSteamWorkshopDownloadsView: NSView {
         if window == nil {
             InspectorHostActions.postClose(module: .steamWorkshop)
             service.dismissDownloadInspector()
-            removeLoginOverlay()
             return
         }
 
+        service.isLoginSheetPresented = false
         if service.downloads.isEmpty {
             service.reloadInstalledItems()
         }
-        syncLoginOverlay(isPresented: service.isLoginSheetPresented)
         presentPendingDownloadErrorIfNeeded()
         syncSelectedInspectorItem(service.selectedDownloadInspectorItem)
     }
@@ -79,11 +76,6 @@ final class AppKitSteamWorkshopDownloadsView: NSView {
         service.$selectedDownloadInspectorItem
             .receive(on: DispatchQueue.main)
             .sink { [weak self] item in self?.syncSelectedInspectorItem(item) }
-            .store(in: &cancellables)
-
-        service.$isLoginSheetPresented
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] isPresented in self?.syncLoginOverlay(isPresented: isPresented) }
             .store(in: &cancellables)
 
         service.$downloadError
@@ -198,54 +190,26 @@ final class AppKitSteamWorkshopDownloadsView: NSView {
     }
 
     private func installInspectorContent(for item: SteamWorkshopBrowserItem) {
-        let hostingView: NSHostingView<SteamWorkshopItemDetailSheet>
-        if let existing = inspectorHostingView {
-            existing.rootView = SteamWorkshopItemDetailSheet(item: item)
-            hostingView = existing
+        let detailView: AppKitSteamWorkshopItemDetailView
+        if let existing = inspectorDetailView {
+            existing.configure(item: item)
+            detailView = existing
         } else {
-            let created = NSHostingView(rootView: SteamWorkshopItemDetailSheet(item: item))
-            inspectorHostingView = created
-            hostingView = created
+            let created = AppKitSteamWorkshopItemDetailView(item: item)
+            inspectorDetailView = created
+            detailView = created
         }
 
         InspectorHostActions.postMount(
             module: .steamWorkshop,
             cardID: makePresentation(for: item).cardID,
-            hostedView: hostingView
+            hostedView: detailView
         )
     }
 
     private func removeInspectorContent() {
-        inspectorHostingView?.removeFromSuperview()
-        inspectorHostingView = nil
-    }
-
-    private func syncLoginOverlay(isPresented: Bool) {
-        guard window != nil else { return }
-        if isPresented {
-            installLoginOverlayIfNeeded()
-        } else {
-            removeLoginOverlay()
-        }
-    }
-
-    private func installLoginOverlayIfNeeded() {
-        guard loginHostingView == nil else { return }
-        let hostingView = NSHostingView(rootView: SteamWorkshopLoginOverlay())
-        hostingView.translatesAutoresizingMaskIntoConstraints = false
-        loginHostingView = hostingView
-        addSubview(hostingView)
-        NSLayoutConstraint.activate([
-            hostingView.leadingAnchor.constraint(equalTo: leadingAnchor),
-            hostingView.trailingAnchor.constraint(equalTo: trailingAnchor),
-            hostingView.topAnchor.constraint(equalTo: topAnchor),
-            hostingView.bottomAnchor.constraint(equalTo: bottomAnchor)
-        ])
-    }
-
-    private func removeLoginOverlay() {
-        loginHostingView?.removeFromSuperview()
-        loginHostingView = nil
+        inspectorDetailView?.removeFromSuperview()
+        inspectorDetailView = nil
     }
 
     private func presentPendingDownloadErrorIfNeeded() {

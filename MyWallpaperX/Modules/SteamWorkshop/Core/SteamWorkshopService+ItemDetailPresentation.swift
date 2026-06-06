@@ -9,7 +9,7 @@ extension SteamWorkshopService {
         currentWorkshopItemID = resolvedItem.id
         currentPageTitle = resolvedItem.title
         statusMessage = "已加载 \(resolvedItem.title)"
-        let needsDependencyRefresh = resolvedItem.dependencyIDs.isEmpty
+        let needsDependencyRefresh = SteamWorkshopDetailRefreshSupport.needsDependencyRefresh(resolvedItem)
         refreshSelectedBrowserItemDetailIfNeeded(
             forceRefresh: needsDependencyRefresh || SteamWorkshopDetailRefreshSupport.needsRefresh(resolvedItem)
         )
@@ -93,7 +93,6 @@ extension SteamWorkshopService {
         if let previewURL = item.previewImageURL {
             SteamWorkshopPreviewRequestCoordinator.shared.resetFailureState(for: previewURL)
             let cacheKey = steamWorkshopPreviewCacheKey(for: previewURL)
-            SteamWorkshopPreviewRequestCoordinator.shared.markCachedImageSuspicious(forKey: cacheKey)
             SteamWorkshopPreviewImageCache.shared.remove(forKey: cacheKey)
         }
         previewReloadToken += 1

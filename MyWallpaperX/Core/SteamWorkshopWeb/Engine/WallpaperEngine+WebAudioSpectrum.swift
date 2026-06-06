@@ -8,8 +8,10 @@ import QuartzCore
 
 extension WallpaperEngine {
     private static let legacyWebSpectrumSampleCount = 128
-    private static let webSpectrumRiseBlend: Float = 0.86
-    private static let webSpectrumFallBlend: Float = 0.34
+    private static let legacyWebSpectrumGain: Float = 0.18
+    private static let legacyWebSpectrumResponsePower: Float = 1.35
+    private static let webSpectrumRiseBlend: Float = 0.58
+    private static let webSpectrumFallBlend: Float = 0.28
 
     func dispatchWebAudioSpectrumIfNeeded(_ levels: [Float]) -> Bool {
         guard currentPlaybackContentKind == .web else { return false }
@@ -18,10 +20,17 @@ extension WallpaperEngine {
         guard now - lastWebSpectrumPushAt >= webSpectrumPushMinInterval else { return true }
         lastWebSpectrumPushAt = now
 
-        let webLevels = interpolatedWebSpectrumLevels(levels, count: Self.legacyWebSpectrumSampleCount)
+        let webLevels = legacyWebSpectrumLevels(levels, count: Self.legacyWebSpectrumSampleCount)
         let smoothedWebLevels = smoothedWebSpectrumLevels(webLevels)
         dispatchWebRuntimeCommand(.pushAudioSpectrum(smoothedWebLevels))
         return true
+    }
+
+    private func legacyWebSpectrumLevels(_ levels: [Float], count: Int) -> [Float] {
+        interpolatedWebSpectrumLevels(levels, count: count).map { level in
+            let clamped = min(max(level, 0), 1)
+            return min(1, pow(clamped, Self.legacyWebSpectrumResponsePower) * Self.legacyWebSpectrumGain)
+        }
     }
 
     private func smoothedWebSpectrumLevels(_ levels: [Float]) -> [Float] {

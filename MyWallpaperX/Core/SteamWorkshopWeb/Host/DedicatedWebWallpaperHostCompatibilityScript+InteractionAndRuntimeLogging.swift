@@ -5,6 +5,13 @@ let webCompatibilityScriptInteractionAndRuntimeLogging = #"""
       try {
         hostLogger.post(`console.${name}`, args.map(arg => {
           if (typeof arg === 'string') return arg;
+          if (arg && typeof arg === 'object') {
+            const message = typeof arg.message === 'string' ? arg.message : '';
+            const stack = typeof arg.stack === 'string' ? arg.stack : '';
+            if (message || stack) {
+              return [message, stack].filter(Boolean).join(' ');
+            }
+          }
           try { return JSON.stringify(arg); } catch (_) { return String(arg); }
         }).join(' '));
       } catch (_) {}
@@ -19,6 +26,17 @@ let webCompatibilityScriptInteractionAndRuntimeLogging = #"""
     if (target && target !== window) {
       const tagName = target.tagName || 'resource';
       const source = target.currentSrc || target.src || target.href || '';
+      try {
+        const sourceURL = source ? new URL(String(source), document.location.href) : null;
+        const rawSource =
+          target.getAttribute && tagName === 'IMG'
+            ? String(target.getAttribute('src') || '').trim()
+            : '';
+        if (tagName === 'IMG' && (!rawSource || (sourceURL && sourceURL.href === document.location.href))) {
+          hostLogger.post('resource.ignored', `${tagName} empty-src`);
+          return;
+        }
+      } catch (_) {}
       hostLogger.post('resource.error', `${tagName} ${source}`.trim());
       return;
     }
@@ -30,9 +48,60 @@ let webCompatibilityScriptInteractionAndRuntimeLogging = #"""
   });
   if (typeof window.fetch === 'function') {
     const originalFetch = window.fetch.bind(window);
+    const localCompanionResponse = (resource) => {
+      try {
+        const rawURL = resource && typeof resource === 'object' && 'url' in resource ? resource.url : resource;
+        const url = new URL(String(rawURL || ''), document.location.href);
+        const isLocalCompanion =
+          (url.hostname === '127.0.0.1' || url.hostname === 'localhost') &&
+          url.port === '5000';
+        if (!isLocalCompanion) return null;
+        const path = url.pathname.replace(/\/+$/, '') || '/';
+        if (path === '/usage') {
+          return new Response(JSON.stringify([0, 0, -1, 0, 0, 0]), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' }
+          });
+        }
+        if (path === '/notes' || path === '/shortcuts') {
+          return new Response(JSON.stringify([]), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' }
+          });
+        }
+        if (path === '/logs') {
+          return new Response('', {
+            status: 200,
+            headers: { 'Content-Type': 'text/plain' }
+          });
+        }
+      } catch (_) {}
+      return null;
+    };
     window.fetch = function(resource, init) {
+      const method = String((init && init.method) || (resource && resource.method) || 'GET').toUpperCase();
+      const rawURL = resource && typeof resource === 'object' && 'url' in resource ? resource.url : resource;
+      const companionResponse = localCompanionResponse(resource);
+      if (companionResponse) {
+        hostLogger.post('fetch.compat', String(rawURL));
+        return Promise.resolve(companionResponse);
+      }
       return originalFetch(resource, init).catch(error => {
-        hostLogger.post('fetch.error', `${String(resource)} ${error && error.message ? error.message : error}`);
+        try {
+          const url = new URL(String(rawURL || ''), document.location.href);
+          const localPath = url.pathname.replace(/^\/+/, '');
+          if (method === 'HEAD' && localPath === 'performance.layout.user.js') {
+            hostLogger.post('fetch.ignored', `${method} ${localPath} optional`);
+            throw error;
+          }
+        } catch (urlError) {
+          if (urlError !== error) {
+            // Fall through to regular error logging when URL normalization fails.
+          } else {
+            throw error;
+          }
+        }
+        hostLogger.post('fetch.error', `${String(rawURL)} ${error && error.message ? error.message : error}`);
         throw error;
       });
     };

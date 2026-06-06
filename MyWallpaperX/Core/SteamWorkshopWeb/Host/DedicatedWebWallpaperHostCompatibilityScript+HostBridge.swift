@@ -48,45 +48,22 @@ let webCompatibilityScriptHostBridge = #"""
       hostLogger.post('interactive-regions.error', error && error.message ? error.message : error);
     }
   };
-  window.__myWallpaperApplyProperties = function(properties) {
-    const safeProperties = properties || {};
-    window.__myWallpaperLastUserProperties = safeProperties;
-    try {
-      if (window.wallpaperPropertyListener && typeof window.wallpaperPropertyListener.applyUserProperties === 'function') {
-        window.wallpaperPropertyListener.applyUserProperties(safeProperties);
-      }
-      window.dispatchEvent(new CustomEvent('wallpaper-properties-applied', { detail: safeProperties }));
-    } catch (error) {
-      hostLogger.post('properties.error', error && error.message ? error.message : error);
-    }
-  };
-  window.__myWallpaperApplyGeneralProperties = function(properties) {
-    const safeProperties = properties || {};
+  window.__myWallpaperNormalizePropertyBag = function(properties) {
     const normalizedProperties = {};
     try {
-      for (const [key, rawValue] of Object.entries(safeProperties)) {
+      for (const [key, rawValue] of Object.entries(properties || {})) {
         if (rawValue && typeof rawValue === 'object' && Object.prototype.hasOwnProperty.call(rawValue, 'value')) {
           const boxedValue = Object.assign({}, rawValue);
-          const scalarValue = rawValue.value;
           try {
             Object.defineProperty(boxedValue, 'valueOf', {
               configurable: true,
               enumerable: false,
-              value() { return scalarValue; }
+              value: function() { return this.value; }
             });
-          } catch (_) {}
-          try {
             Object.defineProperty(boxedValue, 'toString', {
               configurable: true,
               enumerable: false,
-              value() { return String(scalarValue); }
-            });
-          } catch (_) {}
-          try {
-            Object.defineProperty(boxedValue, Symbol.toPrimitive, {
-              configurable: true,
-              enumerable: false,
-              value() { return scalarValue; }
+              value: function() { return String(this.value); }
             });
           } catch (_) {}
           normalizedProperties[key] = boxedValue;
@@ -94,7 +71,83 @@ let webCompatibilityScriptHostBridge = #"""
           normalizedProperties[key] = rawValue;
         }
       }
-    } catch (_) {}
+      return normalizedProperties;
+    } catch (_) {
+      return properties || {};
+    }
+  };
+  try {
+    const arrayPrototype = Array.prototype;
+    if (arrayPrototype.__mwxColorSplitPatched !== true) {
+      const originalSplit = arrayPrototype.split;
+      Object.defineProperty(arrayPrototype, 'split', {
+        configurable: true,
+        enumerable: false,
+        value(separator) {
+          if (this.length >= 3 && this.slice(0, 3).every((item) => Number.isFinite(Number(item)))) {
+            return this.map((item) => String(item)).join(' ').split(separator);
+          }
+          if (typeof originalSplit === 'function') {
+            return originalSplit.call(this, separator);
+          }
+          return String(this).split(separator);
+        }
+      });
+      Object.defineProperty(arrayPrototype, '__mwxColorSplitPatched', {
+        configurable: true,
+        enumerable: false,
+        value: true
+      });
+    }
+  } catch (_) {}
+  window.__myWallpaperStablePropertySignature = function(value) {
+    try {
+      const normalize = (input) => {
+        if (Array.isArray(input)) return input.map(normalize);
+        if (input && typeof input === 'object') {
+          const output = {};
+          for (const key of Object.keys(input).sort()) {
+            const item = input[key];
+            if (typeof item !== 'function') {
+              output[key] = normalize(item);
+            }
+          }
+          return output;
+        }
+        return input;
+      };
+      return JSON.stringify(normalize(value || {}));
+    } catch (_) {
+      try { return JSON.stringify(value || {}); } catch (_) { return ''; }
+    }
+  };
+  window.__myWallpaperApplyProperties = function(properties) {
+    const safeProperties = window.__myWallpaperNormalizePropertyBag(properties || {});
+    window.__myWallpaperLastUserProperties = safeProperties;
+    try {
+      const hasUserPropertyListener = window.wallpaperPropertyListener && typeof window.wallpaperPropertyListener.applyUserProperties === 'function';
+      const userPropertyCallback = hasUserPropertyListener ? window.wallpaperPropertyListener.applyUserProperties : null;
+      const signature = window.__myWallpaperStablePropertySignature(safeProperties);
+      if (
+        hasUserPropertyListener &&
+        signature &&
+        signature === window.__myWallpaperLastAppliedUserPropertySignature &&
+        userPropertyCallback === window.__myWallpaperLastAppliedUserPropertyCallback
+      ) {
+        return;
+      }
+      if (hasUserPropertyListener) {
+        window.wallpaperPropertyListener.applyUserProperties(safeProperties);
+        window.__myWallpaperLastAppliedUserPropertySignature = signature;
+        window.__myWallpaperLastAppliedUserPropertyCallback = userPropertyCallback;
+      }
+      window.dispatchEvent(new CustomEvent('wallpaper-properties-applied', { detail: safeProperties }));
+    } catch (error) {
+      hostLogger.post('properties.error', error && error.message ? error.message : error);
+    }
+  };
+  window.__myWallpaperApplyGeneralProperties = function(properties) {
+    const normalizedProperties = window.__myWallpaperNormalizePropertyBag(properties || {});
     window.__myWallpaperLastGeneralProperties = normalizedProperties;
     try {
       if (window.wallpaperPropertyListener && typeof window.wallpaperPropertyListener.applyGeneralProperties === 'function') {
@@ -182,7 +235,7 @@ let webCompatibilityScriptHostBridge = #"""
     const safeLevels = Array.isArray(levels)
       ? levels.map((value) => {
           const numeric = Number(value);
-          return Number.isFinite(numeric) ? numeric : 0;
+          return Number.isFinite(numeric) ? Math.max(0, Math.min(1, numeric)) : 0;
         })
       : [];
     try {
@@ -223,6 +276,21 @@ let webCompatibilityScriptHostBridge = #"""
     for (const listener of playbackStateListeners) {
       try { listener(paused); } catch (_) {}
     }
+    for (const context of audioContextInstances) {
+      try {
+        if (paused && typeof context.suspend === 'function') {
+          context.suspend().catch((error) => {
+            hostLogger.post('audio.suspend.error', error && error.message ? error.message : error);
+          });
+        } else if (!paused && typeof context.resume === 'function') {
+          context.resume().catch((error) => {
+            hostLogger.post('audio.resume.error', error && error.message ? error.message : error);
+          });
+        }
+      } catch (error) {
+        hostLogger.post('audio.context-state.error', error && error.message ? error.message : error);
+      }
+    }
     const mediaNodes = Array.from(document.querySelectorAll('audio,video'));
     for (const node of mediaNodes.concat(audioStreams)) {
       if (!node) continue;
@@ -245,5 +313,13 @@ let webCompatibilityScriptHostBridge = #"""
     }
     wallpaperDispatchMediaPlayback(wallpaperPreferredMediaNode(), paused);
   };
+  try {
+    window.__myWallpaperSetGlobalVolume(window.__myWallpaperInitialVolume);
+    window.__myWallpaperSetPaused(!!window.__myWallpaperInitialPaused);
+    window.__myWallpaperNotifyPluginLoaded('led');
+    window.__myWallpaperNotifyPluginLoaded('rgb');
+  } catch (error) {
+    hostLogger.post('bootstrap.seed.error', error && error.message ? error.message : error);
+  }
 })();
 """#

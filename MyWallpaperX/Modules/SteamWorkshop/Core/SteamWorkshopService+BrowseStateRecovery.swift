@@ -62,6 +62,7 @@ extension SteamWorkshopService {
         enqueueBrowserDetailHydration(
             stubs: stubsNeedingHydration,
             context: browseContext,
+            browserContentMode: browserContentMode,
             navigationVersion: navigationVersion,
             resetQueue: false
         )
@@ -97,6 +98,7 @@ extension SteamWorkshopService {
         isLoadingMoreBrowserItems = false
         hasMoreBrowserItems = true
         browserNextPage = 1
+        browserLoadMoreRetryAfter = .distantPast
         prefetchedBrowserPageKeys.removeAll()
         prefetchedBrowserPages.removeAll()
         pendingBrowserDetailStubs = []

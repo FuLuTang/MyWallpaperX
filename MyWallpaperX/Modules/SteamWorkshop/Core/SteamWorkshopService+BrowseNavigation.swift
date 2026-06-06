@@ -8,6 +8,8 @@ extension SteamWorkshopService {
             discoveryBrowseSnapshot = makeDiscoveryBrowseSnapshot()
         }
         savedDiscoveryQueryBeforeAuthorBrowse = browseContext.isAuthorWorkshop ? savedDiscoveryQueryBeforeAuthorBrowse : browserQuery
+        // 阻止后续 filter 属性 didSet 触发 navigateToBrowse()，避免在作者工坊语境下误抓取
+        suppressAutomaticBrowseNavigation = true
         browseContext = .authorWorkshop(
             authorName: item.author.isEmpty ? "未知作者" : item.author,
             workshopURL: workshopURL
@@ -39,6 +41,7 @@ extension SteamWorkshopService {
             navigateToBrowse()
         }
         discoveryBrowseSnapshot = nil
+        suppressAutomaticBrowseNavigation = false
     }
 
     func requestedURLForCurrentContext(page: Int) -> URL {
@@ -106,6 +109,7 @@ extension SteamWorkshopService {
 
     func makeDiscoveryBrowseSnapshot() -> SteamWorkshopDiscoveryBrowseSnapshot {
         SteamWorkshopDiscoveryBrowseSnapshot(
+            browserContentMode: browserContentMode,
             browserItems: browserItems,
             browserState: browserState,
             hasMoreBrowserItems: hasMoreBrowserItems,
@@ -125,6 +129,11 @@ extension SteamWorkshopService {
         _ snapshot: SteamWorkshopDiscoveryBrowseSnapshot,
         restoredQuery: String
     ) {
+        guard snapshot.browserContentMode == browserContentMode else {
+            setBrowserQuery(restoredQuery)
+            navigateToBrowse()
+            return
+        }
         setBrowserQuery(restoredQuery)
         selectedBrowserItemError = nil
         isRefreshingSelectedBrowserItem = false

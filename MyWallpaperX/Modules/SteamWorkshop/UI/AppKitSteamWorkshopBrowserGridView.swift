@@ -27,6 +27,10 @@ final class AppKitSteamWorkshopBrowserContainerView: NSView, ModuleFocusable, NS
     private var pendingFooterSnapshotRefresh = false
     private var moduleActivationObserver: NSObjectProtocol?
     private var lastPrioritizedVisibleIDs: [String] = []
+    private var pendingLayoutInvalidation = false
+    private var lastNonZeroLayoutWidth: CGFloat = 0
+    private var hasResolvedInitialItemSize = false
+    private var pendingItemsUntilInitialLayout: [SteamWorkshopBrowserItem]?
 
     private let scrollView: NSScrollView = {
         let scrollView = NSScrollView()
@@ -106,7 +110,16 @@ final class AppKitSteamWorkshopBrowserContainerView: NSView, ModuleFocusable, NS
 
     override func layout() {
         super.layout()
-        updateLayoutItemSize()
+        updateLayoutItemSize(invalidateImmediately: !hasResolvedInitialItemSize)
+        applyPendingItemsIfInitialLayoutIsReady()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window != nil {
+            needsLayout = true
+        }
+        syncVisiblePreviewAnimationStates(isVisible: window != nil)
     }
 
     private func setup() {
@@ -152,6 +165,7 @@ final class AppKitSteamWorkshopBrowserContainerView: NSView, ModuleFocusable, NS
             .store(in: &cancellables)
 
         service.$previewReloadToken
+            .dropFirst()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 self?.forceReloadVisiblePreviews()
@@ -203,6 +217,11 @@ final class AppKitSteamWorkshopBrowserContainerView: NSView, ModuleFocusable, NS
     }
 
     private func applyItems(_ items: [SteamWorkshopBrowserItem]) {
+        guard hasResolvedInitialItemSize || updateLayoutItemSize(invalidateImmediately: true) else {
+            pendingItemsUntilInitialLayout = items
+            return
+        }
+        pendingItemsUntilInitialLayout = nil
         let previousItemsByID = itemsByID
         let previousOrderedIDs = orderedIDs
         let previousFooterState = footerState
@@ -251,6 +270,15 @@ final class AppKitSteamWorkshopBrowserContainerView: NSView, ModuleFocusable, NS
         }
     }
 
+    private func applyPendingItemsIfInitialLayoutIsReady() {
+        guard hasResolvedInitialItemSize,
+              let pendingItems = pendingItemsUntilInitialLayout else {
+            return
+        }
+        pendingItemsUntilInitialLayout = nil
+        applyItems(pendingItems)
+    }
+
     private func reloadVisibleMetadata(for changedIDs: Set<String>) {
         guard !changedIDs.isEmpty else { return }
         for indexPath in collectionView.indexPathsForVisibleItems() {
@@ -281,6 +309,13 @@ final class AppKitSteamWorkshopBrowserContainerView: NSView, ModuleFocusable, NS
             guard let cell = collectionView.item(at: indexPath) as? AppKitSteamWorkshopBrowserItem else { continue }
             guard itemsByID[id] != nil else { continue }
             cell.forceReloadPreview()
+        }
+    }
+
+    private func syncVisiblePreviewAnimationStates(isVisible: Bool) {
+        for visibleItem in collectionView.visibleItems() {
+            guard let item = visibleItem as? AppKitSteamWorkshopBrowserItem else { continue }
+            item.setPreviewVisible(isVisible)
         }
     }
 
@@ -325,6 +360,12 @@ final class AppKitSteamWorkshopBrowserContainerView: NSView, ModuleFocusable, NS
     }
 
     private func checkLoadMore() {
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { [weak self] in
+                self?.checkLoadMore()
+            }
+            return
+        }
         guard service.hasMoreBrowserItems, !service.isLoadingMoreBrowserItems else { return }
         guard let documentView = scrollView.documentView else { return }
         let contentHeight = documentView.frame.height
@@ -367,9 +408,11 @@ final class AppKitSteamWorkshopBrowserContainerView: NSView, ModuleFocusable, NS
         service.prioritizeVisibleBrowserItemIDs(prioritized)
     }
 
-    private func updateLayoutItemSize() {
+    @discardableResult
+    private func updateLayoutItemSize(invalidateImmediately: Bool = false) -> Bool {
+        guard let layoutWidth = resolvedLayoutWidth() else { return false }
         let metrics = SteamWorkshopGridLayoutSupport.metrics(
-            boundsWidth: bounds.width,
+            boundsWidth: layoutWidth,
             zoomOffset: service.zoomOffset,
             hoverScale: AppKitSteamWorkshopBrowserItem.hoverScale,
             sectionInset: flowLayout.sectionInset
@@ -377,13 +420,53 @@ final class AppKitSteamWorkshopBrowserContainerView: NSView, ModuleFocusable, NS
         flowLayout.minimumInteritemSpacing = metrics.interitemSpacing
         flowLayout.minimumLineSpacing = metrics.lineSpacing
         let newSize = metrics.itemSize
+        let isInitialResolution = !hasResolvedInitialItemSize
+        hasResolvedInitialItemSize = true
 
-        guard flowLayout.itemSize != newSize else { return }
+        guard flowLayout.itemSize != newSize else { return true }
         flowLayout.itemSize = newSize
-        collectionView.collectionViewLayout?.invalidateLayout()
+        if invalidateImmediately || isInitialResolution {
+            collectionView.collectionViewLayout?.invalidateLayout()
+        } else {
+            scheduleLayoutInvalidation()
+        }
+        return true
+    }
+
+    private func resolvedLayoutWidth() -> CGFloat? {
+        let candidates = [
+            bounds.width,
+            scrollView.bounds.width,
+            scrollView.contentView.bounds.width,
+            superview?.bounds.width ?? 0
+        ]
+        if let width = candidates.first(where: { $0.isFinite && $0 > 1 }) {
+            lastNonZeroLayoutWidth = width
+            return width
+        }
+        if lastNonZeroLayoutWidth > 1 {
+            return lastNonZeroLayoutWidth
+        }
+        return nil
+    }
+
+    private func scheduleLayoutInvalidation() {
+        guard pendingLayoutInvalidation == false else { return }
+        pendingLayoutInvalidation = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.pendingLayoutInvalidation = false
+            self.collectionView.collectionViewLayout?.invalidateLayout()
+        }
     }
 
     private func restoreScrollOffset(_ offsetY: CGFloat) {
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { [weak self] in
+                self?.restoreScrollOffset(offsetY)
+            }
+            return
+        }
         guard let documentView = scrollView.documentView else {
             service.consumePendingBrowserScrollRestoreOffset()
             return
@@ -397,6 +480,12 @@ final class AppKitSteamWorkshopBrowserContainerView: NSView, ModuleFocusable, NS
     }
 
     private func updateBrowserScrollMetrics() {
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { [weak self] in
+                self?.updateBrowserScrollMetrics()
+            }
+            return
+        }
         guard let documentView = scrollView.documentView else { return }
         service.updateBrowserScrollMetrics(
             offsetY: scrollView.contentView.bounds.origin.y,
@@ -470,9 +559,18 @@ final class AppKitSteamWorkshopBrowserContainerView: NSView, ModuleFocusable, NS
             return
         }
 
-        guard let cell = item as? AppKitSteamWorkshopBrowserItem else { return }
-        configureCell(cell, for: id)
+        guard let item = item as? AppKitSteamWorkshopBrowserItem else { return }
+        item.setPreviewVisible(true)
         prioritizeVisibleItemsForHydration()
+    }
+
+    func collectionView(
+        _ collectionView: NSCollectionView,
+        didEndDisplaying item: NSCollectionViewItem,
+        forRepresentedObjectAt indexPath: IndexPath
+    ) {
+        guard let item = item as? AppKitSteamWorkshopBrowserItem else { return }
+        item.setPreviewVisible(false)
     }
 }
 

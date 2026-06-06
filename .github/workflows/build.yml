@@ -24,6 +24,7 @@ jobs:
       DERIVED_DATA_PATH: build/DerivedData
       DIST_DIR: dist
       KEYCHAIN_PATH: build/signing.keychain-db
+      IS_RELEASE_BUILD: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') }}
 
     steps:
       - name: Checkout
@@ -34,7 +35,11 @@ jobs:
       - name: Resolve build version
         run: |
           SHORT_SHA="${GITHUB_SHA::7}"
-          eval "$("$GITHUB_WORKSPACE/script/resolve_version.sh")"
+          if [ "${IS_RELEASE_BUILD}" = "true" ]; then
+            eval "$("$GITHUB_WORKSPACE/script/resolve_version.sh" --release)"
+          else
+            eval "$("$GITHUB_WORKSPACE/script/resolve_version.sh")"
+          fi
           PACKAGE_NAME="${APP_NAME}-${MARKETING_VERSION}-${SHORT_SHA}"
 
           {
@@ -59,6 +64,7 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
         run: |
           missing=0
           for name in \
@@ -68,7 +74,8 @@ jobs:
             DEVELOPER_ID_APPLICATION \
             APPLE_ID \
             APPLE_APP_SPECIFIC_PASSWORD \
-            APPLE_TEAM_ID
+            APPLE_TEAM_ID \
+            SPARKLE_PRIVATE_KEY
           do
             if [ -z "${!name}" ]; then
               echo "::error::Missing GitHub secret: ${name}"
@@ -280,6 +287,7 @@ jobs:
           if-no-files-found: error
 
       - name: Generate release notes
+        if: env.IS_RELEASE_BUILD == 'true'
         run: |
           PREVIOUS_TAG="$(git tag --list 'build-*' --sort=-v:refname | head -n 1)"
           NOTES_FILE="$DIST_DIR/release-notes.md"
@@ -298,6 +306,7 @@ jobs:
           } > "$NOTES_FILE"
 
       - name: Publish GitHub prerelease
+        if: env.IS_RELEASE_BUILD == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -315,6 +324,54 @@ jobs:
               "$DIST_DIR/$PACKAGE_NAME.dmg" \
               --title "$RELEASE_TITLE" \
               --notes-file "$DIST_DIR/release-notes.md" \
+              --prerelease \
+              --target "$GITHUB_SHA"
+          fi
+
+      - name: Generate signed Sparkle appcast
+        if: env.IS_RELEASE_BUILD == 'true'
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          SPARKLE_VERSION="2.9.2"
+          SPARKLE_DIR="$RUNNER_TEMP/sparkle"
+          FEED_DIR="$RUNNER_TEMP/sparkle-feed"
+          DOWNLOAD_PREFIX="https://github.com/${GITHUB_REPOSITORY}/releases/download/build-${MARKETING_VERSION}/"
+
+          rm -rf "$SPARKLE_DIR" "$FEED_DIR"
+          mkdir -p "$SPARKLE_DIR" "$FEED_DIR"
+
+          curl --fail --location --silent --show-error \
+            "https://github.com/sparkle-project/Sparkle/releases/download/${SPARKLE_VERSION}/Sparkle-${SPARKLE_VERSION}.tar.xz" \
+            | tar -xJ -C "$SPARKLE_DIR"
+
+          cp "$DIST_DIR/$PACKAGE_NAME.dmg" "$FEED_DIR/"
+          cp "$DIST_DIR/release-notes.md" "$FEED_DIR/$PACKAGE_NAME.md"
+
+          printf '%s' "$SPARKLE_PRIVATE_KEY" \
+            | "$SPARKLE_DIR/bin/generate_appcast" \
+                --ed-key-file - \
+                --download-url-prefix "$DOWNLOAD_PREFIX" \
+                --embed-release-notes \
+                --maximum-versions 1 \
+                --maximum-deltas 0 \
+                --link "https://github.com/${GITHUB_REPOSITORY}" \
+                -o "$DIST_DIR/appcast.xml" \
+                "$FEED_DIR"
+
+      - name: Publish Sparkle update feed
+        if: env.IS_RELEASE_BUILD == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          FEED_TAG="update-feed"
+          if gh release view "$FEED_TAG" >/dev/null 2>&1; then
+            gh release upload "$FEED_TAG" "$DIST_DIR/appcast.xml" --clobber
+          else
+            gh release create "$FEED_TAG" \
+              "$DIST_DIR/appcast.xml" \
+              --title "MyWallpaperX Update Feed" \
+              --notes "Machine-readable Sparkle update feed." \
               --prerelease \
               --target "$GITHUB_SHA"
           fi

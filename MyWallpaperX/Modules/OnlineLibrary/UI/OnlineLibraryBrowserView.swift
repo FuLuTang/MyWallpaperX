@@ -139,33 +139,51 @@ final class OnlineLibraryBrowserView: NSView, NSTextFieldDelegate {
         contentHost.subviews.forEach { $0.removeFromSuperview() }
 
         let contentView: NSView
+        let fillsHost: Bool
         switch nextState {
         case .apiKeyPrompt:
             contentView = makeAPIKeyPromptView()
+            fillsHost = false
         case .loadingInitial:
             contentView = OnlineLibraryBrowserViews.makeLoadingState(title: "加载中...")
+            fillsHost = false
         case .initialError(let message):
             contentView = makeErrorStateView(message: message)
+            fillsHost = false
         case .emptyLoaded:
             contentView = OnlineLibraryBrowserViews.makeCenteredStateView(
                 symbolName: "video.slash",
                 title: "没有找到相关视频",
                 message: "试试其他关键词或分类"
             )
+            fillsHost = false
         case .startPrompt:
             contentView = makeStartPromptView()
+            fillsHost = false
         case .grid:
             contentView = makeGridContentView()
+            fillsHost = true
         }
 
         contentView.translatesAutoresizingMaskIntoConstraints = false
         contentHost.addSubview(contentView)
-        NSLayoutConstraint.activate([
-            contentView.leadingAnchor.constraint(equalTo: contentHost.leadingAnchor),
-            contentView.trailingAnchor.constraint(equalTo: contentHost.trailingAnchor),
-            contentView.topAnchor.constraint(equalTo: contentHost.topAnchor),
-            contentView.bottomAnchor.constraint(equalTo: contentHost.bottomAnchor)
-        ])
+        if fillsHost {
+            NSLayoutConstraint.activate([
+                contentView.leadingAnchor.constraint(equalTo: contentHost.leadingAnchor),
+                contentView.trailingAnchor.constraint(equalTo: contentHost.trailingAnchor),
+                contentView.topAnchor.constraint(equalTo: contentHost.topAnchor),
+                contentView.bottomAnchor.constraint(equalTo: contentHost.bottomAnchor)
+            ])
+        } else {
+            NSLayoutConstraint.activate([
+                contentView.centerXAnchor.constraint(equalTo: contentHost.centerXAnchor),
+                contentView.centerYAnchor.constraint(equalTo: contentHost.centerYAnchor),
+                contentView.leadingAnchor.constraint(greaterThanOrEqualTo: contentHost.leadingAnchor, constant: 32),
+                contentView.trailingAnchor.constraint(lessThanOrEqualTo: contentHost.trailingAnchor, constant: -32),
+                contentView.topAnchor.constraint(greaterThanOrEqualTo: contentHost.topAnchor, constant: 32),
+                contentView.bottomAnchor.constraint(lessThanOrEqualTo: contentHost.bottomAnchor, constant: -32)
+            ])
+        }
     }
 
     private func makeAPIKeyPromptView() -> NSView {

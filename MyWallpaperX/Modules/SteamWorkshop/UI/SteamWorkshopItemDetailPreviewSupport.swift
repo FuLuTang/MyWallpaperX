@@ -64,7 +64,7 @@ private struct SteamWorkshopCachedPreviewImage: NSViewRepresentable {
 
         if url.isFileURL {
             if FileManager.default.fileExists(atPath: url.path),
-               let image = NSImage(contentsOf: url),
+               let image = steamWorkshopPreviewImage(from: url),
                !steamWorkshopPreviewImageLooksSuspicious(image) {
                 nsView.setImage(image)
                 return
@@ -88,7 +88,10 @@ private struct SteamWorkshopCachedPreviewImage: NSViewRepresentable {
         }
 
         let cacheKey = steamWorkshopPreviewCacheKey(for: url)
-        if let cached = SteamWorkshopPreviewImageCache.shared.cachedOrDiskImage(forKey: cacheKey) {
+        if let cached = SteamWorkshopPreviewImageCache.shared.cachedOrDiskImage(
+            forKey: cacheKey,
+            decoder: steamWorkshopPreviewImage(from:)
+        ) {
             nsView.setImage(cached)
             return
         }
@@ -99,12 +102,14 @@ private struct SteamWorkshopCachedPreviewImage: NSViewRepresentable {
                 from: url,
                 priority: .userInitiated
             )
-        }) { image in
+        }, decoder: steamWorkshopPreviewImage(from:)) { image in
             guard context.coordinator.currentURL == url else { return }
-            if let image, !steamWorkshopPreviewImageLooksSuspicious(image) {
+            if let image, steamWorkshopPreviewImageIsUsable(image) {
                 nsView.setImage(image)
             } else {
-                SteamWorkshopPreviewRequestCoordinator.shared.markCachedImageSuspicious(forKey: cacheKey)
+                if image != nil {
+                    SteamWorkshopPreviewRequestCoordinator.shared.markCachedImageSuspicious(forKey: cacheKey)
+                }
                 nsView.setLoadingState(.unavailable)
             }
         }
@@ -120,7 +125,7 @@ private struct SteamWorkshopCachedPreviewImage: NSViewRepresentable {
     }
 }
 
-private final class SteamWorkshopPreviewImageContainerView: NSView {
+final class SteamWorkshopPreviewImageContainerView: NSView {
     private let imageView = NSImageView()
     private let placeholderView = SteamWorkshopPreviewPlaceholderView()
 
@@ -137,6 +142,10 @@ private final class SteamWorkshopPreviewImageContainerView: NSView {
     private func commonInit() {
         wantsLayer = true
         layer?.backgroundColor = NSColor.clear.cgColor
+        layer?.cornerRadius = 18
+        layer?.masksToBounds = true
+        layer?.borderWidth = 0.45
+        layer?.borderColor = NSColor.white.withAlphaComponent(0.09).cgColor
         imageView.animates = true
         imageView.imageScaling = .scaleProportionallyUpOrDown
         imageView.imageAlignment = .alignCenter
@@ -157,6 +166,64 @@ private final class SteamWorkshopPreviewImageContainerView: NSView {
 
     func setLoadingState(_ state: SteamWorkshopPreviewPlaceholderView.State) {
         placeholderView.setState(state)
+    }
+
+    func configure(itemID: String, previewImageURL: URL?, fallbackVideoURL: URL?, refreshToken: Int) {
+        let targetURL = previewImageURL ?? fallbackVideoURL
+        guard let targetURL else {
+            setLoadingState(.unavailable)
+            return
+        }
+
+        if targetURL.isFileURL {
+            if FileManager.default.fileExists(atPath: targetURL.path),
+               let image = steamWorkshopPreviewImage(from: targetURL),
+               !steamWorkshopPreviewImageLooksSuspicious(image) {
+                setImage(image)
+                return
+            }
+
+            if let fallbackVideoURL {
+                setLoadingState(.loading)
+                SteamWorkshopDownloadThumbnailPipeline.shared.generateThumbnail(for: fallbackVideoURL) { [weak self] image in
+                    if let image {
+                        self?.setImage(image)
+                    } else {
+                        self?.setLoadingState(.unavailable)
+                    }
+                }
+                return
+            }
+
+            setLoadingState(.unavailable)
+            return
+        }
+
+        let cacheKey = steamWorkshopPreviewCacheKey(for: targetURL)
+        if let cached = SteamWorkshopPreviewImageCache.shared.cachedOrDiskImage(
+            forKey: cacheKey,
+            decoder: steamWorkshopPreviewImage(from:)
+        ) {
+            setImage(cached)
+            return
+        }
+
+        setLoadingState(.loading)
+        SteamWorkshopPreviewImageCache.shared.loadImageDataAsync(forKey: cacheKey, loader: {
+            await SteamWorkshopPreviewRequestCoordinator.shared.loadData(
+                from: targetURL,
+                priority: .userInitiated
+            )
+        }, decoder: steamWorkshopPreviewImage(from:)) { [weak self] image in
+            if let image, steamWorkshopPreviewImageIsUsable(image) {
+                self?.setImage(image)
+            } else {
+                if image != nil {
+                    SteamWorkshopPreviewRequestCoordinator.shared.markCachedImageSuspicious(forKey: cacheKey)
+                }
+                self?.setLoadingState(.unavailable)
+            }
+        }
     }
 
     private func updateImageFrame() {

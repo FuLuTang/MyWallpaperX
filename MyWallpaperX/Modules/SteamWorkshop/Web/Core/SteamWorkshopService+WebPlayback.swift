@@ -58,6 +58,7 @@ extension SteamWorkshopService {
                 downloadError = "没有找到可播放的 HTML 入口文件。"
                 return
             }
+            let runtimeProfile = recommendedWebRuntimeProfile(for: record)
             NotificationCenter.default.post(
                 name: .steamWorkshopWebWallpaperReadyToPlay,
                 object: nil,
@@ -65,7 +66,8 @@ extension SteamWorkshopService {
                     "recordID": record.id,
                     "entryURL": playbackContext.effectiveEntryURL,
                     "rootURL": playbackContext.effectiveRootURL,
-                    "propertiesJSON": playbackContext.propertyPayloadJSON as Any
+                    "propertiesJSON": playbackContext.propertyPayloadJSON as Any,
+                    "runtimeProfile": runtimeProfile
                 ]
             )
             statusMessage = "已将 \(record.title) 发送到 HTML 网页壁纸实验宿主"
@@ -82,5 +84,20 @@ extension SteamWorkshopService {
             userInfo: ["localURL": videoURL]
         )
         statusMessage = "已将 \(record.title) 发送到视频库并准备播放"
+    }
+
+    func recommendedWebRuntimeProfile(for record: SteamWorkshopDownloadRecord) -> WallpaperEngine.WebRuntimeProfile {
+        guard let model = resolvedWebRuntimeModel(for: record) else {
+            return .standard
+        }
+        let flags = Set(model.runtimeRiskFlags)
+        let requiresOriginCompatibility = flags.contains(.serviceWorkerRegistration)
+            || flags.contains(.esModuleDependency)
+            || flags.contains(.wasmStreamingUsage)
+            || flags.contains(.customSchemeSensitiveWebGL)
+        if requiresOriginCompatibility {
+            return .highCompatibility
+        }
+        return .standard
     }
 }

@@ -131,134 +131,17 @@ enum OnlineLibraryDownloadsInspectorViews {
         symbolName: String,
         target: AnyObject?,
         action: Selector,
-        kind: OnlineLibraryDownloadsInspectorFooterButtonKind = .secondary
-    ) -> NSButton {
-        let button = OnlineLibraryDownloadsInspectorFooterButton(
+        kind: InspectorFooterButtonKind = .secondary
+    ) -> InspectorFooterButton {
+        let button = InspectorFooterButton(
             title: title,
             image: NSImage(systemSymbolName: symbolName, accessibilityDescription: title),
+            kind: kind,
             target: target,
-            action: action,
-            kind: kind
+            action: action
         )
         button.translatesAutoresizingMaskIntoConstraints = false
         return button
-    }
-}
-
-enum OnlineLibraryDownloadsInspectorFooterButtonKind {
-    case primary
-    case secondary
-}
-
-private final class OnlineLibraryDownloadsInspectorFooterButton: NSButton {
-    private let kind: OnlineLibraryDownloadsInspectorFooterButtonKind
-
-    init(title: String, image: NSImage?, target: AnyObject?, action: Selector, kind: OnlineLibraryDownloadsInspectorFooterButtonKind) {
-        self.kind = kind
-        super.init(frame: .zero)
-        self.title = title
-        self.image = image
-        self.target = target
-        self.action = action
-        setup()
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        nil
-    }
-
-    override var isHighlighted: Bool {
-        didSet { updateStyle() }
-    }
-
-    override var isEnabled: Bool {
-        didSet { updateStyle() }
-    }
-
-    private func setup() {
-        isBordered = false
-        imagePosition = .imageLeading
-        imageScaling = .scaleProportionallyDown
-        imageHugsTitle = true
-        font = .systemFont(ofSize: 13, weight: .semibold)
-        wantsLayer = true
-        layer?.cornerRadius = 10
-        layer?.borderWidth = 0.7
-        translatesAutoresizingMaskIntoConstraints = false
-        updateStyle()
-    }
-
-    private func updateStyle() {
-        let enabledAlpha: CGFloat = isEnabled ? 1 : 0.45
-        let pressedFactor: CGFloat = isHighlighted ? 0.9 : 1
-        let isDarkMode = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-        let textColor: NSColor
-        let fillColor: NSColor
-        let borderColor: NSColor
-
-        switch kind {
-        case .primary:
-            textColor = .white.withAlphaComponent(enabledAlpha)
-            fillColor = .systemBlue.withAlphaComponent((isDarkMode ? 0.95 : 0.88) * enabledAlpha * pressedFactor)
-            borderColor = .systemBlue.withAlphaComponent(0.42 * enabledAlpha)
-        case .secondary:
-            textColor = .labelColor.withAlphaComponent(enabledAlpha)
-            fillColor = (isDarkMode ? NSColor.black : NSColor.controlBackgroundColor)
-                .withAlphaComponent((isDarkMode ? 0.26 : 0.78) * enabledAlpha * pressedFactor)
-            borderColor = (isDarkMode ? NSColor.white : NSColor.black)
-                .withAlphaComponent((isDarkMode ? 0.16 : 0.10) * enabledAlpha)
-        }
-
-        attributedTitle = NSAttributedString(
-            string: title,
-            attributes: [
-                .font: NSFont.systemFont(ofSize: 13, weight: .semibold),
-                .foregroundColor: textColor
-            ]
-        )
-        contentTintColor = textColor
-        layer?.backgroundColor = fillColor.cgColor
-        layer?.borderColor = borderColor.cgColor
-    }
-
-    override func viewDidChangeEffectiveAppearance() {
-        super.viewDidChangeEffectiveAppearance()
-        updateStyle()
-    }
-}
-
-final class OnlineLibraryDownloadsInspectorFadingScrollView: NSScrollView {
-    private let fadeMask = CAGradientLayer()
-
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        setupFadeMask()
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        nil
-    }
-
-    override func layout() {
-        super.layout()
-        fadeMask.frame = bounds
-    }
-
-    private func setupFadeMask() {
-        wantsLayer = true
-        contentView.wantsLayer = true
-        fadeMask.colors = [
-            NSColor.clear.cgColor,
-            NSColor.black.cgColor,
-            NSColor.black.cgColor,
-            NSColor.clear.cgColor
-        ]
-        fadeMask.locations = [0, 0.025, 0.965, 1]
-        fadeMask.startPoint = CGPoint(x: 0.5, y: 0)
-        fadeMask.endPoint = CGPoint(x: 0.5, y: 1)
-        layer?.mask = fadeMask
     }
 }
 

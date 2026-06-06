@@ -50,6 +50,9 @@ extension SteamWorkshopService {
         if manifest.resolvedEntryModifiedAt != webRuntimeCacheResolvedEntryModifiedAt(for: record) {
             return false
         }
+        if manifest.resourceSignature != webRuntimeResourceSignature(for: record) {
+            return false
+        }
         if manifest.overridesSignature != webRuntimeCacheOverridesSignature(for: record) {
             return false
         }

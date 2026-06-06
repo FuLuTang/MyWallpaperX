@@ -1,7 +1,7 @@
 import Foundation
 
 struct SteamWorkshopWebAnalysisCacheManifest: Codable, Equatable {
-    static let currentVersion = 3
+    static let currentVersion = 5
 
     let version: Int
     let recordID: String
@@ -14,7 +14,7 @@ struct SteamWorkshopWebAnalysisCacheManifest: Codable, Equatable {
 }
 
 struct SteamWorkshopWebRuntimeCacheManifest: Codable, Equatable {
-    static let currentVersion = 9
+    static let currentVersion = 11
 
     let version: Int
     let recordID: String
@@ -23,8 +23,21 @@ struct SteamWorkshopWebRuntimeCacheManifest: Codable, Equatable {
     let propertySourceRecordID: String?
     let propertySourceProjectModifiedAt: Date?
     let resolvedEntryModifiedAt: Date?
+    let resourceSignature: SteamWorkshopWebRuntimeResourceSignature?
     let overridesSignature: Data?
     let execution: CachedResolvedWebExecutionManifest
+}
+
+struct SteamWorkshopWebRuntimeResourceSignature: Codable, Equatable {
+    let scannedFileCount: Int
+    let truncated: Bool
+    let entries: [Entry]
+
+    struct Entry: Codable, Equatable {
+        let relativePath: String
+        let modifiedAt: Date?
+        let size: Int64?
+    }
 }
 
 struct CachedResolvedWebExecutionManifest: Codable, Equatable {
@@ -202,6 +215,7 @@ extension SteamWorkshopService {
             propertySourceRecordID: webPropertyDefinitionSourceRecord(for: record)?.id,
             propertySourceProjectModifiedAt: webRuntimeCachePropertySourceProjectModifiedAt(for: record),
             resolvedEntryModifiedAt: webRuntimeCacheResolvedEntryModifiedAt(for: record),
+            resourceSignature: webRuntimeResourceSignature(for: record),
             overridesSignature: webRuntimeCacheOverridesSignature(for: record),
             execution: CachedResolvedWebExecutionManifest(
                 resolvedEntryPath: descriptor.resolvedEntryURL.path,
@@ -212,6 +226,58 @@ extension SteamWorkshopService {
 
         guard let data = try? JSONEncoder().encode(manifest) else { return }
         try? data.write(to: webRuntimeCacheFileURL(for: record), options: [.atomic])
+    }
+
+    func webRuntimeResourceSignature(for record: SteamWorkshopDownloadRecord) -> SteamWorkshopWebRuntimeResourceSignature? {
+        guard let entryURL = record.webEntryURL?.resolvingSymlinksInPath().standardizedFileURL else {
+            return nil
+        }
+        let rootURL = effectiveWebRootURL(for: record, entryURL: entryURL)
+        let maxScannedFiles = 120
+        let deadline = Date().addingTimeInterval(0.20)
+        var scannedFiles = Set<URL>()
+        var pendingFiles = [entryURL]
+        var entries: [SteamWorkshopWebRuntimeResourceSignature.Entry] = []
+        var truncated = false
+
+        while let fileURL = pendingFiles.first {
+            if scannedFiles.count >= maxScannedFiles || Date() >= deadline {
+                truncated = true
+                break
+            }
+            pendingFiles.removeFirst()
+            let normalizedURL = fileURL.resolvingSymlinksInPath().standardizedFileURL
+            guard scannedFiles.insert(normalizedURL).inserted else { continue }
+
+            let resourceValues = try? normalizedURL.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
+            entries.append(
+                SteamWorkshopWebRuntimeResourceSignature.Entry(
+                    relativePath: webRelativePath(for: normalizedURL, under: rootURL),
+                    modifiedAt: resourceValues?.contentModificationDate,
+                    size: resourceValues?.fileSize.map(Int64.init)
+                )
+            )
+
+            guard Self.shouldScanWebDependencyFile(named: normalizedURL.lastPathComponent),
+                  let content = try? String(contentsOf: normalizedURL, encoding: .utf8) else {
+                continue
+            }
+            for reference in Self.extractLocalWebResourceReferences(from: content, fileExtension: normalizedURL.pathExtension) {
+                guard case let .local(path) = reference,
+                      let resolvedURL = Self.resolveWebResourceURL(path, relativeTo: normalizedURL, rootURL: rootURL),
+                      FileManager.default.fileExists(atPath: resolvedURL.path),
+                      Self.shouldScanWebDependencyFile(named: resolvedURL.lastPathComponent) else {
+                    continue
+                }
+                pendingFiles.append(resolvedURL)
+            }
+        }
+
+        return SteamWorkshopWebRuntimeResourceSignature(
+            scannedFileCount: scannedFiles.count,
+            truncated: truncated,
+            entries: entries.sorted { $0.relativePath < $1.relativePath }
+        )
     }
 
 }

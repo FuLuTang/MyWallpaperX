@@ -11,6 +11,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
  private var statusBarController: StatusBarController?
  private var pendingInitialWindowOpen: DispatchWorkItem?
 
+ #if DEBUG
+ private var shouldSuppressInitialMainWindowForDebugPlayback: Bool {
+ ProcessInfo.processInfo.arguments.contains("--mwx-debug-suppress-main-window")
+ }
+ #endif
+
  private func normalizedMenuTitle(_ menuItem: NSMenuItem) -> String {
  menuItem.title.replacingOccurrences(of: " ", with: "")
  }
@@ -74,6 +80,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
  NSHelpManager.shared.registerBooks(in: Bundle(path: helpPath) ?? .main)
  }
  scheduleInitialMainWindowActivation()
+ scheduleDebugWorkshopPlaybackIfRequested()
  // 避开启动期布局敏感窗口，延后创建状态栏项，降低触发 AppKit 布局递归的概率。
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.75) { [weak self] in
  guard let self, self.statusBarController == nil else { return }
@@ -114,6 +121,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
  // 启动分阶段：优先让壁纸播放链路起稳，再激活主窗口，降低冷启动"同时抢占"造成的卡顿感。
  private func scheduleInitialMainWindowActivation() {
+ #if DEBUG
+ if shouldSuppressInitialMainWindowForDebugPlayback {
+ return
+ }
+ #endif
  // 启动分阶段：先让播放引擎稳定，再激活主窗口，减少冷启动时 UI 和 daemon 同时争抢资源。
  pendingInitialWindowOpen?.cancel()
 
@@ -139,6 +151,28 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
  pendingInitialWindowOpen = firstTry
  DispatchQueue.main.async(execute: firstTry)
  }
+
+ #if DEBUG
+ private func scheduleDebugWorkshopPlaybackIfRequested() {
+ let arguments = ProcessInfo.processInfo.arguments
+ guard let flagIndex = arguments.firstIndex(of: "--mwx-debug-play-workshop-id"),
+       arguments.indices.contains(flagIndex + 1) else { return }
+ let itemID = arguments[flagIndex + 1]
+
+ DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+ let service = SteamWorkshopService.shared
+ service.reloadInstalledItems()
+ guard let record = service.latestDownloadRecord(for: itemID) else {
+ NSLog("MWX DEBUG PLAY: workshop item %@ not found", itemID)
+ return
+ }
+ NSLog("MWX DEBUG PLAY: launching workshop item %@ type=%@", itemID, String(describing: record.contentType))
+ service.setAsWallpaper(record)
+ }
+ }
+ #else
+ private func scheduleDebugWorkshopPlaybackIfRequested() {}
+ #endif
 
  @objc func showSettingsMenuAction(_ sender: Any?) {
  SettingsWindowController.shared.showWindow()

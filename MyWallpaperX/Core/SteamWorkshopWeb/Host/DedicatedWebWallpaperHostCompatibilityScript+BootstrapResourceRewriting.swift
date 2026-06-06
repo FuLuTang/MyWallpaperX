@@ -17,6 +17,16 @@ let webCompatibilityScriptBootstrapResourceRewriting = #"""
       return '';
     }
     if (value.startsWith('mwx-local://')) return value;
+    if (value.startsWith('/') && !value.startsWith('//')) {
+      const normalizedPath = value.replace(/\/+/g, '/');
+      if (/^\/(Users|Volumes|private|tmp|var)\//.test(normalizedPath)) {
+        const segments = normalizedPath
+          .split('/')
+          .filter(Boolean)
+          .map((segment) => encodeURIComponent(segment));
+        return `mwx-local://wallpaper/__absolute__/${segments.join('/')}`;
+      }
+    }
     if (!normalizedValue.startsWith('file:///')) return value;
     try {
       const parsed = new URL(value);

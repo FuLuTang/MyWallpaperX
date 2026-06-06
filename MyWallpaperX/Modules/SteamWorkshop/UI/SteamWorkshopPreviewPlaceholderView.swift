@@ -11,6 +11,7 @@ final class SteamWorkshopPreviewPlaceholderView: NSView {
     private let backgroundView = NSView()
     private let spinner = NSProgressIndicator()
     private let titleLabel = NSTextField(labelWithString: "")
+    private var currentState: State?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -47,6 +48,9 @@ final class SteamWorkshopPreviewPlaceholderView: NSView {
     }
 
     func setState(_ state: State) {
+        guard state != currentState else { return }
+        currentState = state
+
         switch state {
         case .hidden:
             isHidden = true

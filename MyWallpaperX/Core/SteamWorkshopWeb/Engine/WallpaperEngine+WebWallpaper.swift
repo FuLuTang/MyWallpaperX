@@ -6,7 +6,13 @@
 import Foundation
 
 extension WallpaperEngine {
-    public func setWebWallpaper(entryURL: URL, rootURL: URL, propertiesJSON: String?, recordID: String? = nil) {
+    func setWebWallpaper(
+        entryURL: URL,
+        rootURL: URL,
+        propertiesJSON: String?,
+        recordID: String? = nil,
+        runtimeProfile: WebRuntimeProfile = .standard
+    ) {
         postWallpaperRuntimeWillSwitch(to: .web)
         currentWebPropertiesJSON = propertiesJSON ?? "{}"
         currentWebRecordID = recordID
@@ -15,7 +21,9 @@ extension WallpaperEngine {
                 entryURL: entryURL,
                 rootURL: rootURL,
                 propertiesJSON: currentWebPropertiesJSON,
-                source: .steamWorkshop
+                source: .steamWorkshop,
+                recordID: recordID,
+                runtimeProfile: runtimeProfile
             )
         )
     }
@@ -80,7 +88,9 @@ extension WallpaperEngine {
                     entryURL: htmlURL,
                     rootURL: diagnosticRoot,
                     propertiesJSON: "{}",
-                    source: .diagnostic
+                    source: .diagnostic,
+                    recordID: nil,
+                    runtimeProfile: .diagnostic
                 )
             )
         } catch {

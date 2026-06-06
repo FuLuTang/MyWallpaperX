@@ -5,7 +5,6 @@
 
 import AppKit
 import Combine
-import SwiftUI
 
 final class AppKitSteamWorkshopBrowserView: NSView {
     private enum ContentState: Equatable {
@@ -19,8 +18,8 @@ final class AppKitSteamWorkshopBrowserView: NSView {
     private let contentHost = NSView()
     private var cancellables = Set<AnyCancellable>()
     private var currentState: ContentState?
-    private var inspectorHostingView: NSHostingView<SteamWorkshopItemDetailSheet>?
-    private var loginHostingView: NSHostingView<SteamWorkshopLoginOverlay>?
+    private var inspectorDetailView: AppKitSteamWorkshopItemDetailView?
+    private var loginOverlayView: SteamWorkshopLoginOverlayView?
     private var lastRequestedCardID: String?
     private var visibleCardID: String?
     private var latestInspectorItem: SteamWorkshopBrowserItem?
@@ -131,6 +130,17 @@ final class AppKitSteamWorkshopBrowserView: NSView {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.presentPendingAuthErrorIfNeeded() }
             .store(in: &cancellables)
+
+        NotificationCenter.default.publisher(for: .steamWorkshopModeDidChange)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] notification in
+                guard notification.userInfo?["enabled"] as? Bool == true,
+                      notification.userInfo?["isDownloads"] as? Bool == true else {
+                    return
+                }
+                self?.service.isLoginSheetPresented = false
+            }
+            .store(in: &cancellables)
     }
 
     private func observeInspectorHost() {
@@ -195,25 +205,41 @@ final class AppKitSteamWorkshopBrowserView: NSView {
         contentHost.subviews.forEach { $0.removeFromSuperview() }
 
         let contentView: NSView
+        let fillsHost: Bool
         switch nextState {
         case .loading:
             contentView = makeLoadingStateView(text: loadingText)
+            fillsHost = false
         case .error(let message):
             contentView = makeErrorStateView(message: message)
+            fillsHost = false
         case .empty(let message):
             contentView = makeCenteredStateView(symbolName: "square.grid.2x2", message: message)
+            fillsHost = false
         case .grid:
             contentView = gridView
+            fillsHost = true
         }
 
         contentView.translatesAutoresizingMaskIntoConstraints = false
         contentHost.addSubview(contentView)
-        NSLayoutConstraint.activate([
-            contentView.leadingAnchor.constraint(equalTo: contentHost.leadingAnchor),
-            contentView.trailingAnchor.constraint(equalTo: contentHost.trailingAnchor),
-            contentView.topAnchor.constraint(equalTo: contentHost.topAnchor),
-            contentView.bottomAnchor.constraint(equalTo: contentHost.bottomAnchor)
-        ])
+        if fillsHost {
+            NSLayoutConstraint.activate([
+                contentView.leadingAnchor.constraint(equalTo: contentHost.leadingAnchor),
+                contentView.trailingAnchor.constraint(equalTo: contentHost.trailingAnchor),
+                contentView.topAnchor.constraint(equalTo: contentHost.topAnchor),
+                contentView.bottomAnchor.constraint(equalTo: contentHost.bottomAnchor)
+            ])
+        } else {
+            NSLayoutConstraint.activate([
+                contentView.centerXAnchor.constraint(equalTo: contentHost.centerXAnchor),
+                contentView.centerYAnchor.constraint(equalTo: contentHost.centerYAnchor),
+                contentView.leadingAnchor.constraint(greaterThanOrEqualTo: contentHost.leadingAnchor, constant: 32),
+                contentView.trailingAnchor.constraint(lessThanOrEqualTo: contentHost.trailingAnchor, constant: -32),
+                contentView.topAnchor.constraint(greaterThanOrEqualTo: contentHost.topAnchor, constant: 32),
+                contentView.bottomAnchor.constraint(lessThanOrEqualTo: contentHost.bottomAnchor, constant: -32)
+            ])
+        }
     }
 
     private func makeLoadingStateView(text: String) -> NSView {
@@ -361,26 +387,26 @@ final class AppKitSteamWorkshopBrowserView: NSView {
     }
 
     private func installInspectorContent(for item: SteamWorkshopBrowserItem) {
-        let hostingView: NSHostingView<SteamWorkshopItemDetailSheet>
-        if let existing = inspectorHostingView {
-            existing.rootView = SteamWorkshopItemDetailSheet(item: item)
-            hostingView = existing
+        let detailView: AppKitSteamWorkshopItemDetailView
+        if let existing = inspectorDetailView {
+            existing.configure(item: item)
+            detailView = existing
         } else {
-            let created = NSHostingView(rootView: SteamWorkshopItemDetailSheet(item: item))
-            inspectorHostingView = created
-            hostingView = created
+            let created = AppKitSteamWorkshopItemDetailView(item: item)
+            inspectorDetailView = created
+            detailView = created
         }
 
         InspectorHostActions.postMount(
             module: .steamWorkshop,
             cardID: makePresentation(for: item).cardID,
-            hostedView: hostingView
+            hostedView: detailView
         )
     }
 
     private func removeInspectorContent() {
-        inspectorHostingView?.removeFromSuperview()
-        inspectorHostingView = nil
+        inspectorDetailView?.removeFromSuperview()
+        inspectorDetailView = nil
     }
 
     private func syncLoginOverlay(isPresented: Bool) {
@@ -393,22 +419,21 @@ final class AppKitSteamWorkshopBrowserView: NSView {
     }
 
     private func installLoginOverlayIfNeeded() {
-        guard loginHostingView == nil else { return }
-        let hostingView = NSHostingView(rootView: SteamWorkshopLoginOverlay())
-        hostingView.translatesAutoresizingMaskIntoConstraints = false
-        loginHostingView = hostingView
-        addSubview(hostingView)
+        guard loginOverlayView == nil else { return }
+        let overlayView = SteamWorkshopLoginOverlayView()
+        loginOverlayView = overlayView
+        addSubview(overlayView, positioned: .above, relativeTo: nil)
         NSLayoutConstraint.activate([
-            hostingView.leadingAnchor.constraint(equalTo: leadingAnchor),
-            hostingView.trailingAnchor.constraint(equalTo: trailingAnchor),
-            hostingView.topAnchor.constraint(equalTo: topAnchor),
-            hostingView.bottomAnchor.constraint(equalTo: bottomAnchor)
+            overlayView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            overlayView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            overlayView.topAnchor.constraint(equalTo: topAnchor),
+            overlayView.bottomAnchor.constraint(equalTo: bottomAnchor)
         ])
     }
 
     private func removeLoginOverlay() {
-        loginHostingView?.removeFromSuperview()
-        loginHostingView = nil
+        loginOverlayView?.removeFromSuperview()
+        loginOverlayView = nil
     }
 
     private func presentPendingDownloadErrorIfNeeded() {

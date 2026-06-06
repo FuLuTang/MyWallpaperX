@@ -1,5 +1,6 @@
 import AppKit
 import CoreGraphics
+import ImageIO
 
 enum SteamWorkshopPreviewImageCache {
     static let shared = ThumbnailCache(
@@ -73,10 +74,80 @@ func steamWorkshopPreviewImageLooksSuspicious(_ image: NSImage) -> Bool {
     return meanLuma < 0.03 && (maxLuma - minLuma) < 0.025
 }
 
+func steamWorkshopPreviewImageIsUsable(_ image: NSImage) -> Bool {
+    image.size.width > 4 && image.size.height > 4
+}
+
+func steamWorkshopPreviewImage(from data: Data) -> NSImage? {
+    let sourceOptions: [CFString: Any] = [
+        kCGImageSourceShouldCache: false
+    ]
+    guard let source = CGImageSourceCreateWithData(data as CFData, sourceOptions as CFDictionary) else {
+        return NSImage(data: data)
+    }
+    if CGImageSourceGetCount(source) > 1 {
+        return NSImage(data: data)
+    }
+    return steamWorkshopStaticPreviewImage(from: source) ?? NSImage(data: data)
+}
+
+func steamWorkshopPreviewImage(from url: URL) -> NSImage? {
+    let sourceOptions: [CFString: Any] = [
+        kCGImageSourceShouldCache: false
+    ]
+    guard let source = CGImageSourceCreateWithURL(url as CFURL, sourceOptions as CFDictionary) else {
+        return NSImage(contentsOf: url)
+    }
+    if CGImageSourceGetCount(source) > 1 {
+        return NSImage(contentsOf: url)
+    }
+    return steamWorkshopStaticPreviewImage(from: source) ?? NSImage(contentsOf: url)
+}
+
 private func steamWorkshopPreviewImageIsAnimated(_ image: NSImage) -> Bool {
     image.representations.contains { representation in
         guard let bitmap = representation as? NSBitmapImageRep else { return false }
         let frameCount = bitmap.value(forProperty: .frameCount) as? Int ?? 1
         return frameCount > 1
     }
+}
+
+private func steamWorkshopStaticPreviewImage(from source: CGImageSource, maxPixelSize: Int = 1600) -> NSImage? {
+    let options: [CFString: Any] = [
+        kCGImageSourceCreateThumbnailFromImageAlways: true,
+        kCGImageSourceCreateThumbnailWithTransform: true,
+        kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
+        kCGImageSourceShouldCache: false,
+        kCGImageSourceShouldCacheImmediately: false
+    ]
+    guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
+        return nil
+    }
+    return steamWorkshopRGBAImage(from: cgImage)
+}
+
+private func steamWorkshopRGBAImage(from cgImage: CGImage) -> NSImage? {
+    let width = cgImage.width
+    let height = cgImage.height
+    guard width > 0, height > 0 else { return nil }
+
+    guard let context = CGContext(
+        data: nil,
+        width: width,
+        height: height,
+        bitsPerComponent: 8,
+        bytesPerRow: width * 4,
+        space: CGColorSpaceCreateDeviceRGB(),
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+    ) else {
+        return nil
+    }
+
+    context.interpolationQuality = .medium
+    context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+    guard let decodedImage = context.makeImage() else { return nil }
+    return NSImage(
+        cgImage: decodedImage,
+        size: NSSize(width: decodedImage.width, height: decodedImage.height)
+    )
 }

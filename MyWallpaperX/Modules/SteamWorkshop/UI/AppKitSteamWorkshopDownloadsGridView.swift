@@ -105,6 +105,7 @@ final class AppKitSteamWorkshopDownloadsContainerView: NSView, ModuleFocusable {
     private var currentColumnCount = 1
     private var moduleActivationObserver: NSObjectProtocol?
     private var isApplyingSelectionSnapshot = false
+    private var pendingLayoutInvalidation = false
 
     private let scrollView: NSScrollView = {
         let s = NSScrollView()
@@ -205,6 +206,7 @@ final class AppKitSteamWorkshopDownloadsContainerView: NSView, ModuleFocusable {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         SteamWorkshopDownloadsBridge.shared.isActive = (window != nil)
+        syncVisiblePreviewAnimationStates(isVisible: window != nil)
     }
 
     private func setup() {
@@ -351,6 +353,13 @@ final class AppKitSteamWorkshopDownloadsContainerView: NSView, ModuleFocusable {
         }
     }
 
+    private func syncVisiblePreviewAnimationStates(isVisible: Bool) {
+        for visibleItem in collectionView.visibleItems() {
+            guard let item = visibleItem as? AppKitSteamWorkshopBrowserItem else { continue }
+            item.setPreviewVisible(isVisible)
+        }
+    }
+
     private func updateLayoutItemSize() {
         let metrics = SteamWorkshopGridLayoutSupport.metrics(
             boundsWidth: bounds.width,
@@ -364,7 +373,17 @@ final class AppKitSteamWorkshopDownloadsContainerView: NSView, ModuleFocusable {
         let newSize = metrics.itemSize
         guard flowLayout.itemSize != newSize else { return }
         flowLayout.itemSize = newSize
-        collectionView.collectionViewLayout?.invalidateLayout()
+        scheduleLayoutInvalidation()
+    }
+
+    private func scheduleLayoutInvalidation() {
+        guard pendingLayoutInvalidation == false else { return }
+        pendingLayoutInvalidation = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.pendingLayoutInvalidation = false
+            self.collectionView.collectionViewLayout?.invalidateLayout()
+        }
     }
 
     private func ensureKeyboardFocus() {
@@ -618,6 +637,24 @@ extension AppKitSteamWorkshopDownloadsContainerView: SteamWorkshopKeyboardDelega
 }
 
 extension AppKitSteamWorkshopDownloadsContainerView: NSCollectionViewDelegateFlowLayout {
+    func collectionView(
+        _ collectionView: NSCollectionView,
+        willDisplay item: NSCollectionViewItem,
+        forRepresentedObjectAt indexPath: IndexPath
+    ) {
+        guard let item = item as? AppKitSteamWorkshopBrowserItem else { return }
+        item.setPreviewVisible(true)
+    }
+
+    func collectionView(
+        _ collectionView: NSCollectionView,
+        didEndDisplaying item: NSCollectionViewItem,
+        forRepresentedObjectAt indexPath: IndexPath
+    ) {
+        guard let item = item as? AppKitSteamWorkshopBrowserItem else { return }
+        item.setPreviewVisible(false)
+    }
+
     func collectionView(_ collectionView: NSCollectionView, didSelectItemsAt indexPaths: Set<IndexPath>) {
         guard !isApplyingSelectionSnapshot else { return }
         let selectedIDs = Set<String>(collectionView.selectionIndexPaths.compactMap { indexPath in

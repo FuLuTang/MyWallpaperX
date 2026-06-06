@@ -142,6 +142,8 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         
         menu.addItem(.separator())
         menu.addItem(makeItem(title: "偏好设置", systemImageName: "gearshape", action: #selector(openSettings), keyEquivalent: ","))
+        menu.addItem(makeItem(title: "检查更新…", systemImageName: "arrow.triangle.2.circlepath", action: #selector(checkForUpdates), keyEquivalent: ""))
+        menu.addItem(makeItem(title: "关于 MyWallpaperX", systemImageName: "info.circle", action: #selector(showAboutPanel), keyEquivalent: ""))
         menu.addItem(.separator())
         
         let quitItem = makeItem(title: "退出", systemImageName: "xmark.circle", action: #selector(quitApp), keyEquivalent: "q")
@@ -204,6 +206,21 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         statusItem?.menu?.cancelTracking()
         DispatchQueue.main.async {
             SettingsWindowController.shared.showWindow()
+        }
+    }
+
+    @objc private func showAboutPanel() {
+        statusItem?.menu?.cancelTracking()
+        DispatchQueue.main.async {
+            NSApp.activate(ignoringOtherApps: true)
+            NSApp.orderFrontStandardAboutPanel(nil)
+        }
+    }
+
+    @objc private func checkForUpdates() {
+        statusItem?.menu?.cancelTracking()
+        DispatchQueue.main.async {
+            AppUpdateController.shared.checkForUpdates(nil)
         }
     }
     

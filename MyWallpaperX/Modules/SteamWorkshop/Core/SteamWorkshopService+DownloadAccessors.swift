@@ -11,7 +11,7 @@ extension SteamWorkshopService {
         if record.contentType == .web {
             guard record.isPlayableOrLaunchable else { return false }
             if let report = webValidationReport(for: record),
-               report.blockingIssue != nil {
+               report.fatalIssue != nil {
                 return false
             }
             return true
@@ -26,7 +26,7 @@ extension SteamWorkshopService {
             let signature = webValidationSignature(for: record)
             if let cached = webValidationReportCache[record.id],
                cached.signature == signature {
-                return cached.report.blockingIssue == nil
+                return cached.report.fatalIssue == nil
             }
             return true
         }

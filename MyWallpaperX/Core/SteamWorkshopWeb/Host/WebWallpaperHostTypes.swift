@@ -24,11 +24,64 @@ extension WallpaperEngine {
         case diagnostic
     }
 
+    enum WebRuntimeOriginMode: String, Equatable {
+        case customScheme
+        case httpLoopback
+    }
+
+    struct WebRuntimeProfile: Equatable {
+        enum DataStorePolicy: String {
+            case sharedPersistent
+            case scopedPersistent
+            case ephemeral
+        }
+
+        let id: String
+        let originMode: WebRuntimeOriginMode
+        let dataStorePolicy: DataStorePolicy
+        let strictLocalResourcePolicy: Bool
+        let diagnosticsEnabled: Bool
+
+        static let standard = WebRuntimeProfile(
+            id: "standard",
+            originMode: .customScheme,
+            dataStorePolicy: .sharedPersistent,
+            strictLocalResourcePolicy: false,
+            diagnosticsEnabled: true
+        )
+
+        static let highCompatibility = WebRuntimeProfile(
+            id: "highCompatibility",
+            originMode: .httpLoopback,
+            dataStorePolicy: .scopedPersistent,
+            strictLocalResourcePolicy: false,
+            diagnosticsEnabled: true
+        )
+
+        static let strictLocal = WebRuntimeProfile(
+            id: "strictLocal",
+            originMode: .customScheme,
+            dataStorePolicy: .ephemeral,
+            strictLocalResourcePolicy: true,
+            diagnosticsEnabled: true
+        )
+
+        static let diagnostic = WebRuntimeProfile(
+            id: "diagnostic",
+            originMode: .httpLoopback,
+            dataStorePolicy: .ephemeral,
+            strictLocalResourcePolicy: false,
+            diagnosticsEnabled: true
+        )
+    }
+
     struct WebWallpaperLaunchRequest {
         let entryURL: URL
         let rootURL: URL
         let propertiesJSON: String?
         let source: WebWallpaperLaunchSource
+        let recordID: String?
+        let runtimeProfile: WebRuntimeProfile
     }
 
     enum WebWallpaperRuntimeCommand {
@@ -87,6 +140,8 @@ final class DedicatedWebWallpaperHostPlaceholderAdapter: NSObject, WallpaperEngi
         let contentView: HostContentView
         let webView: WKWebView
         let schemeHandler: WebWallpaperLocalSchemeHandler
+        let originMode: WallpaperEngine.WebRuntimeOriginMode
+        let dataStoreIdentity: String
     }
 
     struct DirectorySnapshot {
@@ -160,6 +215,7 @@ final class DedicatedWebWallpaperHostPlaceholderAdapter: NSObject, WallpaperEngi
     var lifecycleObservers: [NSObjectProtocol] = []
     var readyScreenIDs = Set<CGDirectDisplayID>()
     var surfaces: [CGDirectDisplayID: HostSurface] = [:]
+    var loopbackServers: [CGDirectDisplayID: WebWallpaperLoopbackServer] = [:]
     var directorySnapshotsByProperty: [String: DirectorySnapshot] = [:]
     var directoryAccessErrorsByProperty: [String: String] = [:]
     var directoryWatchersByProperty: [String: DirectoryWatcher] = [:]
@@ -169,6 +225,8 @@ final class DedicatedWebWallpaperHostPlaceholderAdapter: NSObject, WallpaperEngi
     var deferredDirectorySyncWorkItem: DispatchWorkItem?
     var globalMouseMonitor: Any?
     var localMouseMonitor: Any?
+    var pointerPollingTimer: Timer?
+    var lastPolledMouseLocation: NSPoint?
     var lastHoveredScreenID: CGDirectDisplayID?
     var lastPointerMoveForwardedAt: TimeInterval = 0
     var interactiveRegionsByScreen: [CGDirectDisplayID: [InteractiveRegion]] = [:]
@@ -181,8 +239,22 @@ final class DedicatedWebWallpaperHostPlaceholderAdapter: NSObject, WallpaperEngi
     static let transientCaptureDuration: TimeInterval = 0.03
     static let dragCaptureDuration: TimeInterval = 0.12
     static let hoverPreheatInset: CGFloat = 0.03
-    static var webCompatibilityScript: String {
-        webCompatibilityScriptBootstrap
+    static func webCompatibilityScript(for request: WallpaperEngine.WebWallpaperLaunchRequest?, generalPropertiesJSON: String, volume: Float, paused: Bool) -> String {
+        let propertiesJSON = request?.propertiesJSON ?? "{}"
+        let escapedProperties = WebWallpaperHostSupport.javaScriptQuotedString(propertiesJSON)
+        let escapedGeneralProperties = WebWallpaperHostSupport.javaScriptQuotedString(generalPropertiesJSON)
+        let volumeLiteral = String(format: "%.6f", volume)
+        let pausedLiteral = paused ? "true" : "false"
+        let seedScript = """
+        (() => {
+          try { window.__myWallpaperInitialUserProperties = JSON.parse(\(escapedProperties)); } catch (_) { window.__myWallpaperInitialUserProperties = {}; }
+          try { window.__myWallpaperInitialGeneralProperties = JSON.parse(\(escapedGeneralProperties)); } catch (_) { window.__myWallpaperInitialGeneralProperties = {}; }
+          window.__myWallpaperInitialVolume = \(volumeLiteral);
+          window.__myWallpaperInitialPaused = \(pausedLiteral);
+        })();
+        """
+        return seedScript
+        + webCompatibilityScriptBootstrap
         + webCompatibilityScriptMediaDiscovery
         + webCompatibilityScriptMediaState
         + webCompatibilityScriptInteractionAndRuntime

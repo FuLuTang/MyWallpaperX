@@ -13,6 +13,7 @@
 		A10000042F6B0001005688A8 /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A10000142F6B0001005688A8 /* CoreGraphics.framework */; };
 		A10000052F6B0001005688A8 /* QuartzCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A10000152F6B0001005688A8 /* QuartzCore.framework */; };
 		A10000062F6B0001005688A8 /* MyWallpaperXHelp in Resources */ = {isa = PBXBuildFile; fileRef = 98E9DA272F786FCC00C96FC7 /* MyWallpaperXHelp */; };
+		A20000012F800001005688A8 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = A20000112F800001005688A8 /* Sparkle */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -85,6 +86,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A20000012F800001005688A8 /* Sparkle in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -155,6 +157,7 @@
 			);
 			name = MyWallpaperX;
 			packageProductDependencies = (
+				A20000112F800001005688A8 /* Sparkle */,
 			);
 			productName = MyWallpaperX;
 			productReference = 98CED6392F6AF877005688A8 /* MyWallpaperX.app */;
@@ -209,6 +212,9 @@
 			);
 			mainGroup = 98CED6302F6AF877005688A8;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				A20000212F800001005688A8 /* XCRemoteSwiftPackageReference "Sparkle" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 98CED63A2F6AF877005688A8 /* Products */;
 			projectDirPath = "";
@@ -404,7 +410,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
-				MARKETING_VERSION = 2.0.6;
+				MARKETING_VERSION = 2.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.songziqiang.MyWallpaperX;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -448,7 +454,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
-				MARKETING_VERSION = 2.0.6;
+				MARKETING_VERSION = 2.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.songziqiang.MyWallpaperX;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -526,6 +532,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		A20000212F800001005688A8 /* XCRemoteSwiftPackageReference "Sparkle" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sparkle-project/Sparkle";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.9.2;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		A20000112F800001005688A8 /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A20000212F800001005688A8 /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 98CED6312F6AF877005688A8 /* Project object */;
 }

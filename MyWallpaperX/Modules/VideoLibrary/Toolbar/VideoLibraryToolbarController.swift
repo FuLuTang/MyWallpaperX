@@ -314,7 +314,7 @@ final class VideoLibraryToolbarController: NSObject, NSToolbarDelegate, NSSearch
     func observeModuleChanges() {
         let staticModeObserver = NotificationCenter.default.addObserver(forName: .staticImageLibraryModeDidChange, object: nil, queue: .main) { [weak self] n in
             guard let enabled = n.userInfo?["enabled"] as? Bool else { return }
-            Task { @MainActor [weak self] in
+            MainActor.assumeIsolated { [weak self] in
                 guard let self else { return }
                 if enabled {
                     self.handleModuleLayoutSwitch(to: .staticImageLibrary)
@@ -328,7 +328,7 @@ final class VideoLibraryToolbarController: NSObject, NSToolbarDelegate, NSSearch
         let onlineModeObserver = NotificationCenter.default.addObserver(forName: .onlineLibraryModeDidChange, object: nil, queue: .main) { [weak self] n in
             guard let enabled = n.userInfo?["enabled"] as? Bool else { return }
             let isDownloads = n.userInfo?["isDownloads"] as? Bool ?? false
-            Task { @MainActor [weak self] in
+            MainActor.assumeIsolated { [weak self] in
                 guard let self else { return }
                 if enabled {
                     self.handleModuleLayoutSwitch(to: isDownloads ? .onlineDownloads : .onlineLibrary)
@@ -342,7 +342,7 @@ final class VideoLibraryToolbarController: NSObject, NSToolbarDelegate, NSSearch
         let steamModeObserver = NotificationCenter.default.addObserver(forName: .steamWorkshopModeDidChange, object: nil, queue: .main) { [weak self] n in
             guard let enabled = n.userInfo?["enabled"] as? Bool else { return }
             let isDownloads = n.userInfo?["isDownloads"] as? Bool ?? false
-            Task { @MainActor [weak self] in
+            MainActor.assumeIsolated { [weak self] in
                 guard let self else { return }
                 if enabled {
                     self.handleModuleLayoutSwitch(to: isDownloads ? .steamDownloads : .steamWorkshop)
@@ -354,7 +354,7 @@ final class VideoLibraryToolbarController: NSObject, NSToolbarDelegate, NSSearch
         observerTokens.append(steamModeObserver)
 
         let steamBrowseContextObserver = NotificationCenter.default.addObserver(forName: .steamWorkshopBrowseContextDidChange, object: nil, queue: .main) { [weak self] _ in
-            Task { @MainActor [weak self] in
+            MainActor.assumeIsolated { [weak self] in
                 guard let self, self.currentLayoutModule == .steamWorkshop else { return }
                 self.applyIdentifiers(self.steamWorkshopToolbarController.browserIdentifiers)
             }
@@ -377,6 +377,8 @@ final class VideoLibraryToolbarController: NSObject, NSToolbarDelegate, NSSearch
         if module == .videoLibrary {
             applyIdentifiers(toolbarDefaultItemIdentifiers(toolbar))
             currentLayoutModule = .videoLibrary
+            lastRefreshSignature = nil
+            refresh()
             return
         }
 

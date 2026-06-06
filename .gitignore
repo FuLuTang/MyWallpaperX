@@ -22,6 +22,11 @@ xcuserdata
 # Swift Package Manager
 Packages/
 *.xcworkspace
+!MyWallpaperX.xcodeproj/project.xcworkspace/
+!MyWallpaperX.xcodeproj/project.xcworkspace/xcshareddata/
+MyWallpaperX.xcodeproj/project.xcworkspace/xcshareddata/*
+!MyWallpaperX.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/
+!MyWallpaperX.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
 
 # VS Code
 .vscode/*

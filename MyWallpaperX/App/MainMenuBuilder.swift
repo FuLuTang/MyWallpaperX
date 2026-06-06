@@ -25,6 +25,19 @@ enum MainMenuBuilder {
         let appName = ProcessInfo.processInfo.processName
 
         appMenu.addItem(
+            title: "关于 \(appName)",
+            action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)),
+            keyEquivalent: "",
+            target: NSApp
+        )
+        appMenu.addItem(
+            title: "检查更新…",
+            action: #selector(AppUpdateController.checkForUpdates(_:)),
+            keyEquivalent: "",
+            target: AppUpdateController.shared
+        )
+        appMenu.addItem(.separator())
+        appMenu.addItem(
             title: "偏好设置",
             action: #selector(AppDelegate.showSettingsMenuAction(_:)),
             keyEquivalent: ","
@@ -169,6 +182,12 @@ enum MainMenuBuilder {
 
     private static func addWindowMenu(to mainMenu: NSMenu) {
         let menu = NSMenu(title: "窗口")
+        menu.addItem(
+            title: "最小化",
+            action: #selector(NSWindow.performMiniaturize(_:)),
+            keyEquivalent: "m",
+            target: nil
+        )
         menu.addItem(
             title: "关闭窗口",
             action: #selector(AppDelegate.closeWindowMenuAction(_:)),

@@ -69,7 +69,7 @@ final class SILInspectorView: NSView {
         rootStack.spacing = 12
         rootStack.translatesAutoresizingMaskIntoConstraints = false
 
-        let scrollView = SILInspectorFadingScrollView()
+        let scrollView = InspectorFadingScrollView()
         scrollView.drawsBackground = false
         scrollView.hasVerticalScroller = false
         scrollView.hasHorizontalScroller = false
@@ -253,21 +253,22 @@ final class SILInspectorView: NSView {
         stack.addArrangedSubview(buttonGroup)
 
         NSLayoutConstraint.activate([
-            buttonGroup.leadingAnchor.constraint(equalTo: stack.leadingAnchor),
-            buttonGroup.trailingAnchor.constraint(equalTo: stack.trailingAnchor),
+            stack.heightAnchor.constraint(equalToConstant: InspectorFooterMetrics.height),
+            buttonGroup.leadingAnchor.constraint(equalTo: stack.leadingAnchor, constant: 2),
+            buttonGroup.trailingAnchor.constraint(equalTo: stack.trailingAnchor, constant: -2),
             buttonGroup.topAnchor.constraint(equalTo: stack.topAnchor),
             buttonGroup.bottomAnchor.constraint(equalTo: stack.bottomAnchor),
 
             revealButton.leadingAnchor.constraint(equalTo: buttonGroup.leadingAnchor),
             revealButton.topAnchor.constraint(equalTo: buttonGroup.topAnchor),
             revealButton.bottomAnchor.constraint(equalTo: buttonGroup.bottomAnchor),
-            revealButton.heightAnchor.constraint(equalToConstant: 38),
+            revealButton.heightAnchor.constraint(equalToConstant: InspectorFooterMetrics.height),
 
             tagButton.leadingAnchor.constraint(equalTo: revealButton.trailingAnchor, constant: 6),
             tagButton.trailingAnchor.constraint(equalTo: buttonGroup.trailingAnchor),
             tagButton.topAnchor.constraint(equalTo: buttonGroup.topAnchor),
             tagButton.bottomAnchor.constraint(equalTo: buttonGroup.bottomAnchor),
-            tagButton.heightAnchor.constraint(equalToConstant: 38),
+            tagButton.heightAnchor.constraint(equalToConstant: InspectorFooterMetrics.height),
             revealButton.widthAnchor.constraint(equalTo: tagButton.widthAnchor)
         ])
         return stack

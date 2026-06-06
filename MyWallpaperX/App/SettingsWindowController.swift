@@ -9,7 +9,7 @@ import AppKit
 final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     static let shared = SettingsWindowController()
 
-    private let targetWindowSize = NSSize(width: 500, height: 440)
+    private let targetWindowSize = NSSize(width: 500, height: 560)
     private let contentController = SettingsContentViewController()
     private var hasShownWindow = false
 
@@ -68,9 +68,7 @@ private final class SettingsContentViewController: NSViewController {
     )
 
     override func loadView() {
-        let rootView = NSView()
-        rootView.wantsLayer = true
-        rootView.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+        let rootView = SettingsRootBackgroundView()
         rootView.translatesAutoresizingMaskIntoConstraints = false
 
         settingsView.translatesAutoresizingMaskIntoConstraints = false
@@ -88,5 +86,37 @@ private final class SettingsContentViewController: NSViewController {
     func refresh() {
         settingsView.updateVisibleSections(Set(AppSettingsSection.allCases))
         settingsView.refreshFromState()
+    }
+}
+
+private final class SettingsRootBackgroundView: NSView {
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        updateBackground()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        updateBackground()
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateBackground()
+    }
+
+    private func updateBackground() {
+        var backgroundColor = NSColor.windowBackgroundColor
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            backgroundColor = NSColor.windowBackgroundColor.usingColorSpace(.deviceRGB) ?? .windowBackgroundColor
+        }
+        layer?.backgroundColor = backgroundColor.cgColor
+        window?.backgroundColor = backgroundColor
     }
 }

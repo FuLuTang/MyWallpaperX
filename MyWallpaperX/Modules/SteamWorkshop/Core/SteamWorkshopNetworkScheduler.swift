@@ -1,6 +1,6 @@
 import Foundation
 
-enum SteamWorkshopDetailRequestPriority {
+nonisolated enum SteamWorkshopDetailRequestPriority {
     case userInitiated
     case background
 }

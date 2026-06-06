@@ -70,6 +70,12 @@ extension SteamWorkshopService {
         var usesGeneralFPS = staticContentSummary?.usesGeneralFPS ?? false
         var usesPluginBridge = staticContentSummary?.usesPluginBridge ?? false
         var usesPersistentBrowserStorage = staticContentSummary?.usesPersistentBrowserStorage ?? false
+        var usesServiceWorkerRegistration = staticContentSummary?.usesServiceWorkerRegistration ?? false
+        var usesESModuleDependency = staticContentSummary?.usesESModuleDependency ?? false
+        var usesDynamicImport = staticContentSummary?.usesDynamicImport ?? false
+        var usesWASMResource = staticContentSummary?.usesWASMResource ?? false
+        var usesWASMStreaming = staticContentSummary?.usesWASMStreaming ?? false
+        var usesCustomSchemeSensitiveWebGL = staticContentSummary?.usesCustomSchemeSensitiveWebGL ?? false
         var scannedRiskFlags = Set<ResolvedWebRuntimeRiskFlag>()
 
         func appendIssue(_ severity: SteamWorkshopWebValidationSeverity, _ level: SteamWorkshopWebValidationLevel, _ message: String) {
@@ -156,6 +162,24 @@ extension SteamWorkshopService {
             if Self.webContentUsesPersistentBrowserStorage(content) {
                 usesPersistentBrowserStorage = true
             }
+            if Self.webContentUsesServiceWorkerRegistration(content) {
+                usesServiceWorkerRegistration = true
+            }
+            if Self.webContentUsesESModuleDependency(content) {
+                usesESModuleDependency = true
+            }
+            if Self.webContentUsesDynamicImport(content) {
+                usesDynamicImport = true
+            }
+            if Self.webContentUsesWASMResource(content) {
+                usesWASMResource = true
+            }
+            if Self.webContentUsesWASMStreaming(content) {
+                usesWASMStreaming = true
+            }
+            if Self.webContentUsesCustomSchemeSensitiveWebGL(content) {
+                usesCustomSchemeSensitiveWebGL = true
+            }
 
             for reference in Self.extractLocalWebResourceReferences(from: content, fileExtension: fileURL.pathExtension) {
                 switch reference {
@@ -188,6 +212,9 @@ extension SteamWorkshopService {
                     if ext == "webm" {
                         usesWebMResource = true
                     }
+                    if ext == "wasm" {
+                        usesWASMResource = true
+                    }
                     if ["html", "htm", "css", "js", "json"].contains(ext),
                        Self.shouldScanWebDependencyFile(named: resolvedURL.lastPathComponent) {
                         pendingFiles.append(resolvedURL)
@@ -218,13 +245,37 @@ extension SteamWorkshopService {
             appendIssue(.info, .info, "检测到样本使用 applyGeneralProperties；当前宿主已提供基础 general properties 注入")
         }
         if usesGeneralFPS {
-            appendIssue(.info, .info, "检测到样本读取 properties.fps；当前宿主仅提供占位型 fps general properties 兼容，尚未与真实全局 FPS 设置完整联动")
+            appendIssue(.info, .info, "检测到样本读取 properties.fps；当前宿主会按显示器刷新率注入 fps，并保留 properties.fps 与 properties.fps.value 两种读取语义")
         }
         if usesPluginBridge {
             scannedRiskFlags.insert(.pluginBridgeApproximation)
         }
         if usesPersistentBrowserStorage {
             scannedRiskFlags.insert(.persistentBrowserStorageUsage)
+        }
+        if usesServiceWorkerRegistration {
+            scannedRiskFlags.insert(.serviceWorkerRegistration)
+            appendIssue(.warning, .warning, "检测到 Service Worker 注册；自定义 scheme 不支持该能力，运行时将优先使用本地 HTTP loopback 兼容模式")
+        }
+        if usesESModuleDependency {
+            scannedRiskFlags.insert(.esModuleDependency)
+            appendIssue(.info, .info, "检测到 ES module 依赖；运行时会优先选择更接近 http(s) origin 的兼容模式")
+        }
+        if usesDynamicImport {
+            scannedRiskFlags.insert(.dynamicImportUsage)
+            appendIssue(.info, .info, "检测到动态 import()；运行时会优先选择本地 HTTP loopback 兼容模式")
+        }
+        if usesWASMResource {
+            scannedRiskFlags.insert(.wasmUsage)
+            appendIssue(.info, .info, "检测到 WASM 资源或 WebAssembly API；运行时会记录 MIME/streaming 兼容诊断")
+        }
+        if usesWASMStreaming {
+            scannedRiskFlags.insert(.wasmStreamingUsage)
+            appendIssue(.warning, .warning, "检测到 WebAssembly streaming 编译；自定义 scheme 兼容性较弱，运行时将优先使用本地 HTTP loopback")
+        }
+        if usesCustomSchemeSensitiveWebGL {
+            scannedRiskFlags.insert(.customSchemeSensitiveWebGL)
+            appendIssue(.warning, .warning, "检测到 Pixi/Live2D/视频纹理等 WebGL 资源路径；自定义 scheme 容易触发 origin 安全限制，运行时将优先使用本地 HTTP loopback")
         }
         if staticContentSummary?.hasOnDemandDirectoryProperty == true {
             appendIssue(.info, .info, "检测到目录属性使用 ondemand 模式；当前宿主更偏按需随机文件解析语义，尚未完全覆盖更复杂旧生态样本对目录枚举/刷新节奏的预期")

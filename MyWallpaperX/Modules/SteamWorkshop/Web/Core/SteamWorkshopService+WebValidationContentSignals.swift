@@ -52,4 +52,46 @@ extension SteamWorkshopService {
             || lowered.contains("indexeddb")
             || lowered.contains("sessionstorage")
     }
+
+    static func webContentUsesServiceWorkerRegistration(_ content: String) -> Bool {
+        let lowered = content.lowercased()
+        return lowered.contains("serviceworker.register")
+            || lowered.contains("navigator.serviceworker")
+    }
+
+    static func webContentUsesESModuleDependency(_ content: String) -> Bool {
+        let lowered = content.lowercased()
+        return lowered.contains("type=\"module\"")
+            || lowered.contains("type='module'")
+            || lowered.contains(".mjs")
+    }
+
+    static func webContentUsesDynamicImport(_ content: String) -> Bool {
+        let lowered = content.lowercased()
+        return lowered.contains("import(")
+    }
+
+    static func webContentUsesWASMResource(_ content: String) -> Bool {
+        let lowered = content.lowercased()
+        return lowered.contains(".wasm")
+            || lowered.contains("application/wasm")
+            || lowered.contains("webassembly.")
+    }
+
+    static func webContentUsesWASMStreaming(_ content: String) -> Bool {
+        let lowered = content.lowercased()
+        return lowered.contains("webassembly.instantiatestreaming")
+            || lowered.contains("webassembly.compilestreaming")
+    }
+
+    static func webContentUsesCustomSchemeSensitiveWebGL(_ content: String) -> Bool {
+        let lowered = content.lowercased()
+        return lowered.contains("pixi.")
+            || lowered.contains("pixi.min.js")
+            || lowered.contains("pixi-live2d")
+            || lowered.contains("live2d")
+            || lowered.contains("texture.from(")
+            || lowered.contains("canvas.todataurl")
+            || lowered.contains("readpixels(")
+    }
 }
