@@ -184,6 +184,50 @@ extension SteamWorkshopService {
             "fetchBrowserItems start context=\(browseContext.title) forceRefresh=\(forceRefresh) query=\(query) pageSize=\(pageSize)"
         )
 
+        if browseContext == .discovery,
+           let itemID = Self.workshopItemIDSearchID(from: query) {
+            browserState = .loading
+            browserItems = []
+            hasMoreBrowserItems = false
+            currentWorkshopItemID = itemID
+            statusMessage = "正在按 ID 加载创意工坊项目 \(itemID)…"
+            browserFetchTask = Task(priority: .userInitiated) { [weak self] in
+                do {
+                    let item = try await Self.fetchWorkshopItemByIDSearch(id: itemID)
+                    guard !Task.isCancelled else { return }
+                    await MainActor.run {
+                        guard let self else { return }
+                        guard self.navigationVersion == expectedNavigationVersion,
+                              self.browseContext == browseContext,
+                              self.browserQuery.trimmingCharacters(in: .whitespacesAndNewlines) == query else { return }
+                        self.isRefreshingBrowserFeed = false
+                        self.browserItems = item.map { [$0] } ?? []
+                        self.browserState = .loaded
+                        self.hasMoreBrowserItems = false
+                        self.browserNextPage = 2
+                        self.isLoadingMoreBrowserItems = false
+                        self.statusMessage = item == nil
+                            ? "没有找到 ID 为 \(itemID) 的创意工坊项目。"
+                            : "已按 ID 加载创意工坊项目 \(itemID)"
+                    }
+                } catch {
+                    guard !Task.isCancelled else { return }
+                    await MainActor.run {
+                        guard let self else { return }
+                        guard self.navigationVersion == expectedNavigationVersion,
+                              self.browseContext == browseContext,
+                              self.browserQuery.trimmingCharacters(in: .whitespacesAndNewlines) == query else { return }
+                        self.isRefreshingBrowserFeed = false
+                        self.browserState = .failed(error.localizedDescription)
+                        self.hasMoreBrowserItems = false
+                        self.isLoadingMoreBrowserItems = false
+                        self.statusMessage = "按 ID 加载创意工坊项目失败"
+                    }
+                }
+            }
+            return
+        }
+
         if let cached = loadBrowserCache(
             context: browseContext,
             browserContentMode: browserContentMode,
@@ -305,6 +349,41 @@ extension SteamWorkshopService {
                 }
             }
         }
+    }
+
+    nonisolated static func fetchWorkshopItemByIDSearch(id: String) async throws -> SteamWorkshopBrowserItem? {
+        let stub = SteamWorkshopBrowseStub(
+            id: id,
+            title: nil,
+            author: nil,
+            authorProfileURL: nil,
+            authorWorkshopURL: nil,
+            hasAdultContent: false,
+            summary: nil,
+            previewImageURL: nil
+        )
+
+        if let cached = loadDetailCache(id: id) {
+            let resolved = await applyingCachedAuthorNameIfPossible(to: cached)
+            let enriched = try await maybeEnrichPreviewKind(for: resolved, requestPriority: .userInitiated)
+            if enriched != cached {
+                saveDetailCache(item: enriched)
+            }
+            return enriched
+        }
+
+        let detailsByID = try await fetchPublishedFileDetails(
+            ids: [id],
+            requestPriority: .userInitiated
+        )
+        guard let detail = detailsByID[id] else {
+            return nil
+        }
+
+        let resolved = await item(from: detail, stub: stub)
+        let enriched = try await maybeEnrichPreviewKind(for: resolved, requestPriority: .userInitiated)
+        saveDetailCache(item: enriched)
+        return enriched
     }
 
     nonisolated static func shouldEagerlyResolvePreviewKind(for requestPriority: SteamWorkshopDetailRequestPriority) -> Bool {

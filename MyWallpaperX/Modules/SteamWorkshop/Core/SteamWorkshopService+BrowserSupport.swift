@@ -6,6 +6,12 @@
 import Foundation
 
 extension SteamWorkshopService {
+    nonisolated static func workshopItemIDSearchID(from query: String) -> String? {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        return firstCapture(pattern: #"(?:^|[?&\s])id=(\d{6,})\b"#, in: trimmed)
+    }
+
     func logBrowserDebug(_ message: String) {
         guard defaults.bool(forKey: Constants.browserDebugLoggingEnabledKey) else { return }
         NSLog("[SteamWorkshopBrowser] %@", message)

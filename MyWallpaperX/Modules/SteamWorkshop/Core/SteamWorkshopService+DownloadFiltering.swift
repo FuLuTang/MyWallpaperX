@@ -30,11 +30,12 @@ extension SteamWorkshopService {
             filtered = modeFiltered
         } else {
             let normalized = query.localizedLowercase
+            let idQuery = Self.workshopItemIDSearchID(from: query)?.localizedLowercase ?? normalized
             filtered = modeFiltered.filter {
                 $0.title.localizedLowercase.contains(normalized)
                 || $0.description.localizedLowercase.contains(normalized)
                 || $0.tags.contains(where: { $0.localizedLowercase.contains(normalized) })
-                || $0.id.localizedLowercase.contains(normalized)
+                || $0.id.localizedLowercase.contains(idQuery)
                 || $0.browserItem?.author.localizedLowercase.contains(normalized) == true
             }
         }

@@ -92,13 +92,14 @@ extension SteamWorkshopService {
         }
 
         let normalizedQuery = query.localizedLowercase
+        let idQuery = Self.workshopItemIDSearchID(from: query)?.localizedLowercase ?? normalizedQuery
         displayedBrowserItems = browserItems.filter {
             $0.title.localizedLowercase.contains(normalizedQuery)
                 || $0.author.localizedLowercase.contains(normalizedQuery)
                 || $0.summary.localizedLowercase.contains(normalizedQuery)
                 || $0.descriptionText.localizedLowercase.contains(normalizedQuery)
                 || $0.tags.contains(where: { $0.localizedLowercase.contains(normalizedQuery) })
-                || $0.id.localizedLowercase.contains(normalizedQuery)
+                || $0.id.localizedLowercase.contains(idQuery)
         }
 
         if displayedBrowserItems.isEmpty, hasMoreBrowserItems, !isLoadingMoreBrowserItems {
