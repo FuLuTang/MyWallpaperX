@@ -34,13 +34,15 @@ enum MainMenuBuilder {
             title: "检查更新…",
             action: #selector(AppUpdateController.checkForUpdates(_:)),
             keyEquivalent: "",
-            target: AppUpdateController.shared
+            target: AppUpdateController.shared,
+            systemImageName: "arrow.triangle.2.circlepath"
         )
         appMenu.addItem(.separator())
         appMenu.addItem(
             title: "偏好设置",
             action: #selector(AppDelegate.showSettingsMenuAction(_:)),
-            keyEquivalent: ","
+            keyEquivalent: ",",
+            systemImageName: "gearshape"
         )
         appMenu.addItem(.separator())
         appMenu.addItem(
@@ -216,11 +218,18 @@ private extension NSMenu {
         action: Selector,
         keyEquivalent: String,
         modifierMask: NSEvent.ModifierFlags = [.command],
-        target: AnyObject? = NSApp.delegate as AnyObject?
+        target: AnyObject? = NSApp.delegate as AnyObject?,
+        systemImageName: String? = nil
     ) {
         let item = NSMenuItem(title: title, action: action, keyEquivalent: keyEquivalent)
         item.keyEquivalentModifierMask = modifierMask
         item.target = target
+        if let systemImageName,
+           let image = NSImage(systemSymbolName: systemImageName, accessibilityDescription: title) {
+            image.isTemplate = true
+            image.size = NSSize(width: 14, height: 14)
+            item.image = image
+        }
         addItem(item)
     }
 }
