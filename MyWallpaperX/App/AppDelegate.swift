@@ -21,6 +21,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
  menuItem.title.replacingOccurrences(of: " ", with: "")
  }
 
+ private func textViewFirstResponder() -> NSTextView? {
+ guard let keyWindow = NSApp.keyWindow else { return nil }
+ return keyWindow.firstResponder as? NSTextView
+ }
+
+ private func editableTextViewFirstResponder() -> NSTextView? {
+ guard let textView = textViewFirstResponder(), textView.isEditable else { return nil }
+ return textView
+ }
+
  // MARK: - 菜单验证（AppKit 每次菜单显示前自动调用，正确处理模块切换后的可用状态）
  func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
  let module = MainWindowCoordinator.activeModule
@@ -52,9 +62,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
  return MainWindowCoordinator.canToggleMultiSelect
 
  case "全选":
+ if textViewFirstResponder() != nil {
+ return true
+ }
  return MainWindowCoordinator.canSelectAll
 
  case "删除选中":
+ if editableTextViewFirstResponder() != nil {
+ return true
+ }
  return MainWindowCoordinator.canDeleteSelected
 
  case "添加标签":
@@ -187,6 +203,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
  }
 
  @objc func selectAllMenuAction(_ sender: Any?) {
+ if let textView = textViewFirstResponder() {
+ textView.selectAll(sender)
+ return
+ }
  MainWindowCoordinator.menuSelectAll()
  }
 
@@ -195,6 +215,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
  }
 
  @objc func deleteSelectedMenuAction(_ sender: Any?) {
+ if let textView = editableTextViewFirstResponder() {
+ textView.delete(sender)
+ return
+ }
  MainWindowCoordinator.menuDeleteSelected()
  }
 

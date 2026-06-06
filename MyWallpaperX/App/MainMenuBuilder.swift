@@ -94,6 +94,25 @@ enum MainMenuBuilder {
     private static func addEditMenu(to mainMenu: NSMenu) {
         let menu = NSMenu(title: "编辑")
         menu.addItem(
+            title: "剪切",
+            action: #selector(NSText.cut(_:)),
+            keyEquivalent: "x",
+            target: nil
+        )
+        menu.addItem(
+            title: "拷贝",
+            action: #selector(NSText.copy(_:)),
+            keyEquivalent: "c",
+            target: nil
+        )
+        menu.addItem(
+            title: "粘贴",
+            action: #selector(NSText.paste(_:)),
+            keyEquivalent: "v",
+            target: nil
+        )
+        menu.addItem(.separator())
+        menu.addItem(
             title: "全选",
             action: #selector(AppDelegate.selectAllMenuAction(_:)),
             keyEquivalent: "a"
