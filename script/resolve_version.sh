@@ -1,47 +1,81 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-BASE_MAJOR_VERSION=1
-BASE_MINOR_VERSION=5
-BASE_PATCH_VERSION=0
-
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
-LATEST_TAG="$(git tag --list 'build-*' --sort=-version:refname | head -n 1)"
+MODE="${1:-development}"
 
-if [[ -n "$LATEST_TAG" ]]; then
-  RAW_VERSION="${LATEST_TAG#build-}"
-else
-  RAW_VERSION="${BASE_MAJOR_VERSION}.${BASE_MINOR_VERSION}.${BASE_PATCH_VERSION}"
+PROJECT_MARKETING_VERSION="$(python3 - <<'PY'
+from pathlib import Path
+import re
+
+project_file = Path("MyWallpaperX.xcodeproj/project.pbxproj")
+text = project_file.read_text()
+versions = re.findall(r"MARKETING_VERSION = ([^;]+);", text)
+if not versions:
+    raise SystemExit("MARKETING_VERSION not found in project.pbxproj")
+
+first = versions[0].strip().strip('"')
+if any(version.strip().strip('"') != first for version in versions):
+    raise SystemExit(f"Conflicting MARKETING_VERSION values: {versions}")
+
+print(first)
+PY
+)"
+
+version_ge() {
+  local left="$1"
+  local right="$2"
+  python3 - "$left" "$right" <<'PY'
+import sys
+
+def parts(version):
+    values = [int(part) for part in version.split(".")]
+    return values + [0] * (3 - len(values))
+
+sys.exit(0 if parts(sys.argv[1]) >= parts(sys.argv[2]) else 1)
+PY
+}
+
+next_patch_version() {
+  python3 - "$1" <<'PY'
+import sys
+
+parts = [int(part) for part in sys.argv[1].split(".")]
+parts = parts + [0] * (3 - len(parts))
+parts[2] += 1
+print(".".join(str(part) for part in parts[:3]))
+PY
+}
+
+latest_tag_for_major_minor() {
+  local major_minor="$1"
+  git tag --list "build-${major_minor}.*" --sort=-version:refname | head -n 1
+}
+
+MARKETING_VERSION="$PROJECT_MARKETING_VERSION"
+PREVIOUS_TAG="$(git tag --list 'build-*' --sort=-version:refname | head -n 1)"
+
+if [[ "$MODE" == "--release" || "$MODE" == "release" ]]; then
+  IFS='.' read -r PROJECT_MAJOR PROJECT_MINOR _ <<< "$PROJECT_MARKETING_VERSION"
+  LATEST_SERIES_TAG="$(latest_tag_for_major_minor "${PROJECT_MAJOR}.${PROJECT_MINOR}")"
+
+  if [[ -n "$LATEST_SERIES_TAG" ]]; then
+    NEXT_TAG_VERSION="$(next_patch_version "${LATEST_SERIES_TAG#build-}")"
+    if version_ge "$NEXT_TAG_VERSION" "$PROJECT_MARKETING_VERSION"; then
+      MARKETING_VERSION="$NEXT_TAG_VERSION"
+    fi
+  fi
+elif [[ "$MODE" != "development" ]]; then
+  echo "Usage: $0 [--release]" >&2
+  exit 64
 fi
-
-IFS='.' read -r CURRENT_MAJOR CURRENT_MINOR CURRENT_PATCH <<< "$RAW_VERSION"
-
-if [[ -z "${CURRENT_PATCH:-}" ]]; then
-  CURRENT_PATCH=0
-fi
-
-NEXT_PATCH=$((CURRENT_PATCH + 1))
-NEXT_MINOR=$CURRENT_MINOR
-NEXT_MAJOR=$CURRENT_MAJOR
-
-if (( NEXT_PATCH >= 10 )); then
-  NEXT_PATCH=0
-  NEXT_MINOR=$((NEXT_MINOR + 1))
-fi
-
-if (( NEXT_MINOR >= 10 )); then
-  NEXT_MINOR=0
-  NEXT_MAJOR=$((NEXT_MAJOR + 1))
-fi
-
-MARKETING_VERSION="${NEXT_MAJOR}.${NEXT_MINOR}.${NEXT_PATCH}"
 
 BUILD_VERSION="$(git rev-list --count HEAD)"
 
 cat <<EOF
 MARKETING_VERSION=${MARKETING_VERSION}
 BUILD_VERSION=${BUILD_VERSION}
-PREVIOUS_TAG=${LATEST_TAG}
+PREVIOUS_TAG=${PREVIOUS_TAG}
 EOF
