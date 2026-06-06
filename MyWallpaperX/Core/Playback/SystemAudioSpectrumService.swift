@@ -17,6 +17,15 @@ final class SystemAudioSpectrumService: NSObject {
     private let sampleQueue = DispatchQueue(label: "com.songziqiang.MyWallpaperX.system-audio-spectrum", qos: .utility)
     private let processingMinInterval: TimeInterval = 1.0 / 30.0
     private let processingGate = DispatchSemaphore(value: 1)
+    private let maximumCapturedBufferCount = 8
+    private let maximumCapturedBytesPerBuffer: Int
+    private let capturedBufferStorage: [UnsafeMutableRawPointer]
+    private var capturedBufferByteCounts: [Int]
+    private var capturedBufferChannelCounts: [Int]
+    private var capturedBufferCount = 0
+    private var capturedFrameCount = 0
+    private var capturedStreamDescription = AudioStreamBasicDescription()
+    private var processingSource: DispatchSourceUserDataAdd!
     private var tapID: AudioObjectID = kAudioObjectUnknown
     private var aggregateDeviceID: AudioObjectID = kAudioObjectUnknown
     private var ioProcID: AudioDeviceIOProcID?
@@ -27,13 +36,18 @@ final class SystemAudioSpectrumService: NSObject {
     private var adaptiveCeiling: Float = 0.12
     private var style: SystemAudioSpectrumStyle = .balanced
     private var sensitivity: SystemAudioSpectrumSensitivity = .normal
-    private var captureSamples: [Float]
 
     var onLevels: (([Float]) -> Void)?
 
     init(barCount: Int) {
         self.barCount = barCount
         self.fftSize = 1024
+        self.maximumCapturedBytesPerBuffer = 1024 * 32
+        self.capturedBufferStorage = (0..<8).map { _ in
+            UnsafeMutableRawPointer.allocate(byteCount: 1024 * 32, alignment: 16)
+        }
+        self.capturedBufferByteCounts = Array(repeating: 0, count: 8)
+        self.capturedBufferChannelCounts = Array(repeating: 0, count: 8)
         self.log2FFTSize = vDSP_Length(log2(Float(fftSize)))
         guard let fftSetup = vDSP_create_fftsetup(self.log2FFTSize, FFTRadix(kFFTRadix2)) else {
             fatalError("Unable to create FFT setup for system audio spectrum")
@@ -43,12 +57,22 @@ final class SystemAudioSpectrumService: NSObject {
         vDSP_hann_window(&window, vDSP_Length(fftSize), Int32(vDSP_HANN_NORM))
         self.hannWindow = window
         self.smoothedLevels = Array(repeating: 0, count: barCount)
-        self.captureSamples = Array(repeating: 0, count: fftSize)
         super.init()
+
+        let processingSource = DispatchSource.makeUserDataAddSource(queue: sampleQueue)
+        processingSource.setEventHandler { [weak self] in
+            guard let self else { return }
+            defer { self.processingGate.signal() }
+            self.processCapturedAudio()
+        }
+        processingSource.resume()
+        self.processingSource = processingSource
     }
 
     deinit {
+        processingSource?.cancel()
         stopCapture()
+        capturedBufferStorage.forEach { $0.deallocate() }
         vDSP_destroy_fftsetup(fftSetup)
     }
 
@@ -107,6 +131,7 @@ final class SystemAudioSpectrumService: NSObject {
 
             let aggregateID = try createAggregateDevice(tapUID: tapUID)
             aggregateDeviceID = aggregateID
+            configureCaptureBufferFrameSize(for: aggregateID)
 
             var createdIOProcID: AudioDeviceIOProcID?
             let ioStatus = AudioDeviceCreateIOProcIDWithBlock(
@@ -214,6 +239,44 @@ final class SystemAudioSpectrumService: NSObject {
         return deviceID
     }
 
+    private func configureCaptureBufferFrameSize(for deviceID: AudioObjectID) {
+        var rangeAddress = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyBufferFrameSizeRange,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var range = AudioValueRange()
+        var rangeSize = UInt32(MemoryLayout<AudioValueRange>.size)
+        guard AudioObjectGetPropertyData(
+            deviceID,
+            &rangeAddress,
+            0,
+            nil,
+            &rangeSize,
+            &range
+        ) == noErr else {
+            return
+        }
+
+        let preferredFrameCount = 4096.0
+        var frameCount = UInt32(
+            max(range.mMinimum, min(preferredFrameCount, range.mMaximum))
+        )
+        var frameSizeAddress = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyBufferFrameSize,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        AudioObjectSetPropertyData(
+            deviceID,
+            &frameSizeAddress,
+            0,
+            nil,
+            UInt32(MemoryLayout<UInt32>.size),
+            &frameCount
+        )
+    }
+
     private func fetchTapUID(for tapID: AudioObjectID) throws -> CFString {
         var address = AudioObjectPropertyAddress(
             mSelector: kAudioTapPropertyUID,
@@ -267,97 +330,57 @@ final class SystemAudioSpectrumService: NSObject {
 
         guard processingGate.wait(timeout: .now()) == .success else { return }
 
-        let sampleCount = copyMonoSamples(
+        guard captureAudioBuffers(
             from: inputData,
-            streamDescription: tapStreamFormat,
-            into: &captureSamples
-        )
-        guard sampleCount > 0 else {
+            streamDescription: tapStreamFormat
+        ) else {
             processingGate.signal()
             return
         }
-        let sampleRate = Float(max(1, tapStreamFormat.mSampleRate))
-
-        sampleQueue.async { [weak self] in
-            guard let self else { return }
-            defer { self.processingGate.signal() }
-            self.processCapturedSamples(count: sampleCount, sampleRate: sampleRate)
-        }
+        processingSource.add(data: 1)
     }
 
-    private func copyMonoSamples(
+    private func captureAudioBuffers(
         from bufferListPointer: UnsafePointer<AudioBufferList>,
-        streamDescription: AudioStreamBasicDescription,
-        into destination: inout [Float]
-    ) -> Int {
-        guard streamDescription.mFormatID == kAudioFormatLinearPCM else { return 0 }
+        streamDescription: AudioStreamBasicDescription
+    ) -> Bool {
+        guard streamDescription.mFormatID == kAudioFormatLinearPCM else { return false }
 
         let buffers = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: bufferListPointer))
-        guard !buffers.isEmpty, !destination.isEmpty else { return 0 }
+        let bufferCount = min(buffers.count, maximumCapturedBufferCount)
+        guard bufferCount > 0 else { return false }
 
-        let isFloat = (streamDescription.mFormatFlags & kAudioFormatFlagIsFloat) != 0
-        let isSignedInteger = (streamDescription.mFormatFlags & kAudioFormatFlagIsSignedInteger) != 0
-        let bitsPerChannel = Int(streamDescription.mBitsPerChannel)
-        let bytesPerSample: Int
-        if isFloat && bitsPerChannel == 32 {
-            bytesPerSample = MemoryLayout<Float>.size
-        } else if isSignedInteger && bitsPerChannel == 16 {
-            bytesPerSample = MemoryLayout<Int16>.size
-        } else if isSignedInteger && bitsPerChannel == 32 {
-            bytesPerSample = MemoryLayout<Int32>.size
-        } else {
-            return 0
+        let bytesPerFrame = max(1, Int(streamDescription.mBytesPerFrame))
+        var commonFrameCount = fftSize
+        for index in 0..<bufferCount {
+            let buffer = buffers[index]
+            guard buffer.mData != nil, buffer.mDataByteSize >= bytesPerFrame else { return false }
+            commonFrameCount = min(commonFrameCount, Int(buffer.mDataByteSize) / bytesPerFrame)
+        }
+        guard commonFrameCount > 0 else { return false }
+
+        for index in 0..<bufferCount {
+            let buffer = buffers[index]
+            guard let source = buffer.mData else { return false }
+            let byteCount = min(
+                commonFrameCount * bytesPerFrame,
+                maximumCapturedBytesPerBuffer
+            )
+            let sourceOffset = Int(buffer.mDataByteSize) - byteCount
+            memcpy(capturedBufferStorage[index], source.advanced(by: sourceOffset), byteCount)
+            capturedBufferByteCounts[index] = byteCount
+            capturedBufferChannelCounts[index] = max(1, Int(buffer.mNumberChannels))
         }
 
-        let bytesPerFrame = max(bytesPerSample, Int(streamDescription.mBytesPerFrame))
-        let availableFrameCount = buffers.compactMap { buffer -> Int? in
-            guard buffer.mData != nil, buffer.mDataByteSize >= bytesPerFrame else { return nil }
-            return Int(buffer.mDataByteSize) / bytesPerFrame
-        }.min() ?? 0
-        let frameCount = min(destination.count, availableFrameCount)
-        guard frameCount > 0 else { return 0 }
-
-        let sourceStartFrame = availableFrameCount - frameCount
-        for destinationIndex in 0..<frameCount {
-            let sourceFrame = sourceStartFrame + destinationIndex
-            var sum: Float = 0
-            var contributingChannels = 0
-
-            for buffer in buffers {
-                guard let data = buffer.mData else { continue }
-                let channelCount = max(1, Int(buffer.mNumberChannels))
-                let samplesPerFrame = max(channelCount, bytesPerFrame / bytesPerSample)
-                let frameSampleOffset = sourceFrame * samplesPerFrame
-
-                if isFloat {
-                    let samples = data.assumingMemoryBound(to: Float.self)
-                    for channel in 0..<channelCount {
-                        sum += abs(samples[frameSampleOffset + channel])
-                    }
-                } else if bitsPerChannel == 16 {
-                    let samples = data.assumingMemoryBound(to: Int16.self)
-                    for channel in 0..<channelCount {
-                        sum += abs(Float(samples[frameSampleOffset + channel]) / Float(Int16.max))
-                    }
-                } else {
-                    let samples = data.assumingMemoryBound(to: Int32.self)
-                    for channel in 0..<channelCount {
-                        sum += abs(Float(samples[frameSampleOffset + channel]) / Float(Int32.max))
-                    }
-                }
-                contributingChannels += channelCount
-            }
-
-            destination[destinationIndex] = contributingChannels > 0
-                ? sum / Float(contributingChannels)
-                : 0
-        }
-
-        return frameCount
+        capturedBufferCount = bufferCount
+        capturedFrameCount = commonFrameCount
+        capturedStreamDescription = streamDescription
+        return true
     }
 
-    private func processCapturedSamples(count: Int, sampleRate: Float) {
-        let samples = Array(captureSamples.prefix(count))
+    private func processCapturedAudio() {
+        guard let samples = monoSamplesFromCapturedBuffers(), !samples.isEmpty else { return }
+        let sampleRate = Float(max(1, capturedStreamDescription.mSampleRate))
         let rawLevels = computeBarLevels(from: samples, sampleRate: sampleRate)
         var nextLevels = Array(repeating: Float(0), count: barCount)
 
@@ -373,6 +396,68 @@ final class SystemAudioSpectrumService: NSObject {
 
         smoothedLevels = nextLevels
         onLevels?(nextLevels)
+    }
+
+    private func monoSamplesFromCapturedBuffers() -> [Float]? {
+        let streamDescription = capturedStreamDescription
+        let isFloat = (streamDescription.mFormatFlags & kAudioFormatFlagIsFloat) != 0
+        let isSignedInteger = (streamDescription.mFormatFlags & kAudioFormatFlagIsSignedInteger) != 0
+        let bitsPerChannel = Int(streamDescription.mBitsPerChannel)
+        let bytesPerSample: Int
+        if isFloat && bitsPerChannel == 32 {
+            bytesPerSample = MemoryLayout<Float>.size
+        } else if isSignedInteger && bitsPerChannel == 16 {
+            bytesPerSample = MemoryLayout<Int16>.size
+        } else if isSignedInteger && bitsPerChannel == 32 {
+            bytesPerSample = MemoryLayout<Int32>.size
+        } else {
+            return nil
+        }
+
+        let bytesPerFrame = max(bytesPerSample, Int(streamDescription.mBytesPerFrame))
+        let frameCount = min(
+            capturedFrameCount,
+            (0..<capturedBufferCount)
+                .map { capturedBufferByteCounts[$0] / bytesPerFrame }
+                .min() ?? 0
+        )
+        guard frameCount > 0 else { return nil }
+
+        var mono = Array(repeating: Float(0), count: frameCount)
+        for frameIndex in 0..<frameCount {
+            var sum: Float = 0
+            var contributingChannels = 0
+
+            for bufferIndex in 0..<capturedBufferCount {
+                let channelCount = capturedBufferChannelCounts[bufferIndex]
+                let samplesPerFrame = max(channelCount, bytesPerFrame / bytesPerSample)
+                let sampleOffset = frameIndex * samplesPerFrame
+                let storage = capturedBufferStorage[bufferIndex]
+
+                if isFloat {
+                    let samples = storage.assumingMemoryBound(to: Float.self)
+                    for channel in 0..<channelCount {
+                        sum += abs(samples[sampleOffset + channel])
+                    }
+                } else if bitsPerChannel == 16 {
+                    let samples = storage.assumingMemoryBound(to: Int16.self)
+                    for channel in 0..<channelCount {
+                        sum += abs(Float(samples[sampleOffset + channel]) / Float(Int16.max))
+                    }
+                } else {
+                    let samples = storage.assumingMemoryBound(to: Int32.self)
+                    for channel in 0..<channelCount {
+                        sum += abs(Float(samples[sampleOffset + channel]) / Float(Int32.max))
+                    }
+                }
+                contributingChannels += channelCount
+            }
+
+            mono[frameIndex] = contributingChannels > 0
+                ? sum / Float(contributingChannels)
+                : 0
+        }
+        return mono
     }
 
     private func computeBarLevels(from monoSamples: [Float], sampleRate: Float) -> [Float] {
