@@ -51,7 +51,7 @@ extension SteamWorkshopService {
             selectedDownloadDetailItem = selectedDownloadInspectorItem
             return
         }
-        if !forceRefresh && !SteamWorkshopDetailRefreshSupport.needsRefresh(item) {
+        if !forceRefresh && !SteamWorkshopDetailRefreshSupport.needsDownloadedMetadataRefresh(item) {
             return
         }
 
@@ -75,6 +75,7 @@ extension SteamWorkshopService {
                     guard let self, self.selectedDownloadInspectorItem?.id == item.id else { return }
                     self.selectedDownloadDetailItem = refreshed
                     self.mergeBrowserItem(refreshed)
+                    self.persistRefreshedDownloadInspectorMetadata(refreshed)
                     self.isRefreshingSelectedDownloadDetailItem = false
                     self.selectedDownloadDetailError = nil
                 }
@@ -86,6 +87,17 @@ extension SteamWorkshopService {
                     self.selectedDownloadDetailError = error.localizedDescription
                 }
             }
+        }
+    }
+
+    private func persistRefreshedDownloadInspectorMetadata(_ item: SteamWorkshopBrowserItem) {
+        guard let record = latestDownloadRecord(for: item.id),
+              record.status == .ready else { return }
+        persistDownloadMetadata(item: item, id: item.id, targetURL: record.folderURL)
+        reloadInstalledItems()
+        if selectedDownloadInspectorItem?.id == item.id {
+            selectedDownloadInspectorItem = item
+            selectedDownloadDetailItem = item
         }
     }
 
@@ -103,6 +115,7 @@ extension SteamWorkshopService {
         }
 
         if Self.resolvedAuthorWorkshopURL(for: item) != nil {
+            persistRefreshedDownloadInspectorMetadata(item)
             openAuthorWorksPage(for: item)
             return
         }
@@ -122,11 +135,10 @@ extension SteamWorkshopService {
             await MainActor.run {
                 guard let self,
                       self.selectedDownloadInspectorItem?.id == item.id,
-                      let resolved,
-                      let latestRecord = self.latestDownloadRecord(for: item.id) else { return }
+                      let resolved else { return }
                 self.selectedDownloadDetailItem = resolved
                 self.mergeBrowserItem(resolved)
-                self.persistDownloadMetadata(item: resolved, id: item.id, targetURL: latestRecord.folderURL)
+                self.persistRefreshedDownloadInspectorMetadata(resolved)
                 self.isRefreshingSelectedDownloadDetailItem = false
                 self.selectedDownloadDetailError = nil
                 guard Self.resolvedAuthorWorkshopURL(for: resolved) != nil else {

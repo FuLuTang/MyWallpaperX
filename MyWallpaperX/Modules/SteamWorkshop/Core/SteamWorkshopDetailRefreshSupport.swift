@@ -10,6 +10,10 @@ nonisolated enum SteamWorkshopDetailRefreshSupport {
         needsListRefresh(item) || needsDependencyRefresh(item)
     }
 
+    static func needsDownloadedMetadataRefresh(_ item: SteamWorkshopBrowserItem) -> Bool {
+        needsListRefresh(item)
+    }
+
     static func needsListRefresh(_ item: SteamWorkshopBrowserItem) -> Bool {
         item.detailFields.isEmpty
             || item.fileSizeText == nil

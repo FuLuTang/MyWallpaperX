@@ -173,7 +173,7 @@ extension SteamWorkshopService {
         currentPageTitle = item.title
         statusMessage = "已加载 \(item.title)"
         refreshSelectedDownloadInspectorDetailIfNeeded(
-            forceRefresh: SteamWorkshopDetailRefreshSupport.needsRefresh(item)
+            forceRefresh: SteamWorkshopDetailRefreshSupport.needsDownloadedMetadataRefresh(item)
         )
     }
 
