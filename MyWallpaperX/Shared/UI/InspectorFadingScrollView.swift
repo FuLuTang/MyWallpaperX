@@ -28,12 +28,6 @@ class InspectorFadingScrollView: NSScrollView {
         setupFadeMask()
     }
 
-    override var documentView: NSView? {
-        didSet {
-            updateFadeMaskOnMain()
-        }
-    }
-
     override func layout() {
         super.layout()
         fadeMask.frame = bounds
