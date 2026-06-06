@@ -20,7 +20,7 @@ enum InspectorFooterButtonKind {
 
 final class InspectorFooterButton: NSControl {
     private let kind: InspectorFooterButtonKind
-    private let rawTitle: String
+    private var rawTitle: String
     private var rawImage: NSImage?
     private let contentStack = NSStackView()
     private let iconView = NSImageView()
@@ -121,6 +121,12 @@ final class InspectorFooterButton: NSControl {
         rawImage = NSImage(systemSymbolName: symbolName, accessibilityDescription: accessibilityDescription)
         updateIconImage()
         updateStyle()
+    }
+
+    func setTitle(_ title: String) {
+        rawTitle = title
+        titleLabel.stringValue = title
+        invalidateIntrinsicContentSize()
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {

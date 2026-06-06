@@ -4,30 +4,403 @@
 //
 
 import AppKit
-import SwiftUI
+import Combine
 
-struct SteamWorkshopLoginOverlay: View {
-    @ObservedObject private var service = SteamWorkshopService.shared
-
-    var body: some View {
-        ZStack {
-            SteamWorkshopLoginSheet()
-                .padding(28)
-                .offset(x: -95)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .zIndex(1000)
+final class SteamWorkshopLoginOverlayView: NSView, NSTextFieldDelegate {
+    private enum Metrics {
+        static let panelWidth: CGFloat = 390
+        static let panelHeight: CGFloat = 544
+        static let panelCornerRadius: CGFloat = 22
+        static let fieldHeight: CGFloat = 34
+        static let fieldGroupSpacing: CGFloat = 6
     }
-}
 
-private struct SteamWorkshopLoginSheet: View {
-    @ObservedObject private var service = SteamWorkshopService.shared
-    @Environment(\.colorScheme) private var colorScheme
+    private let service = SteamWorkshopService.shared
+    private var cancellables = Set<AnyCancellable>()
+
+    private let panelView = NSGlassEffectView()
+    private let panelOverlayView = NSView()
+    private let contentStack = NSStackView()
+    private let iconContainer = NSView()
+    private let iconView = NSImageView()
+    private let modeBadge = NSView()
+    private let modeBadgeLabel = NSTextField(labelWithString: "")
+    private let titleLabel = NSTextField(labelWithString: "")
+    private let subtitleLabel = NSTextField(wrappingLabelWithString: "")
+    private let pendingCallout = NSView()
+    private let pendingCalloutLabel = NSTextField(wrappingLabelWithString: "")
+    private let usernameGroup = NSStackView()
+    private let passwordGroup = NSStackView()
+    private let guardGroup = NSStackView()
+    private let usernameFieldContainer = NSView()
+    private let passwordFieldContainer = NSView()
+    private let guardFieldContainer = NSView()
+    private let usernameField = NSTextField()
+    private let passwordField = NSSecureTextField()
+    private let guardField = NSTextField()
+    private let actionRow = NSStackView()
+    private let primaryButton = InspectorFooterButton(
+        title: "发送登录请求",
+        image: NSImage(systemSymbolName: "arrow.right.circle.fill", accessibilityDescription: "发送登录请求"),
+        kind: .primary,
+        target: nil,
+        action: #selector(performPrimaryAction)
+    )
+    private let closeButton = InspectorFooterButton(
+        title: "关闭",
+        image: NSImage(systemSymbolName: "xmark", accessibilityDescription: "关闭"),
+        kind: .secondary,
+        target: nil,
+        action: #selector(closeLogin)
+    )
+    private let footnoteLabel = NSTextField(wrappingLabelWithString: "")
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        setup()
+        observeService()
+        refresh()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    override var acceptsFirstResponder: Bool { true }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        super.hitTest(point) ?? (bounds.contains(point) ? self : nil)
+    }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        true
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard let window else { return }
+        refreshAppearance()
+        DispatchQueue.main.async { [weak self, weak window] in
+            guard let self else { return }
+            window?.makeFirstResponder(self.isAwaitingGuard ? self.guardField : self.usernameField)
+        }
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        refreshAppearance()
+    }
+
+    override func mouseDown(with event: NSEvent) {}
+    override func mouseDragged(with event: NSEvent) {}
+    override func mouseUp(with event: NSEvent) {}
+    override func rightMouseDown(with event: NSEvent) {}
+    override func rightMouseDragged(with event: NSEvent) {}
+    override func rightMouseUp(with event: NSEvent) {}
+    override func otherMouseDown(with event: NSEvent) {}
+    override func otherMouseDragged(with event: NSEvent) {}
+    override func otherMouseUp(with event: NSEvent) {}
+    override func scrollWheel(with event: NSEvent) {}
+    override func magnify(with event: NSEvent) {}
+    override func rotate(with event: NSEvent) {}
+    override func swipe(with event: NSEvent) {}
+
+    func controlTextDidChange(_ notification: Notification) {
+        guard let field = notification.object as? NSTextField else { return }
+        if field === usernameField {
+            service.steamUsername = field.stringValue
+        } else if field === passwordField {
+            service.steamPassword = field.stringValue
+        } else if field === guardField {
+            service.steamGuardCode = field.stringValue
+        }
+    }
+
+    private var isAwaitingGuard: Bool {
+        service.authPhase == .awaitingGuardCode
+    }
+
+    private func setup() {
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.clear.cgColor
+        translatesAutoresizingMaskIntoConstraints = false
+
+        panelView.cornerRadius = Metrics.panelCornerRadius
+        panelView.style = .regular
+        panelView.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(panelView)
+
+        panelOverlayView.wantsLayer = true
+        panelOverlayView.layer?.cornerRadius = Metrics.panelCornerRadius
+        panelOverlayView.layer?.masksToBounds = true
+        panelOverlayView.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(panelOverlayView)
+
+        contentStack.orientation = .vertical
+        contentStack.alignment = .centerX
+        contentStack.distribution = .fill
+        contentStack.spacing = 14
+        contentStack.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(contentStack)
+
+        setupHeader()
+        setupFields()
+        setupActions()
+
+        NSLayoutConstraint.activate([
+            panelView.centerXAnchor.constraint(equalTo: centerXAnchor, constant: -95),
+            panelView.centerYAnchor.constraint(equalTo: centerYAnchor),
+            panelView.widthAnchor.constraint(equalToConstant: Metrics.panelWidth),
+            panelView.heightAnchor.constraint(equalToConstant: Metrics.panelHeight),
+
+            panelOverlayView.leadingAnchor.constraint(equalTo: panelView.leadingAnchor),
+            panelOverlayView.trailingAnchor.constraint(equalTo: panelView.trailingAnchor),
+            panelOverlayView.topAnchor.constraint(equalTo: panelView.topAnchor),
+            panelOverlayView.bottomAnchor.constraint(equalTo: panelView.bottomAnchor),
+
+            contentStack.leadingAnchor.constraint(equalTo: panelView.leadingAnchor),
+            contentStack.trailingAnchor.constraint(equalTo: panelView.trailingAnchor),
+            contentStack.centerYAnchor.constraint(equalTo: panelView.centerYAnchor),
+            contentStack.topAnchor.constraint(greaterThanOrEqualTo: panelView.topAnchor, constant: 20),
+            contentStack.bottomAnchor.constraint(lessThanOrEqualTo: panelView.bottomAnchor, constant: -20)
+        ])
+    }
+
+    private func setupHeader() {
+        iconContainer.wantsLayer = true
+        iconContainer.layer?.cornerRadius = 29
+        iconContainer.translatesAutoresizingMaskIntoConstraints = false
+        iconView.translatesAutoresizingMaskIntoConstraints = false
+        iconContainer.addSubview(iconView)
+        NSLayoutConstraint.activate([
+            iconContainer.widthAnchor.constraint(equalToConstant: 58),
+            iconContainer.heightAnchor.constraint(equalToConstant: 58),
+            iconView.centerXAnchor.constraint(equalTo: iconContainer.centerXAnchor),
+            iconView.centerYAnchor.constraint(equalTo: iconContainer.centerYAnchor),
+            iconView.widthAnchor.constraint(equalToConstant: 26),
+            iconView.heightAnchor.constraint(equalToConstant: 26)
+        ])
+        contentStack.addArrangedSubview(iconContainer)
+
+        modeBadge.wantsLayer = true
+        modeBadge.layer?.cornerRadius = 13
+        modeBadge.translatesAutoresizingMaskIntoConstraints = false
+        modeBadgeLabel.font = .systemFont(ofSize: 11, weight: .semibold)
+        modeBadgeLabel.alignment = .center
+        modeBadgeLabel.translatesAutoresizingMaskIntoConstraints = false
+        modeBadge.addSubview(modeBadgeLabel)
+        NSLayoutConstraint.activate([
+            modeBadgeLabel.leadingAnchor.constraint(equalTo: modeBadge.leadingAnchor, constant: 12),
+            modeBadgeLabel.trailingAnchor.constraint(equalTo: modeBadge.trailingAnchor, constant: -12),
+            modeBadgeLabel.topAnchor.constraint(equalTo: modeBadge.topAnchor, constant: 6),
+            modeBadgeLabel.bottomAnchor.constraint(equalTo: modeBadge.bottomAnchor, constant: -6)
+        ])
+        contentStack.addArrangedSubview(modeBadge)
+
+        titleLabel.font = .systemFont(ofSize: 24, weight: .semibold)
+        titleLabel.alignment = .center
+        titleLabel.lineBreakMode = .byWordWrapping
+        titleLabel.maximumNumberOfLines = 2
+        contentStack.addArrangedSubview(titleLabel)
+
+        subtitleLabel.font = .systemFont(ofSize: 12.5, weight: .medium)
+        subtitleLabel.alignment = .center
+        subtitleLabel.maximumNumberOfLines = 3
+        subtitleLabel.widthAnchor.constraint(equalToConstant: 330).isActive = true
+        contentStack.addArrangedSubview(subtitleLabel)
+
+        pendingCallout.wantsLayer = true
+        pendingCallout.layer?.cornerRadius = 13
+        pendingCallout.translatesAutoresizingMaskIntoConstraints = false
+        pendingCalloutLabel.font = .systemFont(ofSize: 11.5, weight: .medium)
+        pendingCalloutLabel.alignment = .center
+        pendingCalloutLabel.maximumNumberOfLines = 2
+        pendingCalloutLabel.translatesAutoresizingMaskIntoConstraints = false
+        pendingCallout.addSubview(pendingCalloutLabel)
+        NSLayoutConstraint.activate([
+            pendingCallout.widthAnchor.constraint(lessThanOrEqualToConstant: 330),
+            pendingCalloutLabel.leadingAnchor.constraint(equalTo: pendingCallout.leadingAnchor, constant: 14),
+            pendingCalloutLabel.trailingAnchor.constraint(equalTo: pendingCallout.trailingAnchor, constant: -14),
+            pendingCalloutLabel.topAnchor.constraint(equalTo: pendingCallout.topAnchor, constant: 9),
+            pendingCalloutLabel.bottomAnchor.constraint(equalTo: pendingCallout.bottomAnchor, constant: -9)
+        ])
+        contentStack.addArrangedSubview(pendingCallout)
+    }
+
+    private func setupFields() {
+        configureField(usernameField, in: usernameFieldContainer, placeholder: "请输入用户名")
+        configureField(passwordField, in: passwordFieldContainer, placeholder: "请输入密码")
+        configureField(guardField, in: guardFieldContainer, placeholder: "请输入邮件或手机 App 收到的令牌")
+
+        configureFieldGroup(usernameGroup, title: "Steam 用户名", symbolName: "person", fieldContainer: usernameFieldContainer)
+        configureFieldGroup(passwordGroup, title: "Steam 密码", symbolName: "key", fieldContainer: passwordFieldContainer)
+        configureFieldGroup(guardGroup, title: "Steam Guard 令牌", symbolName: "lock.shield", fieldContainer: guardFieldContainer)
+
+        contentStack.addArrangedSubview(usernameGroup)
+        contentStack.addArrangedSubview(passwordGroup)
+        contentStack.addArrangedSubview(guardGroup)
+    }
+
+    private func configureField(_ field: NSTextField, in container: NSView, placeholder: String) {
+        container.wantsLayer = true
+        container.layer?.cornerRadius = 10
+        container.layer?.borderWidth = 0.8
+        container.translatesAutoresizingMaskIntoConstraints = false
+
+        field.placeholderString = placeholder
+        field.font = .systemFont(ofSize: 13, weight: .medium)
+        field.alignment = .center
+        field.isEditable = true
+        field.isSelectable = true
+        field.isEnabled = true
+        field.isBordered = false
+        field.isBezeled = false
+        field.drawsBackground = false
+        field.backgroundColor = .clear
+        field.focusRingType = .none
+        field.delegate = self
+        field.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(field)
+
+        NSLayoutConstraint.activate([
+            container.widthAnchor.constraint(equalToConstant: 320),
+            container.heightAnchor.constraint(equalToConstant: Metrics.fieldHeight),
+            field.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 10),
+            field.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -10),
+            field.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            field.heightAnchor.constraint(equalToConstant: 20)
+        ])
+    }
+
+    private func configureFieldGroup(
+        _ group: NSStackView,
+        title: String,
+        symbolName: String,
+        fieldContainer: NSView
+    ) {
+        group.orientation = .vertical
+        group.alignment = .centerX
+        group.distribution = .fill
+        group.spacing = Metrics.fieldGroupSpacing
+        group.translatesAutoresizingMaskIntoConstraints = false
+        group.setHuggingPriority(.required, for: .vertical)
+        group.setContentCompressionResistancePriority(.required, for: .vertical)
+
+        let titleRow = NSStackView()
+        titleRow.orientation = .horizontal
+        titleRow.alignment = .centerY
+        titleRow.spacing = 6
+        titleRow.setHuggingPriority(.required, for: .vertical)
+
+        let icon = NSImageView(image: NSImage(systemSymbolName: symbolName, accessibilityDescription: title) ?? NSImage())
+        icon.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 11, weight: .semibold)
+        icon.contentTintColor = .secondaryLabelColor
+        let label = NSTextField(labelWithString: title)
+        label.font = .systemFont(ofSize: 11, weight: .semibold)
+        label.textColor = .secondaryLabelColor
+        titleRow.addArrangedSubview(icon)
+        titleRow.addArrangedSubview(label)
+
+        group.addArrangedSubview(titleRow)
+        group.addArrangedSubview(fieldContainer)
+    }
+
+    private func setupActions() {
+        actionRow.orientation = .horizontal
+        actionRow.alignment = .centerY
+        actionRow.distribution = .fillEqually
+        actionRow.spacing = 10
+        actionRow.translatesAutoresizingMaskIntoConstraints = false
+
+        primaryButton.target = self
+        closeButton.target = self
+        actionRow.addArrangedSubview(primaryButton)
+        actionRow.addArrangedSubview(closeButton)
+        NSLayoutConstraint.activate([
+            actionRow.widthAnchor.constraint(equalToConstant: 320),
+            primaryButton.heightAnchor.constraint(equalToConstant: InspectorFooterMetrics.height),
+            closeButton.heightAnchor.constraint(equalToConstant: InspectorFooterMetrics.height)
+        ])
+        contentStack.addArrangedSubview(actionRow)
+
+        footnoteLabel.font = .systemFont(ofSize: 11.5, weight: .medium)
+        footnoteLabel.textColor = .secondaryLabelColor
+        footnoteLabel.alignment = .center
+        footnoteLabel.maximumNumberOfLines = 3
+        footnoteLabel.widthAnchor.constraint(equalToConstant: 340).isActive = true
+        contentStack.addArrangedSubview(footnoteLabel)
+    }
+
+    private func observeService() {
+        let publishers: [AnyPublisher<Void, Never>] = [
+            service.$authPhase.map { _ in () }.eraseToAnyPublisher(),
+            service.$authStatusMessage.map { _ in () }.eraseToAnyPublisher(),
+            service.$isAuthenticating.map { _ in () }.eraseToAnyPublisher(),
+            service.$isPreparingRuntime.map { _ in () }.eraseToAnyPublisher()
+        ]
+        publishers.forEach { publisher in
+            publisher
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] in self?.refresh() }
+                .store(in: &cancellables)
+        }
+    }
+
+    private func refresh() {
+        let awaitingGuard = isAwaitingGuard
+        iconView.image = NSImage(
+            systemSymbolName: awaitingGuard ? "shield.lefthalf.filled.badge.checkmark" : "person.crop.circle.badge.plus",
+            accessibilityDescription: nil
+        )
+        iconView.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 24, weight: .medium)
+        iconView.contentTintColor = .labelColor
+        modeBadgeLabel.stringValue = awaitingGuard ? "Steam Guard 验证" : "Steam 账号登录"
+        titleLabel.stringValue = awaitingGuard ? "继续完成 Steam 验证" : "登录 Steam 以启用创意工坊下载"
+        subtitleLabel.stringValue = service.authStatusMessage
+
+        usernameField.stringValue = service.steamUsername
+        passwordField.stringValue = service.steamPassword
+        guardField.stringValue = service.steamGuardCode
+        usernameGroup.isHidden = awaitingGuard
+        passwordGroup.isHidden = awaitingGuard
+        guardGroup.isHidden = !awaitingGuard
+
+        if let pendingTitle = pendingDownloadTitle {
+            pendingCalloutLabel.stringValue = "登录成功后会自动继续下载：\(pendingTitle)"
+            pendingCallout.isHidden = false
+        } else {
+            pendingCallout.isHidden = true
+        }
+
+        let primaryTitle: String
+        let symbolName: String
+        if awaitingGuard {
+            primaryTitle = service.isAuthenticating ? "验证中…" : "验证令牌"
+            symbolName = "lock.shield.fill"
+        } else if service.isPreparingRuntime {
+            primaryTitle = "准备中…"
+            symbolName = "hourglass"
+        } else {
+            primaryTitle = service.isAuthenticating ? "登录中…" : "发送登录请求"
+            symbolName = "arrow.right.circle.fill"
+        }
+        primaryButton.setTitle(primaryTitle)
+        primaryButton.setSymbol(symbolName, accessibilityDescription: primaryTitle)
+        primaryButton.isEnabled = awaitingGuard
+            ? !service.isAuthenticating
+            : !(service.isAuthenticating || service.isPreparingRuntime)
+
+        footnoteLabel.stringValue = awaitingGuard
+            ? "这里是在续接当前登录流程，不会重新提交账号密码。"
+            : "已保存凭据时，下载前会先验证当前会话；只有会话失效时才会要求继续登录或输入 Guard。"
+        refreshAppearance()
+    }
 
     private var pendingDownloadTitle: String? {
-        if let pageTitle = service.pendingDownloadRequest?.pageTitle?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !pageTitle.isEmpty {
-            return pageTitle
+        if let title = service.pendingDownloadRequest?.pageTitle?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !title.isEmpty {
+            return title
         }
         if let pending = service.pendingDownloadRequest {
             return "Workshop #\(pending.id)"
@@ -35,442 +408,60 @@ private struct SteamWorkshopLoginSheet: View {
         return nil
     }
 
-    private var isAwaitingGuard: Bool {
-        service.authPhase == .awaitingGuardCode
+    private func refreshAppearance() {
+        let isDark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        panelView.tintColor = isDark
+            ? NSColor.black.withAlphaComponent(0.10)
+            : NSColor.controlBackgroundColor.withAlphaComponent(0.15)
+        panelView.layer?.backgroundColor = (isDark
+            ? NSColor.black.withAlphaComponent(0.04)
+            : NSColor.windowBackgroundColor.withAlphaComponent(0.05)).cgColor
+
+        panelOverlayView.layer?.backgroundColor = (isDark
+            ? NSColor.black.withAlphaComponent(0.18)
+            : NSColor.white.withAlphaComponent(0.82)).cgColor
+        panelOverlayView.layer?.borderWidth = 0.8
+        panelOverlayView.layer?.borderColor = (isDark
+            ? NSColor.white.withAlphaComponent(0.24)
+            : NSColor.black.withAlphaComponent(0.16)).cgColor
+
+        let controlFill = isDark
+            ? NSColor.black.withAlphaComponent(0.14)
+            : NSColor.black.withAlphaComponent(0.035)
+        let controlStroke = isDark
+            ? NSColor.white.withAlphaComponent(0.16)
+            : NSColor.black.withAlphaComponent(0.14)
+        [iconContainer, modeBadge, pendingCallout].forEach {
+            $0.layer?.backgroundColor = controlFill.cgColor
+            $0.layer?.borderWidth = 0.8
+            $0.layer?.borderColor = controlStroke.cgColor
+        }
+        [usernameFieldContainer, passwordFieldContainer, guardFieldContainer].forEach {
+            $0.layer?.backgroundColor = controlFill.cgColor
+            $0.layer?.borderColor = controlStroke.cgColor
+        }
+        [usernameField, passwordField, guardField].forEach {
+            $0.backgroundColor = .clear
+            $0.textColor = .labelColor
+        }
+        modeBadgeLabel.textColor = .labelColor
+        pendingCalloutLabel.textColor = .labelColor
+        titleLabel.textColor = .labelColor
+        subtitleLabel.textColor = .secondaryLabelColor
     }
 
-    private var titleText: String {
-        isAwaitingGuard ? "继续完成 Steam 验证" : "登录 Steam 以启用创意工坊下载"
-    }
-
-    private var subtitleText: String {
+    @objc private func performPrimaryAction() {
+        service.steamUsername = usernameField.stringValue
+        service.steamPassword = passwordField.stringValue
+        service.steamGuardCode = guardField.stringValue
         if isAwaitingGuard {
-            return "账号密码已经提交成功，继续输入 Steam Guard 令牌即可完成这次登录。"
-        }
-        return service.authStatusMessage
-    }
-
-    private var footnoteText: String {
-        isAwaitingGuard
-        ? "这里是在续接当前登录流程，不会重新提交账号密码。"
-        : "已保存凭据时，下载前会先验证当前会话；只有会话失效时才会要求继续登录或输入 Guard。"
-    }
-
-    private var primaryTextColor: Color {
-        colorScheme == .dark ? .white.opacity(0.94) : Color.black.opacity(0.80)
-    }
-
-    private var secondaryTextColor: Color {
-        colorScheme == .dark ? .white.opacity(0.72) : Color.black.opacity(0.58)
-    }
-
-    private var chromeStrokeColor: Color {
-        colorScheme == .dark ? .white.opacity(0.20) : .white.opacity(0.52)
-    }
-
-    private var panelOverlayColor: Color {
-        colorScheme == .dark ? Color.black.opacity(0.12) : Color.white.opacity(0.12)
-    }
-
-    var body: some View {
-        VStack(spacing: 18) {
-            VStack(spacing: 10) {
-                ZStack {
-                    Circle()
-                        .fill(.ultraThinMaterial)
-                        .frame(width: 58, height: 58)
-                    Circle()
-                        .stroke(chromeStrokeColor, lineWidth: 0.8)
-                        .frame(width: 58, height: 58)
-                    Image(systemName: isAwaitingGuard ? "shield.lefthalf.filled.badge.checkmark" : "person.crop.circle.badge.plus")
-                        .font(.system(size: 24, weight: .medium))
-                        .foregroundStyle(primaryTextColor)
-                }
-
-                SteamWorkshopLoginModeBadge(
-                    title: isAwaitingGuard ? "Steam Guard 验证" : "Steam 账号登录",
-                    systemImage: isAwaitingGuard ? "lock.shield" : "sparkles.rectangle.stack"
-                )
-
-                Text(titleText)
-                    .font(.system(size: 24, weight: .semibold))
-                    .foregroundStyle(primaryTextColor)
-                    .multilineTextAlignment(.center)
-
-                Text(subtitleText)
-                    .font(.system(size: 12.5, weight: .medium))
-                    .foregroundStyle(secondaryTextColor)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: 360)
-
-                if let pendingDownloadTitle {
-                    SteamWorkshopLoginCallout(
-                        icon: "arrow.down.circle.fill",
-                        text: "登录成功后会自动继续下载：\(pendingDownloadTitle)"
-                    )
-                }
-            }
-
-            Group {
-                if isAwaitingGuard {
-                    SteamWorkshopLoginField(
-                        title: "Steam Guard 令牌",
-                        prompt: "请输入邮件或手机 App 收到的令牌",
-                        text: $service.steamGuardCode,
-                        systemImage: "lock.shield"
-                    )
-                } else {
-                    VStack(spacing: 12) {
-                        SteamWorkshopLoginField(
-                            title: "Steam 用户名",
-                            prompt: "请输入用户名",
-                            text: $service.steamUsername,
-                            systemImage: "person"
-                        )
-                        SteamWorkshopSecureLoginField(
-                            title: "Steam 密码",
-                            prompt: "请输入密码",
-                            text: $service.steamPassword,
-                            systemImage: "key"
-                        )
-                    }
-                }
-            }
-            .frame(maxWidth: 320)
-
-            VStack(spacing: 12) {
-                HStack(spacing: 10) {
-                    if isAwaitingGuard {
-                        Button(service.isAuthenticating ? "验证中…" : "验证令牌") {
-                            service.submitSteamGuardCode()
-                        }
-                        .buttonStyle(SteamWorkshopLoginActionButtonStyle(kind: .primary))
-                        .disabled(service.isAuthenticating)
-                    } else {
-                        Button(service.isPreparingRuntime ? "准备中…" : (service.isAuthenticating ? "登录中…" : "发送登录请求")) {
-                            service.authenticateUser()
-                        }
-                        .buttonStyle(SteamWorkshopLoginActionButtonStyle(kind: .primary))
-                        .disabled(service.isAuthenticating || service.isPreparingRuntime)
-                    }
-
-                    Button("关闭") {
-                        service.isLoginSheetPresented = false
-                    }
-                    .buttonStyle(SteamWorkshopLoginActionButtonStyle(kind: .secondary))
-                }
-            }
-            .frame(maxWidth: 320)
-
-            SteamWorkshopLoginFootnote(text: footnoteText)
-                .frame(maxWidth: 360)
-        }
-        .frame(minWidth: 380, minHeight: 500)
-        .padding(.horizontal, 30)
-        .padding(.vertical, 22)
-        .frame(width: 390)
-        .background {
-            SteamWorkshopInspectorGlassPanel(cornerRadius: 22, style: .regular)
-                .overlay {
-                    RoundedRectangle(cornerRadius: 22, style: .continuous)
-                        .fill(panelOverlayColor)
-                }
-                .overlay(alignment: .top) {
-                    RoundedRectangle(cornerRadius: 22, style: .continuous)
-                        .stroke(
-                            LinearGradient(
-                                colors: [
-                                    Color.white.opacity(colorScheme == .dark ? 0.42 : 0.62),
-                                    Color.white.opacity(0.08)
-                                ],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            ),
-                            lineWidth: 1
-                        )
-                        .padding(1)
-                }
-        }
-        .overlay {
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .stroke(Color.white.opacity(0.1), lineWidth: 0.08)
-        }
-        .shadow(color: Color.black.opacity(0.4), radius: 25, x: 0, y: 16)
-        .background(Color.clear)
-    }
-}
-
-private struct SteamWorkshopLoginModeBadge: View {
-    let title: String
-    let systemImage: String
-
-    var body: some View {
-        Label(title, systemImage: systemImage)
-            .font(.system(size: 11, weight: .semibold))
-            .foregroundStyle(.primary.opacity(0.88))
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background(
-                Capsule(style: .continuous)
-                    .fill(.thinMaterial)
-                    .overlay(
-                        Capsule(style: .continuous)
-                            .stroke(Color.white.opacity(0.14), lineWidth: 0.6)
-                    )
-            )
-    }
-}
-
-private struct SteamWorkshopLoginCallout: View {
-    let icon: String
-    let text: String
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: icon)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.primary.opacity(0.88))
-            Text(text)
-                .font(.system(size: 11.5, weight: .medium))
-                .foregroundStyle(.primary.opacity(0.88))
-                .multilineTextAlignment(.center)
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .background(
-            Capsule(style: .continuous)
-                .fill(.thinMaterial)
-                .overlay(
-                    Capsule(style: .continuous)
-                        .stroke(Color.white.opacity(0.12), lineWidth: 0.6)
-                )
-        )
-    }
-}
-
-private struct SteamWorkshopLoginField: View {
-    let title: String
-    let prompt: String
-    @Binding var text: String
-    let systemImage: String
-    @Environment(\.colorScheme) private var colorScheme
-    @FocusState private var isFocused: Bool
-
-    var body: some View {
-        VStack(spacing: 8) {
-            Label(title, systemImage: systemImage)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.primary.opacity(0.78))
-                .frame(maxWidth: .infinity, alignment: .center)
-
-            ZStack {
-                if text.isEmpty && !isFocused {
-                    Text(prompt)
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(.primary.opacity(0.36))
-                        .allowsHitTesting(false)
-                }
-
-                TextField("", text: $text)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 13, weight: .medium))
-                    .multilineTextAlignment(.center)
-                    .foregroundStyle(.primary.opacity(0.94))
-                    .focused($isFocused)
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
-            .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(fieldFillColor)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .stroke(Color.white.opacity(0.16), lineWidth: 0.8)
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .stroke(
-                                LinearGradient(
-                                    colors: [
-                                        Color.white.opacity(0.20),
-                                        Color.clear
-                                    ],
-                                    startPoint: .top,
-                                    endPoint: .bottom
-                                ),
-                                lineWidth: 0.8
-                            )
-                    )
-            )
+            service.submitSteamGuardCode()
+        } else {
+            service.authenticateUser()
         }
     }
 
-    private var fieldFillColor: Color {
-        colorScheme == .dark ? Color.black.opacity(0.11) : Color.white.opacity(0.24)
-    }
-}
-
-private struct SteamWorkshopSecureLoginField: View {
-    let title: String
-    let prompt: String
-    @Binding var text: String
-    let systemImage: String
-    @Environment(\.colorScheme) private var colorScheme
-    @FocusState private var isFocused: Bool
-
-    var body: some View {
-        VStack(spacing: 8) {
-            Label(title, systemImage: systemImage)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.primary.opacity(0.78))
-                .frame(maxWidth: .infinity, alignment: .center)
-
-            ZStack {
-                if text.isEmpty && !isFocused {
-                    Text(prompt)
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(.primary.opacity(0.36))
-                        .allowsHitTesting(false)
-                }
-
-                SecureField("", text: $text)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 13, weight: .medium))
-                    .multilineTextAlignment(.center)
-                    .foregroundStyle(.primary.opacity(0.94))
-                    .focused($isFocused)
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
-            .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(colorScheme == .dark ? Color.black.opacity(0.11) : Color.white.opacity(0.24))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .stroke(Color.white.opacity(0.16), lineWidth: 0.8)
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .stroke(
-                                LinearGradient(
-                                    colors: [
-                                        Color.white.opacity(0.20),
-                                        Color.clear
-                                    ],
-                                    startPoint: .top,
-                                    endPoint: .bottom
-                                ),
-                                lineWidth: 0.8
-                            )
-                    )
-            )
-        }
-    }
-}
-
-private struct SteamWorkshopLoginFootnote: View {
-    let text: String
-
-    var body: some View {
-        Text(text)
-            .font(.system(size: 11.5, weight: .medium))
-            .foregroundStyle(.secondary)
-            .multilineTextAlignment(.center)
-            .padding(.horizontal, 10)
-    }
-}
-
-private enum SteamWorkshopLoginActionKind {
-    case primary
-    case secondary
-}
-
-private struct SteamWorkshopLoginActionButtonStyle: ButtonStyle {
-    let kind: SteamWorkshopLoginActionKind
-    @Environment(\.isEnabled) private var isEnabled
-    @Environment(\.colorScheme) private var colorScheme
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.system(size: 13, weight: .semibold))
-            .foregroundStyle(foregroundColor.opacity(isEnabled ? 1 : 0.55))
-            .frame(maxWidth: .infinity)
-            .padding(.horizontal, 18)
-            .padding(.vertical, 12)
-            .background(background(configuration.isPressed))
-            .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .stroke(borderColor.opacity(isEnabled ? 1 : 0.45), lineWidth: 0.8)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .scaleEffect(configuration.isPressed ? 0.985 : 1)
-            .opacity(isEnabled ? 1 : 0.72)
-            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
-    }
-
-    private var foregroundColor: Color {
-        switch kind {
-        case .primary:
-            return .white
-        case .secondary:
-            return Color(nsColor: .labelColor)
-        }
-    }
-
-    private var borderColor: Color {
-        switch kind {
-        case .primary:
-            return Color(nsColor: .systemBlue).opacity(0.42)
-        case .secondary:
-            return Color.white.opacity(0.16)
-        }
-    }
-
-    @ViewBuilder
-    private func background(_ isPressed: Bool) -> some View {
-        switch kind {
-        case .primary:
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color(nsColor: isPressed ? .systemBlue.withSystemEffect(.pressed) : .systemBlue))
-        case .secondary:
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(colorScheme == .dark
-                    ? Color.black.opacity(isPressed ? 0.15 : 0.11)
-                    : Color.white.opacity(isPressed ? 0.28 : 0.36))
-        }
-    }
-}
-
-private struct SteamWorkshopInspectorGlassPanel: NSViewRepresentable {
-    let cornerRadius: CGFloat
-    let style: NSGlassEffectView.Style
-
-    func makeNSView(context: Context) -> NSGlassEffectView {
-        let view = NSGlassEffectView()
-        view.wantsLayer = true
-        return view
-    }
-
-    func updateNSView(_ nsView: NSGlassEffectView, context: Context) {
-        nsView.cornerRadius = cornerRadius
-        nsView.style = style
-        nsView.tintColor = SteamWorkshopInspectorGlassPalette.baseTint(for: nsView)
-        nsView.layer?.backgroundColor = SteamWorkshopInspectorGlassPalette.innerFill(for: nsView).cgColor
-    }
-}
-
-private enum SteamWorkshopInspectorGlassPalette {
-    static func baseTint(for view: NSView) -> NSColor {
-        if view.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua {
-            return .windowBackgroundColor.withAlphaComponent(0.18)
-        }
-        return .controlBackgroundColor.withAlphaComponent(0.15)
-    }
-
-    static func innerFill(for view: NSView) -> NSColor {
-        if view.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua {
-            return .textBackgroundColor.withAlphaComponent(0.06)
-        }
-        return .windowBackgroundColor.withAlphaComponent(0.05)
+    @objc private func closeLogin() {
+        service.isLoginSheetPresented = false
     }
 }

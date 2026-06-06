@@ -5,7 +5,6 @@
 
 import AppKit
 import Combine
-import SwiftUI
 
 final class AppKitSteamWorkshopBrowserView: NSView {
     private enum ContentState: Equatable {
@@ -20,7 +19,7 @@ final class AppKitSteamWorkshopBrowserView: NSView {
     private var cancellables = Set<AnyCancellable>()
     private var currentState: ContentState?
     private var inspectorDetailView: AppKitSteamWorkshopItemDetailView?
-    private var loginHostingView: NSHostingView<SteamWorkshopLoginOverlay>?
+    private var loginOverlayView: SteamWorkshopLoginOverlayView?
     private var lastRequestedCardID: String?
     private var visibleCardID: String?
     private var latestInspectorItem: SteamWorkshopBrowserItem?
@@ -130,6 +129,17 @@ final class AppKitSteamWorkshopBrowserView: NSView {
         service.$authError
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.presentPendingAuthErrorIfNeeded() }
+            .store(in: &cancellables)
+
+        NotificationCenter.default.publisher(for: .steamWorkshopModeDidChange)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] notification in
+                guard notification.userInfo?["enabled"] as? Bool == true,
+                      notification.userInfo?["isDownloads"] as? Bool == true else {
+                    return
+                }
+                self?.service.isLoginSheetPresented = false
+            }
             .store(in: &cancellables)
     }
 
@@ -409,22 +419,21 @@ final class AppKitSteamWorkshopBrowserView: NSView {
     }
 
     private func installLoginOverlayIfNeeded() {
-        guard loginHostingView == nil else { return }
-        let hostingView = NSHostingView(rootView: SteamWorkshopLoginOverlay())
-        hostingView.translatesAutoresizingMaskIntoConstraints = false
-        loginHostingView = hostingView
-        addSubview(hostingView)
+        guard loginOverlayView == nil else { return }
+        let overlayView = SteamWorkshopLoginOverlayView()
+        loginOverlayView = overlayView
+        addSubview(overlayView, positioned: .above, relativeTo: nil)
         NSLayoutConstraint.activate([
-            hostingView.leadingAnchor.constraint(equalTo: leadingAnchor),
-            hostingView.trailingAnchor.constraint(equalTo: trailingAnchor),
-            hostingView.topAnchor.constraint(equalTo: topAnchor),
-            hostingView.bottomAnchor.constraint(equalTo: bottomAnchor)
+            overlayView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            overlayView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            overlayView.topAnchor.constraint(equalTo: topAnchor),
+            overlayView.bottomAnchor.constraint(equalTo: bottomAnchor)
         ])
     }
 
     private func removeLoginOverlay() {
-        loginHostingView?.removeFromSuperview()
-        loginHostingView = nil
+        loginOverlayView?.removeFromSuperview()
+        loginOverlayView = nil
     }
 
     private func presentPendingDownloadErrorIfNeeded() {
