@@ -29,6 +29,8 @@ final class AppKitSteamWorkshopBrowserContainerView: NSView, ModuleFocusable, NS
     private var lastPrioritizedVisibleIDs: [String] = []
     private var pendingLayoutInvalidation = false
     private var lastNonZeroLayoutWidth: CGFloat = 0
+    private var hasResolvedInitialItemSize = false
+    private var pendingItemsUntilInitialLayout: [SteamWorkshopBrowserItem]?
 
     private let scrollView: NSScrollView = {
         let scrollView = NSScrollView()
@@ -108,14 +110,14 @@ final class AppKitSteamWorkshopBrowserContainerView: NSView, ModuleFocusable, NS
 
     override func layout() {
         super.layout()
-        updateLayoutItemSize()
+        updateLayoutItemSize(invalidateImmediately: !hasResolvedInitialItemSize)
+        applyPendingItemsIfInitialLayoutIsReady()
     }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         if window != nil {
-            layoutSubtreeIfNeeded()
-            updateLayoutItemSize(invalidateImmediately: true)
+            needsLayout = true
         }
         syncVisiblePreviewAnimationStates(isVisible: window != nil)
     }
@@ -215,7 +217,11 @@ final class AppKitSteamWorkshopBrowserContainerView: NSView, ModuleFocusable, NS
     }
 
     private func applyItems(_ items: [SteamWorkshopBrowserItem]) {
-        updateLayoutItemSize(invalidateImmediately: true)
+        guard hasResolvedInitialItemSize || updateLayoutItemSize(invalidateImmediately: true) else {
+            pendingItemsUntilInitialLayout = items
+            return
+        }
+        pendingItemsUntilInitialLayout = nil
         let previousItemsByID = itemsByID
         let previousOrderedIDs = orderedIDs
         let previousFooterState = footerState
@@ -262,6 +268,15 @@ final class AppKitSteamWorkshopBrowserContainerView: NSView, ModuleFocusable, NS
             self.prioritizeVisibleItemsForHydration()
             self.checkLoadMore()
         }
+    }
+
+    private func applyPendingItemsIfInitialLayoutIsReady() {
+        guard hasResolvedInitialItemSize,
+              let pendingItems = pendingItemsUntilInitialLayout else {
+            return
+        }
+        pendingItemsUntilInitialLayout = nil
+        applyItems(pendingItems)
     }
 
     private func reloadVisibleMetadata(for changedIDs: Set<String>) {
@@ -393,8 +408,9 @@ final class AppKitSteamWorkshopBrowserContainerView: NSView, ModuleFocusable, NS
         service.prioritizeVisibleBrowserItemIDs(prioritized)
     }
 
-    private func updateLayoutItemSize(invalidateImmediately: Bool = false) {
-        guard let layoutWidth = resolvedLayoutWidth() else { return }
+    @discardableResult
+    private func updateLayoutItemSize(invalidateImmediately: Bool = false) -> Bool {
+        guard let layoutWidth = resolvedLayoutWidth() else { return false }
         let metrics = SteamWorkshopGridLayoutSupport.metrics(
             boundsWidth: layoutWidth,
             zoomOffset: service.zoomOffset,
@@ -404,14 +420,17 @@ final class AppKitSteamWorkshopBrowserContainerView: NSView, ModuleFocusable, NS
         flowLayout.minimumInteritemSpacing = metrics.interitemSpacing
         flowLayout.minimumLineSpacing = metrics.lineSpacing
         let newSize = metrics.itemSize
+        let isInitialResolution = !hasResolvedInitialItemSize
+        hasResolvedInitialItemSize = true
 
-        guard flowLayout.itemSize != newSize else { return }
+        guard flowLayout.itemSize != newSize else { return true }
         flowLayout.itemSize = newSize
-        if invalidateImmediately {
+        if invalidateImmediately || isInitialResolution {
             collectionView.collectionViewLayout?.invalidateLayout()
         } else {
             scheduleLayoutInvalidation()
         }
+        return true
     }
 
     private func resolvedLayoutWidth() -> CGFloat? {
@@ -419,8 +438,7 @@ final class AppKitSteamWorkshopBrowserContainerView: NSView, ModuleFocusable, NS
             bounds.width,
             scrollView.bounds.width,
             scrollView.contentView.bounds.width,
-            superview?.bounds.width ?? 0,
-            window?.contentLayoutRect.width ?? 0
+            superview?.bounds.width ?? 0
         ]
         if let width = candidates.first(where: { $0.isFinite && $0 > 1 }) {
             lastNonZeroLayoutWidth = width
