@@ -27,11 +27,7 @@ final class SystemAudioSpectrumService: NSObject {
     private var adaptiveCeiling: Float = 0.12
     private var style: SystemAudioSpectrumStyle = .balanced
     private var sensitivity: SystemAudioSpectrumSensitivity = .normal
-
-    private struct CopiedAudioFrame {
-        let buffers: [Data]
-        let streamDescription: AudioStreamBasicDescription
-    }
+    private var captureSamples: [Float]
 
     var onLevels: (([Float]) -> Void)?
 
@@ -47,6 +43,7 @@ final class SystemAudioSpectrumService: NSObject {
         vDSP_hann_window(&window, vDSP_Length(fftSize), Int32(vDSP_HANN_NORM))
         self.hannWindow = window
         self.smoothedLevels = Array(repeating: 0, count: barCount)
+        self.captureSamples = Array(repeating: 0, count: fftSize)
         super.init()
     }
 
@@ -270,40 +267,98 @@ final class SystemAudioSpectrumService: NSObject {
 
         guard processingGate.wait(timeout: .now()) == .success else { return }
 
-        guard let copiedFrame = copyAudioFrame(from: inputData, streamDescription: tapStreamFormat) else {
+        let sampleCount = copyMonoSamples(
+            from: inputData,
+            streamDescription: tapStreamFormat,
+            into: &captureSamples
+        )
+        guard sampleCount > 0 else {
             processingGate.signal()
             return
         }
+        let sampleRate = Float(max(1, tapStreamFormat.mSampleRate))
 
         sampleQueue.async { [weak self] in
             guard let self else { return }
             defer { self.processingGate.signal() }
-            self.processCopiedAudioFrame(copiedFrame)
+            self.processCapturedSamples(count: sampleCount, sampleRate: sampleRate)
         }
     }
 
-    private func copyAudioFrame(
+    private func copyMonoSamples(
         from bufferListPointer: UnsafePointer<AudioBufferList>,
-        streamDescription: AudioStreamBasicDescription
-    ) -> CopiedAudioFrame? {
-        let buffers = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: bufferListPointer))
-        guard !buffers.isEmpty else { return nil }
+        streamDescription: AudioStreamBasicDescription,
+        into destination: inout [Float]
+    ) -> Int {
+        guard streamDescription.mFormatID == kAudioFormatLinearPCM else { return 0 }
 
-        let copiedBuffers = buffers.compactMap { buffer -> Data? in
-            guard let data = buffer.mData, buffer.mDataByteSize > 0 else { return nil }
-            return Data(bytes: data, count: Int(buffer.mDataByteSize))
+        let buffers = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: bufferListPointer))
+        guard !buffers.isEmpty, !destination.isEmpty else { return 0 }
+
+        let isFloat = (streamDescription.mFormatFlags & kAudioFormatFlagIsFloat) != 0
+        let isSignedInteger = (streamDescription.mFormatFlags & kAudioFormatFlagIsSignedInteger) != 0
+        let bitsPerChannel = Int(streamDescription.mBitsPerChannel)
+        let bytesPerSample: Int
+        if isFloat && bitsPerChannel == 32 {
+            bytesPerSample = MemoryLayout<Float>.size
+        } else if isSignedInteger && bitsPerChannel == 16 {
+            bytesPerSample = MemoryLayout<Int16>.size
+        } else if isSignedInteger && bitsPerChannel == 32 {
+            bytesPerSample = MemoryLayout<Int32>.size
+        } else {
+            return 0
         }
 
-        guard !copiedBuffers.isEmpty else { return nil }
-        return CopiedAudioFrame(buffers: copiedBuffers, streamDescription: streamDescription)
+        let bytesPerFrame = max(bytesPerSample, Int(streamDescription.mBytesPerFrame))
+        let availableFrameCount = buffers.compactMap { buffer -> Int? in
+            guard buffer.mData != nil, buffer.mDataByteSize >= bytesPerFrame else { return nil }
+            return Int(buffer.mDataByteSize) / bytesPerFrame
+        }.min() ?? 0
+        let frameCount = min(destination.count, availableFrameCount)
+        guard frameCount > 0 else { return 0 }
+
+        let sourceStartFrame = availableFrameCount - frameCount
+        for destinationIndex in 0..<frameCount {
+            let sourceFrame = sourceStartFrame + destinationIndex
+            var sum: Float = 0
+            var contributingChannels = 0
+
+            for buffer in buffers {
+                guard let data = buffer.mData else { continue }
+                let channelCount = max(1, Int(buffer.mNumberChannels))
+                let samplesPerFrame = max(channelCount, bytesPerFrame / bytesPerSample)
+                let frameSampleOffset = sourceFrame * samplesPerFrame
+
+                if isFloat {
+                    let samples = data.assumingMemoryBound(to: Float.self)
+                    for channel in 0..<channelCount {
+                        sum += abs(samples[frameSampleOffset + channel])
+                    }
+                } else if bitsPerChannel == 16 {
+                    let samples = data.assumingMemoryBound(to: Int16.self)
+                    for channel in 0..<channelCount {
+                        sum += abs(Float(samples[frameSampleOffset + channel]) / Float(Int16.max))
+                    }
+                } else {
+                    let samples = data.assumingMemoryBound(to: Int32.self)
+                    for channel in 0..<channelCount {
+                        sum += abs(Float(samples[frameSampleOffset + channel]) / Float(Int32.max))
+                    }
+                }
+                contributingChannels += channelCount
+            }
+
+            destination[destinationIndex] = contributingChannels > 0
+                ? sum / Float(contributingChannels)
+                : 0
+        }
+
+        return frameCount
     }
 
-    private func processCopiedAudioFrame(_ copiedFrame: CopiedAudioFrame) {
-        guard let audioFrame = monoSamples(from: copiedFrame), !audioFrame.samples.isEmpty else {
-            return
-        }
-
-        let rawLevels = computeBarLevels(from: audioFrame.samples, sampleRate: audioFrame.sampleRate)
+    private func processCapturedSamples(count: Int, sampleRate: Float) {
+        let samples = Array(captureSamples.prefix(count))
+        let rawLevels = computeBarLevels(from: samples, sampleRate: sampleRate)
         var nextLevels = Array(repeating: Float(0), count: barCount)
 
         for index in 0..<barCount {
@@ -318,159 +373,6 @@ final class SystemAudioSpectrumService: NSObject {
 
         smoothedLevels = nextLevels
         onLevels?(nextLevels)
-    }
-
-    private func monoSamples(
-        from copiedFrame: CopiedAudioFrame
-    ) -> (samples: [Float], sampleRate: Float)? {
-        guard !copiedFrame.buffers.isEmpty else { return nil }
-
-        let streamDescription = copiedFrame.streamDescription
-        let channelCount = max(1, Int(streamDescription.mChannelsPerFrame))
-        let bytesPerFrame = max(1, Int(streamDescription.mBytesPerFrame))
-        let sampleRate = Float(max(1, streamDescription.mSampleRate))
-        let frameCount = max(1, copiedFrame.buffers[0].count / bytesPerFrame)
-        let isFloat = (streamDescription.mFormatFlags & kAudioFormatFlagIsFloat) != 0
-        let isSignedInteger = (streamDescription.mFormatFlags & kAudioFormatFlagIsSignedInteger) != 0
-
-        if isFloat {
-            return (
-                samples: monoFloatSamples(
-                    from: copiedFrame.buffers,
-                    channelCount: channelCount,
-                    frameCount: frameCount
-                ),
-                sampleRate: sampleRate
-            )
-        }
-
-        if isSignedInteger {
-            let bitsPerChannel = Int(streamDescription.mBitsPerChannel)
-            if bitsPerChannel <= 16 {
-                return (
-                    samples: monoInt16Samples(
-                        from: copiedFrame.buffers,
-                        channelCount: channelCount,
-                        frameCount: frameCount
-                    ),
-                    sampleRate: sampleRate
-                )
-            }
-
-            return (
-                samples: monoInt32Samples(
-                    from: copiedFrame.buffers,
-                    channelCount: channelCount,
-                    frameCount: frameCount
-                ),
-                sampleRate: sampleRate
-            )
-        }
-
-        return nil
-    }
-
-    private func monoFloatSamples(
-        from buffers: [Data],
-        channelCount: Int,
-        frameCount: Int
-    ) -> [Float] {
-        guard !buffers.isEmpty else { return [] }
-        var mono = Array(repeating: Float(0), count: frameCount)
-
-        if buffers.count == 1 {
-            let values = buffers[0].withUnsafeBytes { $0.bindMemory(to: Float.self) }
-            for frameIndex in 0..<frameCount {
-                var sum: Float = 0
-                for channelIndex in 0..<channelCount {
-                    sum += abs(values[frameIndex * channelCount + channelIndex])
-                }
-                mono[frameIndex] = sum / Float(channelCount)
-            }
-            return mono
-        }
-
-        for frameIndex in 0..<frameCount {
-            var sum: Float = 0
-            var contributingChannels = 0
-            for buffer in buffers {
-                let values = buffer.withUnsafeBytes { $0.bindMemory(to: Float.self) }
-                sum += abs(values[frameIndex])
-                contributingChannels += 1
-            }
-            mono[frameIndex] = contributingChannels > 0 ? (sum / Float(contributingChannels)) : 0
-        }
-        return mono
-    }
-
-    private func monoInt16Samples(
-        from buffers: [Data],
-        channelCount: Int,
-        frameCount: Int
-    ) -> [Float] {
-        guard !buffers.isEmpty else { return [] }
-        var mono = Array(repeating: Float(0), count: frameCount)
-        let normalization = Float(Int16.max)
-
-        if buffers.count == 1 {
-            let values = buffers[0].withUnsafeBytes { $0.bindMemory(to: Int16.self) }
-            for frameIndex in 0..<frameCount {
-                var sum: Float = 0
-                for channelIndex in 0..<channelCount {
-                    let sample = Float(values[frameIndex * channelCount + channelIndex]) / normalization
-                    sum += abs(sample)
-                }
-                mono[frameIndex] = sum / Float(channelCount)
-            }
-            return mono
-        }
-
-        for frameIndex in 0..<frameCount {
-            var sum: Float = 0
-            var contributingChannels = 0
-            for buffer in buffers {
-                let values = buffer.withUnsafeBytes { $0.bindMemory(to: Int16.self) }
-                sum += abs(Float(values[frameIndex]) / normalization)
-                contributingChannels += 1
-            }
-            mono[frameIndex] = contributingChannels > 0 ? (sum / Float(contributingChannels)) : 0
-        }
-        return mono
-    }
-
-    private func monoInt32Samples(
-        from buffers: [Data],
-        channelCount: Int,
-        frameCount: Int
-    ) -> [Float] {
-        guard !buffers.isEmpty else { return [] }
-        var mono = Array(repeating: Float(0), count: frameCount)
-        let normalization = Float(Int32.max)
-
-        if buffers.count == 1 {
-            let values = buffers[0].withUnsafeBytes { $0.bindMemory(to: Int32.self) }
-            for frameIndex in 0..<frameCount {
-                var sum: Float = 0
-                for channelIndex in 0..<channelCount {
-                    let sample = Float(values[frameIndex * channelCount + channelIndex]) / normalization
-                    sum += abs(sample)
-                }
-                mono[frameIndex] = sum / Float(channelCount)
-            }
-            return mono
-        }
-
-        for frameIndex in 0..<frameCount {
-            var sum: Float = 0
-            var contributingChannels = 0
-            for buffer in buffers {
-                let values = buffer.withUnsafeBytes { $0.bindMemory(to: Int32.self) }
-                sum += abs(Float(values[frameIndex]) / normalization)
-                contributingChannels += 1
-            }
-            mono[frameIndex] = contributingChannels > 0 ? (sum / Float(contributingChannels)) : 0
-        }
-        return mono
     }
 
     private func computeBarLevels(from monoSamples: [Float], sampleRate: Float) -> [Float] {
