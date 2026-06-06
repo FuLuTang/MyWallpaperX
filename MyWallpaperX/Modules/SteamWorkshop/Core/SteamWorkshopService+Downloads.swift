@@ -20,11 +20,12 @@ private final class SteamWorkshopDownloadCaptureState: @unchecked Sendable {
 
 extension SteamWorkshopService {
     func requestDownloadForBrowserItem(_ item: SteamWorkshopBrowserItem) {
-        downloadWorkshopItem(id: item.id, pageTitle: item.title)
+        downloadWorkshopItem(id: item.id, pageTitle: item.title, item: item)
     }
 
-    func downloadWorkshopItem(id: String, pageTitle: String? = nil) {
+    func downloadWorkshopItem(id: String, pageTitle: String? = nil, item: SteamWorkshopBrowserItem? = nil) {
         let title = pageTitle ?? "Workshop #\(id)"
+        let requestItem = item ?? browserItemForDownload(id: id)
 
         guard canRequestDownload(id: id) else {
             statusMessage = "\(title) 已在下载任务中。"
@@ -33,11 +34,11 @@ extension SteamWorkshopService {
         }
 
         guard !isDownloadWorkflowBusy else {
-            enqueueDownloadRequest(id: id, pageTitle: pageTitle)
+            enqueueDownloadRequest(id: id, pageTitle: pageTitle, item: requestItem)
             return
         }
 
-        startDownloadRequest(SteamWorkshopPendingDownloadRequest(id: id, pageTitle: pageTitle))
+        startDownloadRequest(SteamWorkshopPendingDownloadRequest(id: id, pageTitle: pageTitle, item: requestItem))
     }
 
     func canRequestDownload(id: String) -> Bool {
@@ -58,10 +59,12 @@ extension SteamWorkshopService {
     }
 
     func startDownloadRequest(_ request: SteamWorkshopPendingDownloadRequest) {
-        beginDownloadWorkflow(id: request.id, pageTitle: request.pageTitle)
+        beginDownloadWorkflow(request)
     }
 
-    private func beginDownloadWorkflow(id: String, pageTitle: String?) {
+    private func beginDownloadWorkflow(_ request: SteamWorkshopPendingDownloadRequest) {
+        let id = request.id
+        let pageTitle = request.pageTitle
         let title = pageTitle ?? "Workshop #\(id)"
         activeDownloadItemID = id
         activeDownloadWasCancelled = false
@@ -83,13 +86,13 @@ extension SteamWorkshopService {
                     self.appendSteamAuthDebugLog("DOWNLOAD STEP OK: ensureManagedSteamRuntime")
                     self.appendSteamAuthDebugLog("DOWNLOAD STEP: ensureAuthenticatedSessionForDownload")
                 }
-                try await self.ensureAuthenticatedSessionForDownload(id: id, pageTitle: pageTitle)
+                try await self.ensureAuthenticatedSessionForDownload(request)
                 try Task.checkCancellation()
                 await MainActor.run {
                     self.appendSteamAuthDebugLog("DOWNLOAD STEP OK: ensureAuthenticatedSessionForDownload")
                     self.appendSteamAuthDebugLog("DOWNLOAD STEP: performWorkshopDownload")
                 }
-                try await self.performWorkshopDownload(id: id, pageTitle: pageTitle)
+                try await self.performWorkshopDownload(request)
             } catch {
                 await MainActor.run {
                     self.appendSteamAuthDebugLog("DOWNLOAD FAILED: id=\(id), error=\(self.sanitizeSteamOutput(error.localizedDescription))")
@@ -120,9 +123,9 @@ extension SteamWorkshopService {
         activeDownloadTask = task
     }
 
-    func ensureAuthenticatedSessionForDownload(id: String, pageTitle: String?) async throws {
+    func ensureAuthenticatedSessionForDownload(_ request: SteamWorkshopPendingDownloadRequest) async throws {
         if authPhase == .awaitingGuardCode {
-            pendingDownloadRequest = SteamWorkshopPendingDownloadRequest(id: id, pageTitle: pageTitle)
+            pendingDownloadRequest = request
             authStatusMessage = "当前正在等待完成 Steam 登录验证。验证通过后会自动继续刚才的下载。"
             isLoginSheetPresented = true
             throw NSError(domain: "SteamWorkshop", code: 11, userInfo: [
@@ -131,13 +134,13 @@ extension SteamWorkshopService {
         }
 
         if isAuthenticating {
-            pendingDownloadRequest = SteamWorkshopPendingDownloadRequest(id: id, pageTitle: pageTitle)
+            pendingDownloadRequest = request
             authStatusMessage = "正在静默验证当前 Steam 会话。若会话失效，将继续要求登录。"
             throw CancellationError()
         }
 
         guard hasSavedCredentials else {
-            pendingDownloadRequest = SteamWorkshopPendingDownloadRequest(id: id, pageTitle: pageTitle)
+            pendingDownloadRequest = request
             authStatusMessage = "下载需要登录 Steam。请先完成登录，成功后会自动继续刚才的下载。"
             presentLoginGateImmediately()
             throw NSError(domain: "SteamWorkshop", code: 11, userInfo: [
@@ -146,7 +149,7 @@ extension SteamWorkshopService {
         }
 
         if !(await validateSavedAuthenticationSessionIfNeeded()) {
-            pendingDownloadRequest = SteamWorkshopPendingDownloadRequest(id: id, pageTitle: pageTitle)
+            pendingDownloadRequest = request
             requiresLogin = false
             isAnonymousBrowsing = false
             presentLoginGateImmediately()
@@ -168,7 +171,9 @@ extension SteamWorkshopService {
         }
     }
 
-    func performWorkshopDownload(id: String, pageTitle: String?) async throws {
+    func performWorkshopDownload(_ request: SteamWorkshopPendingDownloadRequest) async throws {
+        let id = request.id
+        let pageTitle = request.pageTitle
         let title = pageTitle ?? "Workshop #\(id)"
         statusMessage = "正在通过内置 SteamCMD 下载 \(title)"
         appendSteamAuthDebugLog("DOWNLOAD BEGIN: id=\(id), title=\(title)")
@@ -178,7 +183,8 @@ extension SteamWorkshopService {
             id: id,
             title: title,
             username: username,
-            pageTitle: pageTitle
+            pageTitle: pageTitle,
+            item: request.item
         )
 
         let hasSuccessfulOutput = output.localizedCaseInsensitiveContains("Success. Downloaded item")
@@ -189,7 +195,7 @@ extension SteamWorkshopService {
             if outputIndicatesAuthenticationFailure(output) {
                 expireAuthenticationAndPromptRelogin(
                     reason: "Steam 下载认证已失效，请继续输入账号密码并完成 Guard 验证。",
-                    pendingDownload: SteamWorkshopPendingDownloadRequest(id: id, pageTitle: pageTitle)
+                    pendingDownload: request
                 )
                 throw NSError(domain: "SteamWorkshop", code: 11, userInfo: [
                     NSLocalizedDescriptionKey: "当前 Steam 登录态已失效，请继续登录。登录成功后会自动继续下载。"
@@ -212,7 +218,7 @@ extension SteamWorkshopService {
             appendSteamAuthDebugLog("DOWNLOAD FALLBACK SUCCESS: staged content detected for id=\(id) despite missing success marker.")
         }
 
-        try syncDownloadedItemToLibrary(id: id)
+        try await syncDownloadedItemToLibrary(request)
         appendSteamAuthDebugLog("DOWNLOAD SYNC OK: copied staged content into library for id=\(id)")
 
         finishActiveDownloadState()
@@ -226,7 +232,8 @@ extension SteamWorkshopService {
         id: String,
         title: String,
         username: String,
-        pageTitle: String?
+        pageTitle: String?,
+        item: SteamWorkshopBrowserItem?
     ) async throws -> String {
         do {
             return try await runDownloadProcess(
@@ -251,7 +258,7 @@ extension SteamWorkshopService {
             guard sessionRecovered else {
                 expireAuthenticationAndPromptRelogin(
                     reason: "Steam 下载认证已失效，请继续输入账号密码并完成 Guard 验证。",
-                    pendingDownload: SteamWorkshopPendingDownloadRequest(id: id, pageTitle: pageTitle)
+                    pendingDownload: SteamWorkshopPendingDownloadRequest(id: id, pageTitle: pageTitle, item: item ?? browserItemForDownload(id: id))
                 )
                 throw NSError(domain: "SteamWorkshop", code: 11, userInfo: [
                     NSLocalizedDescriptionKey: "当前 Steam 登录态已失效，请继续登录。登录成功后会自动继续下载。"
@@ -445,8 +452,8 @@ extension SteamWorkshopService {
         isLoginSheetPresented = true
     }
 
-    private func enqueueDownloadRequest(id: String, pageTitle: String?) {
-        let request = SteamWorkshopPendingDownloadRequest(id: id, pageTitle: pageTitle)
+    private func enqueueDownloadRequest(id: String, pageTitle: String?, item: SteamWorkshopBrowserItem?) {
+        let request = SteamWorkshopPendingDownloadRequest(id: id, pageTitle: pageTitle, item: item)
         queuedDownloadRequests.append(request)
         upsertTransientRecord(
             id: id,

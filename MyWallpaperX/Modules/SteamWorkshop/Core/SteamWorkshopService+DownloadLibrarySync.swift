@@ -74,7 +74,8 @@ extension SteamWorkshopService {
         )
     }
 
-    func syncDownloadedItemToLibrary(id: String) throws {
+    func syncDownloadedItemToLibrary(_ request: SteamWorkshopPendingDownloadRequest) async throws {
+        let id = request.id
         let fileManager = FileManager.default
         let sourceURL = stagingWorkshopContentRootURL.appendingPathComponent(id, isDirectory: true)
         let targetURL = libraryRootURL.appendingPathComponent(id, isDirectory: true)
@@ -97,11 +98,19 @@ extension SteamWorkshopService {
             appendSteamAuthDebugLog("DOWNLOAD SYNC FAILED: copyItem error=\(sanitizeSteamOutput(error.localizedDescription))")
             throw error
         }
-        persistDownloadMetadataIfPossible(for: id, targetURL: targetURL)
+        if let item = await metadataItemForCompletedDownload(request) {
+            persistDownloadMetadata(item: item, id: id, targetURL: targetURL)
+        } else {
+            persistDownloadMetadataIfPossible(for: id, targetURL: targetURL)
+        }
     }
 
     func persistDownloadMetadataIfPossible(for id: String, targetURL: URL) {
         guard let item = browserItemForDownload(id: id) else { return }
+        persistDownloadMetadata(item: item, id: id, targetURL: targetURL)
+    }
+
+    func persistDownloadMetadata(item: SteamWorkshopBrowserItem, id: String, targetURL: URL) {
         let existingSnapshot = loadExistingDownloadMetadataSnapshot(at: targetURL)
         let project = Self.loadWorkshopProject(from: targetURL.appendingPathComponent("project.json"))
         try? FileManager.default.createDirectory(at: downloadMetadataIndexDirectoryURL(), withIntermediateDirectories: true)
@@ -133,6 +142,20 @@ extension SteamWorkshopService {
         )
         guard let data = try? JSONEncoder().encode(snapshot) else { return }
         try? data.write(to: downloadMetadataFileURL(for: id), options: Data.WritingOptions.atomic)
+    }
+
+    func metadataItemForCompletedDownload(_ request: SteamWorkshopPendingDownloadRequest) async -> SteamWorkshopBrowserItem? {
+        if let item = request.item ?? browserItemForDownload(id: request.id),
+           !SteamWorkshopDetailRefreshSupport.needsListRefresh(item) {
+            return item
+        }
+
+        let fallback = request.item ?? browserItemForDownload(id: request.id)
+        return await resolveCachedDownloadAuthorMetadata(
+            itemID: request.id,
+            fallback: fallback,
+            title: request.pageTitle
+        )
     }
 
     func loadExistingDownloadMetadataSnapshot(at directory: URL) -> SteamWorkshopDownloadMetadataSnapshot? {

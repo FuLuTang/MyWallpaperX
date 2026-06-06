@@ -15,6 +15,7 @@ enum SteamWorkshopDownloadControlError: LocalizedError {
 struct SteamWorkshopPendingDownloadRequest {
     let id: String
     let pageTitle: String?
+    let item: SteamWorkshopBrowserItem?
 }
 
 struct SteamWorkshopPTYSession {
