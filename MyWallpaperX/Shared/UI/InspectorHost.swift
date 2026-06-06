@@ -537,28 +537,28 @@ private enum InspectorGlassPalette {
 
     static func baseTint(isDark: Bool) -> NSColor {
         if isDark {
-            return .windowBackgroundColor.withAlphaComponent(0.18)
+            return .black.withAlphaComponent(0.10)
         }
         return .controlBackgroundColor.withAlphaComponent(0.15)
     }
 
     static func innerFill(isDark: Bool) -> NSColor {
         if isDark {
-            return .textBackgroundColor.withAlphaComponent(0.06)
+            return .black.withAlphaComponent(0.04)
         }
         return .windowBackgroundColor.withAlphaComponent(0.05)
     }
 
     static func panelFill(isDark: Bool) -> NSColor {
         if isDark {
-            return .black.withAlphaComponent(0.10)
+            return .black.withAlphaComponent(0.18)
         }
         return .white.withAlphaComponent(0.82)
     }
 
     static func panelStroke(isDark: Bool) -> NSColor {
         if isDark {
-            return .white.withAlphaComponent(0.30)
+            return .white.withAlphaComponent(0.24)
         }
         return .white.withAlphaComponent(0.74)
     }
