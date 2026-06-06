@@ -75,9 +75,6 @@ extension SteamWorkshopService {
                     guard let self, self.selectedDownloadInspectorItem?.id == item.id else { return }
                     self.selectedDownloadDetailItem = refreshed
                     self.mergeBrowserItem(refreshed)
-                    if let record = self.latestDownloadRecord(for: refreshed.id) {
-                        self.persistDownloadMetadata(item: refreshed, id: refreshed.id, targetURL: record.folderURL)
-                    }
                     self.isRefreshingSelectedDownloadDetailItem = false
                     self.selectedDownloadDetailError = nil
                 }
@@ -87,56 +84,6 @@ extension SteamWorkshopService {
                     guard let self, self.selectedDownloadInspectorItem?.id == item.id else { return }
                     self.isRefreshingSelectedDownloadDetailItem = false
                     self.selectedDownloadDetailError = error.localizedDescription
-                }
-            }
-        }
-    }
-
-    func openAuthorWorkshopFromDownloadInspector(for item: SteamWorkshopBrowserItem) {
-        if Self.resolvedAuthorWorkshopURL(for: item) != nil {
-            openAuthorWorksPage(for: item)
-            return
-        }
-
-        selectedItemDetailTask?.cancel()
-        isRefreshingSelectedDownloadDetailItem = true
-        selectedDownloadDetailError = nil
-        statusMessage = "正在获取作者工坊信息…"
-
-        let stub = SteamWorkshopDetailRefreshSupport.makeStub(from: item)
-        let browserContentMode: SteamWorkshopBrowserContentMode =
-            selectedDownloadRecord?.contentType == .web ? .web : .video
-
-        selectedItemDetailTask = Task(priority: .userInitiated) { [weak self] in
-            do {
-                let refreshed = try await Self.fetchWorkshopItem(
-                    stub: stub,
-                    browserContentMode: browserContentMode,
-                    requestPriority: .userInitiated
-                )
-                guard !Task.isCancelled else { return }
-                await MainActor.run {
-                    guard let self, self.selectedDownloadInspectorItem?.id == item.id else { return }
-                    self.selectedDownloadDetailItem = refreshed
-                    self.mergeBrowserItem(refreshed)
-                    if let record = self.latestDownloadRecord(for: refreshed.id) {
-                        self.persistDownloadMetadata(item: refreshed, id: refreshed.id, targetURL: record.folderURL)
-                    }
-                    self.isRefreshingSelectedDownloadDetailItem = false
-                    self.selectedDownloadDetailError = nil
-                    guard Self.resolvedAuthorWorkshopURL(for: refreshed) != nil else {
-                        self.statusMessage = "没有获取到作者工坊链接。"
-                        return
-                    }
-                    self.openAuthorWorksPage(for: refreshed)
-                }
-            } catch {
-                guard !Task.isCancelled else { return }
-                await MainActor.run {
-                    guard let self, self.selectedDownloadInspectorItem?.id == item.id else { return }
-                    self.isRefreshingSelectedDownloadDetailItem = false
-                    self.selectedDownloadDetailError = error.localizedDescription
-                    self.statusMessage = "获取作者工坊信息失败：\(error.localizedDescription)"
                 }
             }
         }
