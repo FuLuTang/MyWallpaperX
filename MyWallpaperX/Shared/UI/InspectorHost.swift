@@ -296,7 +296,6 @@ private final class InspectorHostRootView: NSView {
         if let cardView {
             let point = convert(event.locationInWindow, from: nil)
             if cardView.frame.contains(point) {
-                super.mouseDown(with: event)
                 return
             }
         }
@@ -524,6 +523,10 @@ private final class InspectorHostCardView: NSView {
     @objc private func closeInspector() {
         guard let request else { return }
         InspectorHostActions.postClose(module: request.token.module, cardID: request.token.cardID)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        // Blank panel areas should not bubble to the transparent overlay and dismiss the inspector.
     }
 }
 
