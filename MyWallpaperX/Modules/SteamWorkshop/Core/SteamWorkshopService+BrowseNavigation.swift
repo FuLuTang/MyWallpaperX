@@ -21,6 +21,7 @@ extension SteamWorkshopService {
         currentPageTitle = browseContext.title
         statusMessage = loadingStatusMessage(for: browseContext)
         fetchBrowserItems()
+        requestSteamWorkshopBrowserSelection()
     }
 
     func returnToDiscoveryBrowse() {
@@ -153,5 +154,13 @@ extension SteamWorkshopService {
         }
         prefetchedBrowserPageKeys = snapshot.prefetchedBrowserPageKeys
         pendingBrowserScrollRestoreOffset = snapshot.scrollOffsetY
+    }
+
+    func requestSteamWorkshopBrowserSelection() {
+        NotificationCenter.default.post(
+            name: .appKitSelectItemRequested,
+            object: nil,
+            userInfo: ["selectedItem": "steamWorkshop"]
+        )
     }
 }

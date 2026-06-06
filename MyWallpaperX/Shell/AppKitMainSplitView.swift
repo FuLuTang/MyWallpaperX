@@ -129,6 +129,29 @@ final class AppKitMainSplitViewController: NSSplitViewController {
             .receive(on: DispatchQueue.main)
             .sink { _ in SettingsWindowController.shared.showWindow() }
             .store(in: &cancellables)
+
+        NotificationCenter.default.publisher(for: .appKitSelectItemRequested)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] notification in self?.handleSelectItemRequest(notification) }
+            .store(in: &cancellables)
+    }
+
+    private func handleSelectItemRequest(_ notification: Notification) {
+        guard let selectedItem = notification.userInfo?["selectedItem"] as? String else { return }
+        switch selectedItem {
+        case "steamWorkshop":
+            setSelectedItem(.steamWorkshop)
+        case "steamDownloads":
+            setSelectedItem(.steamDownloads)
+        case "onlineLibrary":
+            setSelectedItem(.onlineLibrary)
+        case "onlineDownloads":
+            setSelectedItem(.onlineDownloads)
+        case "staticImageLibrary":
+            setSelectedItem(.staticImageLibrary)
+        default:
+            break
+        }
     }
 
     private func syncSelectedItemFromManager() {
