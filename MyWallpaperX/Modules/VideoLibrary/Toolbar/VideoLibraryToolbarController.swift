@@ -842,8 +842,8 @@ extension VideoLibraryToolbarController {
             currentOffset: wallpaperManager.gridZoomOffset,
             for: width
         )
-        zoomControl.setEnabled(avail.canZoomIn, forSegment: 0)
-        zoomControl.setEnabled(avail.canZoomOut, forSegment: 1)
+        zoomControl.setEnabled(avail.canZoomOut, forSegment: 0)
+        zoomControl.setEnabled(avail.canZoomIn, forSegment: 1)
     }
 
     /// 外部（快捷键）触发搜索框聚焦
@@ -887,13 +887,12 @@ extension VideoLibraryToolbarController {
             for: width
         )
         
-        // delta > 0 表示放大（列数增加），对应 canZoomIn
-        // delta < 0 表示缩小（列数减少），对应 canZoomOut
+        // delta > 0 表示增加列数，对应右侧 plus；delta < 0 表示减少列数，对应左侧 minus。
         let canZoom = delta > 0 ? avail.canZoomIn : avail.canZoomOut
         guard canZoom else { return }
         
         // 先触发 segment 按下的视觉动画
-        let segmentIndex = delta > 0 ? 0 : 1
+        let segmentIndex = delta > 0 ? 1 : 0
         zoomControl.setSelected(true, forSegment: segmentIndex)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
             self?.zoomControl.setSelected(false, forSegment: segmentIndex)
@@ -903,8 +902,8 @@ extension VideoLibraryToolbarController {
     }
 
     @objc func handleZoomSegmentAction(_ sender: NSSegmentedControl) {
-        // segment 0 = 放大（plus），segment 1 = 缩小（minus）。
-        let delta = sender.selectedSegment == 0 ? 1 : -1
+        // segment 0 = 减少列数（minus），segment 1 = 增加列数（plus）。
+        let delta = sender.selectedSegment == 0 ? -1 : 1
         let width = (window?.contentView?.bounds.width ?? 800) - 220
         let avail = GridLayoutHelper.zoomAvailability(
             currentOffset: wallpaperManager.gridZoomOffset,

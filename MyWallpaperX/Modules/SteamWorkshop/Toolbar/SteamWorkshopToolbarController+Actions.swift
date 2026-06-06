@@ -289,7 +289,7 @@ extension SteamWorkshopToolbarController {
     }
 
     @objc func handleZoomAction(_ sender: NSSegmentedControl) {
-        performZoom(delta: sender.selectedSegment == 0 ? 1 : -1)
+        performZoom(delta: sender.selectedSegment == 0 ? -1 : 1)
     }
 
     func controlTextDidChange(_ obj: Notification) {

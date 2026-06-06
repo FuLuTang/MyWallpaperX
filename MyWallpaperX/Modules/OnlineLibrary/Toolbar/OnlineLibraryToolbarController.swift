@@ -563,9 +563,9 @@ extension OnlineLibraryToolbarController {
             for: gridWidth(), minCols: 3, maxCols: 6
         )
         let hasItems = isOnlineDownloadsMode ? OnlineDownloadsBridge.shared.hasAnyItems : true
-        // segment 0 = 放大(plus)，segment 1 = 缩小(minus)，与 SIL 一致
-        zoomControl.setEnabled(hasItems && avail.canZoomIn,  forSegment: 0)
-        zoomControl.setEnabled(hasItems && avail.canZoomOut, forSegment: 1)
+        // segment 0 = 减少列数(minus)，segment 1 = 增加列数(plus)，与 SIL 一致
+        zoomControl.setEnabled(hasItems && avail.canZoomOut, forSegment: 0)
+        zoomControl.setEnabled(hasItems && avail.canZoomIn,  forSegment: 1)
     }
 
     /// 外部（快捷键）触发搜索框聚焦
@@ -587,8 +587,8 @@ extension OnlineLibraryToolbarController {
         let current   = OnlineLibraryService.shared.zoomOffset
         let newOffset = max(minOff, min(maxOff, current + delta))
         guard newOffset != current else { return }
-        // segment 0 = 放大(plus delta>0)，segment 1 = 缩小(minus delta<0)，与 SIL 一致
-        let seg = delta > 0 ? 0 : 1
+        // segment 0 = 减少列数(minus)，segment 1 = 增加列数(plus)，与 SIL 一致
+        let seg = delta > 0 ? 1 : 0
         zoomControl.setSelected(true, forSegment: seg)
         DispatchQueue.main.asyncAfter(deadline: .now() + UIInteractionAnimation.minimumPressVisualDuration) { [weak self] in
             self?.zoomControl.setSelected(false, forSegment: seg)
@@ -598,8 +598,8 @@ extension OnlineLibraryToolbarController {
     }
 
     @objc private func handleZoomAction(_ sender: NSSegmentedControl) {
-        // segment 0 = 放大(plus)，segment 1 = 缩小(minus)，与 SIL 一致
-        let delta  = sender.selectedSegment == 0 ? 1 : -1
+        // segment 0 = 减少列数(minus)，segment 1 = 增加列数(plus)，与 SIL 一致
+        let delta  = sender.selectedSegment == 0 ? -1 : 1
         let width  = gridWidth()
         let base   = GridLayoutHelper.baseColumnCount(for: width)
         let minOff = 3 - base;  let maxOff = 6 - base

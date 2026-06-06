@@ -163,8 +163,8 @@ final class SILToolbarController: NSObject, NSSearchFieldDelegate {
         let base = GridLayoutHelper.baseColumnCount(for: w)
         let next = max(3 - base, min(6 - base, cur + delta))
         guard next != cur else { return }
-        // segment 0 = 放大（plus），segment 1 = 缩小（minus）— 与视频库一致
-        let segIdx = delta > 0 ? 0 : 1
+        // segment 0 = 减少列数（minus），segment 1 = 增加列数（plus）— 与视频库一致
+        let segIdx = delta > 0 ? 1 : 0
         zoomControl.setSelected(true, forSegment: segIdx)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
             self?.zoomControl.setSelected(false, forSegment: segIdx)
@@ -177,9 +177,9 @@ final class SILToolbarController: NSObject, NSSearchFieldDelegate {
     func configureZoomItem() {
         let w = (window?.contentView?.bounds.width ?? 800) - 220
         let avail = GridLayoutHelper.zoomAvailability(currentOffset: SILService.shared.gridZoomOffset, for: w)
-        // segment 0 = 放大（plus），segment 1 = 缩小（minus）
-        zoomControl.setEnabled(avail.canZoomIn,  forSegment: 0)
-        zoomControl.setEnabled(avail.canZoomOut, forSegment: 1)
+        // segment 0 = 减少列数（minus），segment 1 = 增加列数（plus）
+        zoomControl.setEnabled(avail.canZoomOut, forSegment: 0)
+        zoomControl.setEnabled(avail.canZoomIn,  forSegment: 1)
     }
 
     private lazy var zoomControl: NSSegmentedControl = {
@@ -226,8 +226,8 @@ final class SILToolbarController: NSObject, NSSearchFieldDelegate {
     }()
 
     @objc private func handleZoom(_ s: NSSegmentedControl) {
-        // segment 0 = 放大（plus），segment 1 = 缩小（minus）
-        performZoom(delta: s.selectedSegment == 0 ? 1 : -1)
+        // segment 0 = 减少列数（minus），segment 1 = 增加列数（plus）
+        performZoom(delta: s.selectedSegment == 0 ? -1 : 1)
     }
 
     // MARK: - 状态刷新

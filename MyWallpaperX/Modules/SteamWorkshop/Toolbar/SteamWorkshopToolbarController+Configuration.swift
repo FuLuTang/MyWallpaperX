@@ -24,7 +24,7 @@ extension SteamWorkshopToolbarController {
         )
         let canZoom = delta > 0 ? availability.canZoomIn : availability.canZoomOut
         guard canZoom else { return }
-        let segment = delta > 0 ? 0 : 1
+        let segment = delta > 0 ? 1 : 0
         zoomControl.setSelected(true, forSegment: segment)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
             self?.zoomControl.setSelected(false, forSegment: segment)
@@ -42,8 +42,8 @@ extension SteamWorkshopToolbarController {
             currentOffset: SteamWorkshopService.shared.zoomOffset,
             for: gridWidth()
         )
-        zoomControl.setEnabled(availability.canZoomIn, forSegment: 0)
-        zoomControl.setEnabled(availability.canZoomOut, forSegment: 1)
+        zoomControl.setEnabled(availability.canZoomOut, forSegment: 0)
+        zoomControl.setEnabled(availability.canZoomIn, forSegment: 1)
     }
 
     func configureAuthItems() {
