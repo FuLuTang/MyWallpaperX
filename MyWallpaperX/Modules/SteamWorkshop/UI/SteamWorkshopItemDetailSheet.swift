@@ -62,6 +62,22 @@ final class AppKitSteamWorkshopItemDetailView: NSView {
                 self.rebuild()
             }
             .store(in: &cancellables)
+
+        NotificationCenter.default.publisher(for: WebRuntimeDiagnosticsStore.didChangeNotification)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] notification in
+                guard let self,
+                      self.webDiagnosticsExpanded,
+                      let webDownloadRecord = self.webDownloadRecord else {
+                    return
+                }
+                if let changedRecordID = notification.object as? String,
+                   changedRecordID != webDownloadRecord.id {
+                    return
+                }
+                self.rebuild(preservingScrollPosition: true)
+            }
+            .store(in: &cancellables)
     }
 
     private func resolvedCurrentItem(fallback: SteamWorkshopBrowserItem) -> SteamWorkshopBrowserItem {
@@ -800,7 +816,7 @@ final class AppKitSteamWorkshopItemDetailView: NSView {
             let choose = NSButton(title: definition.kind == .directory ? "选择文件夹" : "选择文件", target: nil, action: nil)
             choose.bezelStyle = .rounded
             choose.controlSize = .small
-            let target = WebPropertyActionTarget(view: self, record: record, definition: definition)
+            let target = WebPropertyActionTarget(view: self, record: record, definition: definition, summaryLabel: summaryLabel)
             choose.target = target
             choose.action = #selector(WebPropertyActionTarget.choosePath(_:))
             retainActionTarget(target, for: choose)
@@ -820,7 +836,7 @@ final class AppKitSteamWorkshopItemDetailView: NSView {
         case .color:
             return colorControl(value: value, definition: definition, record: record, summaryLabel: summaryLabel)
         case .text, .unknown:
-            let target = WebPropertyActionTarget(view: self, record: record, definition: definition)
+            let target = WebPropertyActionTarget(view: self, record: record, definition: definition, summaryLabel: summaryLabel)
             return textField(textValue(value, definition: definition), placeholder: definition.title, target: target, action: #selector(WebPropertyActionTarget.textChanged(_:)))
         }
     }
@@ -1115,6 +1131,7 @@ final class AppKitSteamWorkshopItemDetailView: NSView {
         field.placeholderString = placeholder
         field.target = target
         field.action = action
+        field.delegate = target as? NSTextFieldDelegate
         field.translatesAutoresizingMaskIntoConstraints = false
         retainActionTarget(target as! WebPropertyActionTarget, for: field)
         return field
@@ -1237,7 +1254,7 @@ final class AppKitSteamWorkshopItemDetailView: NSView {
         ]
     }
 
-    private final class WebPropertyActionTarget: NSObject {
+    private final class WebPropertyActionTarget: NSObject, NSTextFieldDelegate {
         weak var view: AppKitSteamWorkshopItemDetailView?
         let record: SteamWorkshopDownloadRecord
         let definition: SteamWorkshopWebPropertyDefinition
@@ -1285,11 +1302,17 @@ final class AppKitSteamWorkshopItemDetailView: NSView {
         }
 
         @objc func textChanged(_ sender: NSTextField) {
-            if definition.kind == .slider, let value = Double(sender.stringValue) {
-                view?.updateWebProperty(.number(value), definition: definition, record: record)
-            } else {
-                view?.updateWebProperty(.string(sender.stringValue), definition: definition, record: record)
-            }
+            commitTextFieldValue(sender.stringValue)
+        }
+
+        func controlTextDidChange(_ notification: Notification) {
+            guard let field = notification.object as? NSTextField else { return }
+            previewTextFieldValue(field.stringValue)
+        }
+
+        func controlTextDidEndEditing(_ notification: Notification) {
+            guard let field = notification.object as? NSTextField else { return }
+            commitTextFieldValue(field.stringValue)
         }
 
         @objc func colorChanged(_ sender: NSColorWell) {
@@ -1329,6 +1352,27 @@ final class AppKitSteamWorkshopItemDetailView: NSView {
                 self.view?.updateWebProperty(.string(colorString), definition: self.definition, record: self.record)
                 self.colorCommitTask = nil
             }
+        }
+
+        private func previewTextFieldValue(_ rawValue: String) {
+            colorCommitTask?.cancel()
+            colorCommitTask = nil
+            let value = webPropertyValue(from: rawValue)
+            summaryLabel?.stringValue = view?.valueSummary(value, definition: definition) ?? rawValue
+            view?.updateWebProperty(value, definition: definition, record: record, preview: true)
+        }
+
+        private func commitTextFieldValue(_ rawValue: String) {
+            colorCommitTask?.cancel()
+            colorCommitTask = nil
+            view?.updateWebProperty(webPropertyValue(from: rawValue), definition: definition, record: record)
+        }
+
+        private func webPropertyValue(from rawValue: String) -> SteamWorkshopWebPropertyValue {
+            if definition.kind == .slider, let value = Double(rawValue) {
+                return .number(value)
+            }
+            return .string(rawValue)
         }
     }
 }

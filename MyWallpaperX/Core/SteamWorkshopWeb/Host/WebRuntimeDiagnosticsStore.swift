@@ -26,6 +26,7 @@ struct WebRuntimeDiagnosticEvent: Identifiable, Equatable {
 @MainActor
 final class WebRuntimeDiagnosticsStore {
     static let shared = WebRuntimeDiagnosticsStore()
+    static let didChangeNotification = Notification.Name("WebRuntimeDiagnosticsStore.didChange")
 
     private let capacity = 500
     private var events: [WebRuntimeDiagnosticEvent] = []
@@ -52,6 +53,7 @@ final class WebRuntimeDiagnosticsStore {
         if events.count > capacity {
             events.removeFirst(events.count - capacity)
         }
+        NotificationCenter.default.post(name: Self.didChangeNotification, object: recordID)
         #if DEBUG
         guard shouldLogToConsole else { return }
         NSLog(
@@ -77,8 +79,10 @@ final class WebRuntimeDiagnosticsStore {
     func clear(recordID: String?) {
         guard let recordID else {
             events.removeAll()
+            NotificationCenter.default.post(name: Self.didChangeNotification, object: nil)
             return
         }
         events.removeAll { $0.recordID == recordID }
+        NotificationCenter.default.post(name: Self.didChangeNotification, object: recordID)
     }
 }
