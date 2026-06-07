@@ -104,6 +104,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
  }
  }
 
+ @objc func showAboutMenuAction(_ sender: Any?) {
+ AboutWindowController.shared.show()
+ }
+
  func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool {
  false
  }

@@ -25,13 +25,17 @@ The workflow intentionally fails early when any signing secret is missing. Unsig
 Pushes to non-`main` branches build and upload CI artifacts only. They do not
 create GitHub Releases and they do not update the Sparkle feed.
 
-Pushing to `main` is the release action:
+Pushing to `main` is the release action. The release version must already be
+committed in `MyWallpaperX.xcodeproj/project.pbxproj`; CI does not bump or
+commit project versions after publishing.
 
-1. Merge or push the release commit to `main`.
-2. The workflow resolves the public version from the Xcode project. If the
-   latest matching `build-*` release already uses that version, the patch
-   version is incremented for the new release.
-3. The workflow signs and notarizes the app, publishes the versioned DMG, signs
+1. Create a release branch from current `main`.
+2. Run `script/prepare_release_version.sh <version>` and open/merge that release
+   PR.
+3. The workflow resolves the public version from the Xcode project. If
+   `build-<version>` already exists, the workflow fails and asks for a newer
+   release version instead of auto-incrementing.
+4. The workflow signs and notarizes the app, publishes the versioned DMG, signs
    `appcast.xml`, and replaces the `update-feed` release asset.
 
 Manual `workflow_dispatch` remains available as a fallback, but it only
