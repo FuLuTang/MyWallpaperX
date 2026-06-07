@@ -659,7 +659,9 @@ private final class InspectorOverlayPassthroughView: NSView {
             return
         }
 
+        // Hit-tested inspector children receive their own scrollWheel events.
+        // If the gesture lands on the dimming overlay, close the inspector but
+        // do not forward this same wheel event to the grid behind it.
         NotificationCenter.default.post(name: .inspectorHostCloseRequested, object: nil)
-        nextResponder?.scrollWheel(with: event)
     }
 }
