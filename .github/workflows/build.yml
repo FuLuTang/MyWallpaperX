@@ -37,6 +37,11 @@ jobs:
           SHORT_SHA="${GITHUB_SHA::7}"
           if [ "${IS_RELEASE_BUILD}" = "true" ]; then
             eval "$("$GITHUB_WORKSPACE/script/resolve_version.sh" --release)"
+            git fetch --force --tags origin
+            if git rev-parse -q --verify "refs/tags/build-${MARKETING_VERSION}" >/dev/null; then
+              echo "::error::Release tag build-${MARKETING_VERSION} already exists. Bump the project version in a release PR before pushing main."
+              exit 1
+            fi
           else
             eval "$("$GITHUB_WORKSPACE/script/resolve_version.sh")"
           fi
@@ -49,12 +54,6 @@ jobs:
           } >> "$GITHUB_ENV"
 
           echo "Building ${APP_NAME} ${MARKETING_VERSION} (${BUILD_VERSION})"
-
-      - name: Write release version into project
-        if: env.IS_RELEASE_BUILD == 'true'
-        run: |
-          "$GITHUB_WORKSPACE/script/update_project_version.sh" "$MARKETING_VERSION" "$BUILD_VERSION"
-          git diff -- "$PROJECT_PATH/project.pbxproj"
 
       - name: Show Xcode environment
         run: |
@@ -381,22 +380,6 @@ jobs:
               --prerelease \
               --target "$GITHUB_SHA"
           fi
-
-      - name: Commit release version bump
-        if: env.IS_RELEASE_BUILD == 'true'
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          git add "$PROJECT_PATH/project.pbxproj"
-          if git diff --cached --quiet; then
-            echo "Project version already matches ${MARKETING_VERSION} (${BUILD_VERSION})."
-            exit 0
-          fi
-
-          git commit -m "Bump version to ${MARKETING_VERSION} (${BUILD_VERSION}) [skip ci]"
-          git pull --rebase origin "$GITHUB_REF_NAME"
-          git push origin "HEAD:$GITHUB_REF_NAME"
 
       - name: Clean up signing keychain
         if: always()
