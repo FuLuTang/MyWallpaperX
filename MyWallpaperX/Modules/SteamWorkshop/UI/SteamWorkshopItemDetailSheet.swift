@@ -705,6 +705,7 @@ final class AppKitSteamWorkshopItemDetailView: NSView {
         card.layer?.borderWidth = 0.7
         card.layer?.borderColor = NSColor.white.withAlphaComponent(0.06).cgColor
 
+        var summaryLabel: NSTextField?
         if definition.kind != .group && definition.kind != .label {
             let row = NSStackView()
             row.orientation = .horizontal
@@ -713,11 +714,13 @@ final class AppKitSteamWorkshopItemDetailView: NSView {
             row.translatesAutoresizingMaskIntoConstraints = false
             row.addArrangedSubview(label(definition.title, font: .systemFont(ofSize: 12, weight: .semibold), color: .labelColor, lines: 1))
             row.addArrangedSubview(spacer())
-            row.addArrangedSubview(label(valueSummary(value, definition: definition), font: .systemFont(ofSize: 11, weight: .medium), color: .secondaryLabelColor, lines: 1))
+            let valueLabel = label(valueSummary(value, definition: definition), font: .systemFont(ofSize: 11, weight: .medium), color: .secondaryLabelColor, lines: 1)
+            summaryLabel = valueLabel
+            row.addArrangedSubview(valueLabel)
             card.addArrangedSubview(row)
         }
 
-        card.addArrangedSubview(controlView(definition: definition, value: value, visibleOptions: visibleOptions, record: record))
+        card.addArrangedSubview(controlView(definition: definition, value: value, visibleOptions: visibleOptions, record: record, summaryLabel: summaryLabel))
 
         if let footnote = propertyFootnote(definition: definition, visibleOptions: visibleOptions) {
             card.addArrangedSubview(label(footnote, font: .systemFont(ofSize: 10, weight: .medium), color: .secondaryLabelColor, lines: 0))
@@ -730,16 +733,18 @@ final class AppKitSteamWorkshopItemDetailView: NSView {
         definition: SteamWorkshopWebPropertyDefinition,
         value: SteamWorkshopWebPropertyValue,
         visibleOptions: [SteamWorkshopWebPropertyOption],
-        record: SteamWorkshopDownloadRecord
+        record: SteamWorkshopDownloadRecord,
+        summaryLabel: NSTextField?
     ) -> NSView {
         switch definition.kind {
         case .slider:
-            let target = WebPropertyActionTarget(view: self, record: record, definition: definition)
+            let target = WebPropertyActionTarget(view: self, record: record, definition: definition, summaryLabel: summaryLabel)
             let slider = NSSlider(value: value.numberValue ?? definition.defaultValue.numberValue ?? definition.minimumValue ?? 0,
                                   minValue: definition.minimumValue ?? 0,
                                   maxValue: definition.maximumValue ?? max((definition.minimumValue ?? 0) + 1, value.numberValue ?? 1),
                                   target: target,
                                   action: #selector(WebPropertyActionTarget.sliderChanged(_:)))
+            slider.isContinuous = true
             slider.identifier = NSUserInterfaceItemIdentifier(definition.key)
             slider.translatesAutoresizingMaskIntoConstraints = false
             retainActionTarget(target, for: slider)
@@ -903,6 +908,7 @@ final class AppKitSteamWorkshopItemDetailView: NSView {
     private func updateWebProperty(_ value: SteamWorkshopWebPropertyValue, definition: SteamWorkshopWebPropertyDefinition, record: SteamWorkshopDownloadRecord, preview: Bool = false) {
         if preview {
             service.previewWebPropertyValue(value, for: definition, record: record)
+            return
         } else {
             service.updateWebPropertyValue(value, for: definition, record: record)
         }
@@ -1218,12 +1224,20 @@ final class AppKitSteamWorkshopItemDetailView: NSView {
         let record: SteamWorkshopDownloadRecord
         let definition: SteamWorkshopWebPropertyDefinition
         let visibleOptions: [SteamWorkshopWebPropertyOption]
+        weak var summaryLabel: NSTextField?
 
-        init(view: AppKitSteamWorkshopItemDetailView, record: SteamWorkshopDownloadRecord, definition: SteamWorkshopWebPropertyDefinition, visibleOptions: [SteamWorkshopWebPropertyOption] = []) {
+        init(
+            view: AppKitSteamWorkshopItemDetailView,
+            record: SteamWorkshopDownloadRecord,
+            definition: SteamWorkshopWebPropertyDefinition,
+            visibleOptions: [SteamWorkshopWebPropertyOption] = [],
+            summaryLabel: NSTextField? = nil
+        ) {
             self.view = view
             self.record = record
             self.definition = definition
             self.visibleOptions = visibleOptions
+            self.summaryLabel = summaryLabel
         }
 
         @objc func toggleChanged(_ sender: NSButton) {
@@ -1237,6 +1251,8 @@ final class AppKitSteamWorkshopItemDetailView: NSView {
 
         @objc func sliderChanged(_ sender: NSSlider) {
             let normalized = view?.normalizedSliderValue(sender.doubleValue, definition: definition) ?? sender.doubleValue
+            sender.doubleValue = normalized
+            summaryLabel?.stringValue = view?.valueSummary(.number(normalized), definition: definition) ?? String(normalized)
             view?.updateWebProperty(.number(normalized), definition: definition, record: record, preview: true)
             if !sender.isHighlighted {
                 view?.updateWebProperty(.number(normalized), definition: definition, record: record)
