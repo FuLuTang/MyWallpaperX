@@ -1261,7 +1261,8 @@ final class AppKitSteamWorkshopItemDetailView: NSView {
         let visibleOptions: [SteamWorkshopWebPropertyOption]
         weak var summaryLabel: NSTextField?
         weak var textField: NSTextField?
-        private var colorCommitTask: Task<Void, Never>?
+        private var pendingColorString: String?
+        private var colorPanelCloseObserver: NSObjectProtocol?
 
         init(
             view: AppKitSteamWorkshopItemDetailView,
@@ -1278,7 +1279,9 @@ final class AppKitSteamWorkshopItemDetailView: NSView {
         }
 
         deinit {
-            colorCommitTask?.cancel()
+            if let colorPanelCloseObserver {
+                NotificationCenter.default.removeObserver(colorPanelCloseObserver)
+            }
         }
 
         @objc func toggleChanged(_ sender: NSButton) {
@@ -1317,10 +1320,11 @@ final class AppKitSteamWorkshopItemDetailView: NSView {
 
         @objc func colorChanged(_ sender: NSColorWell) {
             guard let colorString = view?.colorString(from: sender.color) else { return }
+            observeColorPanelCloseIfNeeded()
+            pendingColorString = colorString
             summaryLabel?.stringValue = view?.valueSummary(.string(colorString), definition: definition) ?? colorString
             textField?.stringValue = colorString
             view?.updateWebProperty(.string(colorString), definition: definition, record: record, preview: true)
-            scheduleColorCommit(colorString)
         }
 
         @objc func choosePath(_ sender: NSButton) {
@@ -1344,28 +1348,33 @@ final class AppKitSteamWorkshopItemDetailView: NSView {
             view?.updateWebProperty(.string(""), definition: definition, record: record)
         }
 
-        private func scheduleColorCommit(_ colorString: String) {
-            colorCommitTask?.cancel()
-            colorCommitTask = Task { @MainActor [weak self] in
-                try? await Task.sleep(for: .milliseconds(500))
-                guard let self, !Task.isCancelled else { return }
-                self.view?.updateWebProperty(.string(colorString), definition: self.definition, record: self.record)
-                self.colorCommitTask = nil
+        private func observeColorPanelCloseIfNeeded() {
+            guard colorPanelCloseObserver == nil else { return }
+            colorPanelCloseObserver = NotificationCenter.default.addObserver(
+                forName: NSWindow.willCloseNotification,
+                object: NSColorPanel.shared,
+                queue: .main
+            ) { [weak self] _ in
+                self?.commitPendingColor()
             }
         }
 
         private func previewTextFieldValue(_ rawValue: String) {
-            colorCommitTask?.cancel()
-            colorCommitTask = nil
+            pendingColorString = nil
             let value = webPropertyValue(from: rawValue)
             summaryLabel?.stringValue = view?.valueSummary(value, definition: definition) ?? rawValue
             view?.updateWebProperty(value, definition: definition, record: record, preview: true)
         }
 
         private func commitTextFieldValue(_ rawValue: String) {
-            colorCommitTask?.cancel()
-            colorCommitTask = nil
+            pendingColorString = nil
             view?.updateWebProperty(webPropertyValue(from: rawValue), definition: definition, record: record)
+        }
+
+        private func commitPendingColor() {
+            guard let pendingColorString else { return }
+            self.pendingColorString = nil
+            view?.updateWebProperty(.string(pendingColorString), definition: definition, record: record)
         }
 
         private func webPropertyValue(from rawValue: String) -> SteamWorkshopWebPropertyValue {
