@@ -763,9 +763,25 @@ final class AppKitSteamWorkshopItemDetailView: NSView {
                 popup.addItem(withTitle: "当前没有可选项")
                 popup.isEnabled = false
             } else {
-                visibleOptions.forEach { popup.addItem(withTitle: $0.label) }
+                var selectedValueID: String?
+                if visibleOptions.contains(where: { $0.value == value }) == false {
+                    popup.addItem(withTitle: "当前值：\(valueSummary(value, definition: definition))（不可选）")
+                    popup.lastItem?.isEnabled = false
+                    popup.selectItem(at: 0)
+                }
+                visibleOptions.forEach { option in
+                    popup.addItem(withTitle: option.label)
+                    popup.lastItem?.representedObject = option.id as NSString
+                    if option.value == value {
+                        selectedValueID = option.id
+                    }
+                }
                 if let selectedIndex = visibleOptions.firstIndex(where: { $0.value == value }) {
-                    popup.selectItem(at: selectedIndex)
+                    popup.selectItem(withTitle: visibleOptions[selectedIndex].label)
+                }
+                if let selectedValueID,
+                   let item = popup.itemArray.first(where: { ($0.representedObject as? String) == selectedValueID }) {
+                    popup.select(item)
                 }
             }
             let target = WebPropertyActionTarget(view: self, record: record, definition: definition, visibleOptions: visibleOptions)
@@ -802,7 +818,7 @@ final class AppKitSteamWorkshopItemDetailView: NSView {
         case .label, .group:
             return label(definition.title, font: definition.kind == .group ? .systemFont(ofSize: 13, weight: .semibold) : .systemFont(ofSize: 12), color: .labelColor, lines: 0)
         case .color:
-            return colorControl(value: value, definition: definition, record: record)
+            return colorControl(value: value, definition: definition, record: record, summaryLabel: summaryLabel)
         case .text, .unknown:
             let target = WebPropertyActionTarget(view: self, record: record, definition: definition)
             return textField(textValue(value, definition: definition), placeholder: definition.title, target: target, action: #selector(WebPropertyActionTarget.textChanged(_:)))
@@ -812,7 +828,8 @@ final class AppKitSteamWorkshopItemDetailView: NSView {
     private func colorControl(
         value: SteamWorkshopWebPropertyValue,
         definition: SteamWorkshopWebPropertyDefinition,
-        record: SteamWorkshopDownloadRecord
+        record: SteamWorkshopDownloadRecord,
+        summaryLabel: NSTextField?
     ) -> NSView {
         let row = NSStackView()
         row.orientation = .horizontal
@@ -820,7 +837,7 @@ final class AppKitSteamWorkshopItemDetailView: NSView {
         row.spacing = 10
         row.translatesAutoresizingMaskIntoConstraints = false
 
-        let target = WebPropertyActionTarget(view: self, record: record, definition: definition)
+        let target = WebPropertyActionTarget(view: self, record: record, definition: definition, summaryLabel: summaryLabel)
         let colorWell = NSColorWell(frame: NSRect(x: 0, y: 0, width: 42, height: 26))
         colorWell.color = color(from: value.stringValue ?? definition.defaultValue.stringValue ?? "0 0 0")
         colorWell.target = target
@@ -835,6 +852,7 @@ final class AppKitSteamWorkshopItemDetailView: NSView {
             target: target,
             action: #selector(WebPropertyActionTarget.textChanged(_:))
         )
+        target.textField = field
         row.addArrangedSubview(field)
 
         NSLayoutConstraint.activate([
@@ -1225,6 +1243,8 @@ final class AppKitSteamWorkshopItemDetailView: NSView {
         let definition: SteamWorkshopWebPropertyDefinition
         let visibleOptions: [SteamWorkshopWebPropertyOption]
         weak var summaryLabel: NSTextField?
+        weak var textField: NSTextField?
+        private var colorCommitTask: Task<Void, Never>?
 
         init(
             view: AppKitSteamWorkshopItemDetailView,
@@ -1240,13 +1260,18 @@ final class AppKitSteamWorkshopItemDetailView: NSView {
             self.summaryLabel = summaryLabel
         }
 
+        deinit {
+            colorCommitTask?.cancel()
+        }
+
         @objc func toggleChanged(_ sender: NSButton) {
             view?.updateWebProperty(.bool(sender.state == .on), definition: definition, record: record)
         }
 
         @objc func popupChanged(_ sender: NSPopUpButton) {
-            guard sender.indexOfSelectedItem >= 0, sender.indexOfSelectedItem < visibleOptions.count else { return }
-            view?.updateWebProperty(visibleOptions[sender.indexOfSelectedItem].value, definition: definition, record: record)
+            guard let selectedID = sender.selectedItem?.representedObject as? String,
+                  let option = visibleOptions.first(where: { $0.id == selectedID }) else { return }
+            view?.updateWebProperty(option.value, definition: definition, record: record)
         }
 
         @objc func sliderChanged(_ sender: NSSlider) {
@@ -1269,7 +1294,10 @@ final class AppKitSteamWorkshopItemDetailView: NSView {
 
         @objc func colorChanged(_ sender: NSColorWell) {
             guard let colorString = view?.colorString(from: sender.color) else { return }
-            view?.updateWebProperty(.string(colorString), definition: definition, record: record)
+            summaryLabel?.stringValue = view?.valueSummary(.string(colorString), definition: definition) ?? colorString
+            textField?.stringValue = colorString
+            view?.updateWebProperty(.string(colorString), definition: definition, record: record, preview: true)
+            scheduleColorCommit(colorString)
         }
 
         @objc func choosePath(_ sender: NSButton) {
@@ -1291,6 +1319,16 @@ final class AppKitSteamWorkshopItemDetailView: NSView {
 
         @objc func clearPath(_ sender: NSButton) {
             view?.updateWebProperty(.string(""), definition: definition, record: record)
+        }
+
+        private func scheduleColorCommit(_ colorString: String) {
+            colorCommitTask?.cancel()
+            colorCommitTask = Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .milliseconds(500))
+                guard let self, !Task.isCancelled else { return }
+                self.view?.updateWebProperty(.string(colorString), definition: self.definition, record: self.record)
+                self.colorCommitTask = nil
+            }
         }
     }
 }
