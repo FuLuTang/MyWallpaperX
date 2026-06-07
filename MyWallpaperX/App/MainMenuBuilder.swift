@@ -26,9 +26,9 @@ enum MainMenuBuilder {
 
         appMenu.addItem(
             title: "关于 \(appName)",
-            action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)),
+            action: #selector(AppDelegate.showAboutMenuAction(_:)),
             keyEquivalent: "",
-            target: NSApp
+            systemImageName: "info.circle"
         )
         appMenu.addItem(
             title: "检查更新…",
