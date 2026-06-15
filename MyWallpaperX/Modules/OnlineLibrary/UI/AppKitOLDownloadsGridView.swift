@@ -8,7 +8,6 @@
 
 import AppKit
 import Combine
-import AVFoundation
 import QuickLook
 import QuickLookUI
 
@@ -523,7 +522,7 @@ final class AppKitOLDownloadsContainerView: NSView, ModuleFocusable {
         reloadEntriesGeneration += 1
         let generation = reloadEntriesGeneration
         reloadEntriesTask = Task.detached(priority: .userInitiated) {
-            let loaded = Self.loadEntries(in: dir, sortMode: sortMode, sortAscending: sortAscending)
+            let loaded = await Self.loadEntries(in: dir, sortMode: sortMode, sortAscending: sortAscending)
             guard !Task.isCancelled else { return }
             await MainActor.run {
                 guard self.reloadEntriesGeneration == generation else { return }
@@ -1012,24 +1011,14 @@ final class AppKitOLDownloadsContainerView: NSView, ModuleFocusable {
         URL(fileURLWithPath: path).resolvingSymlinksInPath().standardizedFileURL.path
     }
 
-    nonisolated private static func makeEntry(id: Int, localURL: URL) -> OLDownloadedEntry {
-        let asset = AVURLAsset(url: localURL)
-        let durationSeconds = max(0, Int(asset.duration.seconds.rounded()))
-        var resolution: String?
-        if let track = asset.tracks(withMediaType: .video).first {
-            let transformed = track.naturalSize.applying(track.preferredTransform)
-            let width = Int(abs(transformed.width).rounded())
-            let height = Int(abs(transformed.height).rounded())
-            if width > 0, height > 0 {
-                resolution = "\(width)×\(height)"
-            }
-        }
+    nonisolated private static func makeEntry(id: Int, localURL: URL) async -> OLDownloadedEntry {
+        let metadata = await OnlineLibraryDownloadedAssetMetadata.load(from: localURL)
         return OLDownloadedEntry(
             id: id,
             localURL: localURL,
-            fileSize: (try? localURL.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0,
-            duration: durationSeconds,
-            resolutionString: resolution
+            fileSize: metadata.fileSize,
+            duration: metadata.durationSeconds > 0 ? metadata.durationSeconds : nil,
+            resolutionString: metadata.resolutionString
         )
     }
 
@@ -1037,7 +1026,7 @@ final class AppKitOLDownloadsContainerView: NSView, ModuleFocusable {
         in directory: URL,
         sortMode: WallpaperSortMode,
         sortAscending: Bool
-    ) -> [OLDownloadedEntry] {
+    ) async -> [OLDownloadedEntry] {
         guard let files = try? FileManager.default.contentsOfDirectory(
             at: directory,
             includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey, .creationDateKey],
@@ -1046,12 +1035,15 @@ final class AppKitOLDownloadsContainerView: NSView, ModuleFocusable {
             return []
         }
 
-        var loaded: [OLDownloadedEntry] = files.compactMap { url in
+        var loaded: [OLDownloadedEntry] = []
+        loaded.reserveCapacity(files.count)
+        for url in files {
+            guard !Task.isCancelled else { return [] }
             let name = url.lastPathComponent
             guard name.hasPrefix("online_"), name.hasSuffix(".mp4"),
                   let id = Int(name.dropFirst("online_".count).dropLast(".mp4".count))
-            else { return nil }
-            return makeEntry(id: id, localURL: url)
+            else { continue }
+            loaded.append(await makeEntry(id: id, localURL: url))
         }
 
         loaded.sort { lhs, rhs in
