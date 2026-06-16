@@ -19,7 +19,7 @@ extension SteamWorkshopService {
                 payload["options"] = visibleOptions.map { option in
                     [
                         "label": option.label,
-                        "value": Self.webRuntimeJSONValue(from: option.value)
+                        "value": Self.webRuntimeJSONValue(from: option.value, forKind: definition.kind)
                     ]
                 }
             }
@@ -141,14 +141,14 @@ extension SteamWorkshopService {
     ) -> [String: Any] {
         var payload: [String: Any] = [
             "type": definition.runtimeType,
-            "value": webRuntimeJSONValue(from: value)
+            "value": webRuntimeJSONValue(from: value, forKind: definition.kind)
         ]
         mergeWebRuntimePropertyMetadata(into: &payload, definition: definition)
         if !visibleOptions.isEmpty {
             payload["options"] = visibleOptions.map { option in
                 [
                     "label": option.label,
-                    "value": webRuntimeJSONValue(from: option.value)
+                    "value": webRuntimeJSONValue(from: option.value, forKind: definition.kind)
                 ]
             }
         }
@@ -194,11 +194,11 @@ extension SteamWorkshopService {
             let value = values[key] ?? definition?.defaultValue ?? .string("")
             var propertyPayload: [String: Any] = [
                 "type": definition?.runtimeType ?? "text",
-                "value": webRuntimeJSONValue(from: value),
+                "value": webRuntimeJSONValue(from: value, forKind: definition?.kind),
                 "options": (visibleOptionsByKey[key] ?? []).map { option in
                     [
                         "label": option.label,
-                        "value": webRuntimeJSONValue(from: option.value)
+                        "value": webRuntimeJSONValue(from: option.value, forKind: definition?.kind)
                     ]
                 }
             ]
@@ -240,6 +240,19 @@ extension SteamWorkshopService {
     }
 
     private static func webRuntimeJSONValue(from value: SteamWorkshopWebPropertyValue) -> Any {
+        webRuntimeJSONValue(from: value, forKind: nil)
+    }
+
+    private static func webRuntimeJSONValue(
+        from value: SteamWorkshopWebPropertyValue,
+        forKind kind: SteamWorkshopWebPropertyKind?
+    ) -> Any {
+        if kind == .color,
+           case let .string(rawColor) = value,
+           let color = parseWebColorComponents(from: rawColor) {
+            return [color.red, color.green, color.blue]
+        }
+
         switch value {
         case let .string(string):
             return string
