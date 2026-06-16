@@ -94,4 +94,18 @@ extension SteamWorkshopService {
             || lowered.contains("canvas.todataurl")
             || lowered.contains("readpixels(")
     }
+
+    static func webContentUsesIframeCrossFrameAccess(_ content: String) -> Bool {
+        let lowered = content.lowercased()
+        let hasIframe = lowered.contains("<iframe")
+            || lowered.contains("createelement('iframe")
+            || lowered.contains("createelement(\"iframe")
+            || lowered.contains("createelement(`iframe")
+        guard hasIframe else { return false }
+
+        return lowered.contains("contentdocument")
+            || lowered.contains("contentwindow.document")
+            || lowered.contains("window.frames[")
+            || lowered.contains("frames[")
+    }
 }

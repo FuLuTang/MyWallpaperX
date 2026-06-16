@@ -46,6 +46,7 @@ extension SteamWorkshopService {
         var usesWASMResource = false
         var usesWASMStreaming = false
         var usesCustomSchemeSensitiveWebGL = false
+        var usesIframeCrossFrameAccess = false
         let hasFetchAllDirectoryProperty = propertyDefinitions.contains {
             $0.kind == .directory && $0.directoryMode?.lowercased() == "fetchall"
         }
@@ -96,6 +97,9 @@ extension SteamWorkshopService {
             }
             if Self.webContentUsesCustomSchemeSensitiveWebGL(content) {
                 usesCustomSchemeSensitiveWebGL = true
+            }
+            if Self.webContentUsesIframeCrossFrameAccess(content) {
+                usesIframeCrossFrameAccess = true
             }
 
             for reference in Self.extractLocalWebResourceReferences(from: content, fileExtension: fileURL.pathExtension) {
@@ -149,6 +153,7 @@ extension SteamWorkshopService {
             usesWASMResource: usesWASMResource,
             usesWASMStreaming: usesWASMStreaming,
             usesCustomSchemeSensitiveWebGL: usesCustomSchemeSensitiveWebGL,
+            usesIframeCrossFrameAccess: usesIframeCrossFrameAccess,
             usesWebMResource: usesWebMResource,
             usesHoverOnlyInteraction: usesHoverOnlyInteraction,
             hasFetchAllDirectoryProperty: hasFetchAllDirectoryProperty,

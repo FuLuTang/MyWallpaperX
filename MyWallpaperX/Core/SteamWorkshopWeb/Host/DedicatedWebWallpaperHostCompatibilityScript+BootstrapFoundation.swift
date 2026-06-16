@@ -120,6 +120,7 @@ let webCompatibilityScriptBootstrapFoundation = #"""
       'media.canplay': 1000,
       'media.canplaythrough': 1000,
       'media.initial': 1000,
+      'iframe.crossOriginAccess': 5000,
       'runtime.randomFile': 1000,
       'directory.access': 2000
     };

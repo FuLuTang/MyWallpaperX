@@ -43,6 +43,7 @@ struct ResolvedWebStaticContentSummary: Codable, Equatable {
     let usesWASMResource: Bool
     let usesWASMStreaming: Bool
     let usesCustomSchemeSensitiveWebGL: Bool
+    let usesIframeCrossFrameAccess: Bool
     let usesWebMResource: Bool
     let usesHoverOnlyInteraction: Bool
     let hasFetchAllDirectoryProperty: Bool
@@ -62,6 +63,7 @@ struct ResolvedWebStaticContentSummary: Codable, Equatable {
         case usesWASMResource
         case usesWASMStreaming
         case usesCustomSchemeSensitiveWebGL
+        case usesIframeCrossFrameAccess
         case usesWebMResource
         case usesHoverOnlyInteraction
         case hasFetchAllDirectoryProperty
@@ -82,6 +84,7 @@ struct ResolvedWebStaticContentSummary: Codable, Equatable {
         usesWASMResource: Bool,
         usesWASMStreaming: Bool,
         usesCustomSchemeSensitiveWebGL: Bool,
+        usesIframeCrossFrameAccess: Bool,
         usesWebMResource: Bool,
         usesHoverOnlyInteraction: Bool,
         hasFetchAllDirectoryProperty: Bool,
@@ -100,6 +103,7 @@ struct ResolvedWebStaticContentSummary: Codable, Equatable {
         self.usesWASMResource = usesWASMResource
         self.usesWASMStreaming = usesWASMStreaming
         self.usesCustomSchemeSensitiveWebGL = usesCustomSchemeSensitiveWebGL
+        self.usesIframeCrossFrameAccess = usesIframeCrossFrameAccess
         self.usesWebMResource = usesWebMResource
         self.usesHoverOnlyInteraction = usesHoverOnlyInteraction
         self.hasFetchAllDirectoryProperty = hasFetchAllDirectoryProperty
@@ -122,6 +126,7 @@ struct ResolvedWebStaticContentSummary: Codable, Equatable {
             usesWASMResource: try container.decode(Bool.self, forKey: .usesWASMResource),
             usesWASMStreaming: try container.decode(Bool.self, forKey: .usesWASMStreaming),
             usesCustomSchemeSensitiveWebGL: try container.decodeIfPresent(Bool.self, forKey: .usesCustomSchemeSensitiveWebGL) ?? false,
+            usesIframeCrossFrameAccess: try container.decodeIfPresent(Bool.self, forKey: .usesIframeCrossFrameAccess) ?? false,
             usesWebMResource: try container.decode(Bool.self, forKey: .usesWebMResource),
             usesHoverOnlyInteraction: try container.decode(Bool.self, forKey: .usesHoverOnlyInteraction),
             hasFetchAllDirectoryProperty: try container.decode(Bool.self, forKey: .hasFetchAllDirectoryProperty),
@@ -188,6 +193,7 @@ enum ResolvedWebRuntimeRiskFlag: String, Codable, Equatable, Hashable {
     case wasmUsage
     case wasmStreamingUsage
     case customSchemeSensitiveWebGL
+    case iframeCrossFrameAccess
 
     var displayName: String {
         switch self {
@@ -229,6 +235,8 @@ enum ResolvedWebRuntimeRiskFlag: String, Codable, Equatable, Hashable {
             return "WASM Streaming 依赖"
         case .customSchemeSensitiveWebGL:
             return "WebGL/纹理 Origin 敏感"
+        case .iframeCrossFrameAccess:
+            return "iframe 跨 frame DOM 访问"
         }
     }
 }

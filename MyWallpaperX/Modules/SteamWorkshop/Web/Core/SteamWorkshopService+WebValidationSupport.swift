@@ -203,6 +203,9 @@ extension SteamWorkshopService {
         if flags.contains(.wasmStreamingUsage) {
             appendIssue(.warning, .warning, "检测到 WebAssembly streaming 编译；custom scheme 兼容性较弱，当前会建议使用本地 HTTP loopback")
         }
+        if flags.contains(.iframeCrossFrameAccess) {
+            appendIssue(.warning, .warning, "检测到 iframe 跨 frame DOM 访问；custom scheme 更容易触发同源限制，当前会建议使用本地 HTTP loopback")
+        }
     }
 
     func webValidationLevelForEmptyPropertyValue(
