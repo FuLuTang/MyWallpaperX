@@ -41,6 +41,81 @@ let webCompatibilityScriptBootstrapResourceRewriting = #"""
       return value;
     }
   };
+  const myWallpaperIsMediaOrSourceElement = (node) => {
+    if (!node) return false;
+    try {
+      const tagName = String(node.tagName || '').toLowerCase();
+      if (tagName === 'audio' || tagName === 'video' || tagName === 'source') return true;
+    } catch (_) {}
+    try {
+      if (typeof HTMLMediaElement !== 'undefined' && node instanceof HTMLMediaElement) return true;
+    } catch (_) {}
+    try {
+      if (typeof HTMLSourceElement !== 'undefined' && node instanceof HTMLSourceElement) return true;
+    } catch (_) {}
+    return false;
+  };
+  window.__myWallpaperIsInvalidMediaSourceValue = function(rawValue) {
+    const value = String(rawValue || '').trim();
+    const normalizedValue = value.toLowerCase();
+    if (
+      !value ||
+      normalizedValue === 'null' ||
+      normalizedValue === 'undefined' ||
+      normalizedValue === '(null)' ||
+      normalizedValue === 'about:blank' ||
+      normalizedValue === 'index.html'
+    ) {
+      return true;
+    }
+    try {
+      const sourceURL = new URL(value, document.location.href);
+      const documentURL = new URL(document.location.href);
+      const sourceHref = sourceURL.href.toLowerCase();
+      const documentHref = documentURL.href.toLowerCase();
+      const sourcePath = String(sourceURL.pathname || '').replace(/\/+$/, '').toLowerCase();
+      if (sourceHref === documentHref) return true;
+      if (
+        sourcePath.endsWith('/null') ||
+        sourcePath.endsWith('/undefined') ||
+        sourcePath.endsWith('/(null)') ||
+        sourcePath.endsWith('/about:blank') ||
+        sourcePath.endsWith('/index.html')
+      ) {
+        return true;
+      }
+    } catch (_) {}
+    return false;
+  };
+  const myWallpaperClearInvalidMediaSource = (node, attributeName, rawValue) => {
+    try {
+      const normalizedAttributeName = String(attributeName || 'src');
+      if (typeof node.removeAttribute === 'function') {
+        node.removeAttribute(normalizedAttributeName);
+      }
+      try { node.__mwxInvalidMediaSource = String(rawValue || ''); } catch (_) {}
+      try {
+        if (typeof HTMLMediaElement !== 'undefined' && node instanceof HTMLMediaElement && typeof node.load === 'function') {
+          node.load();
+        }
+      } catch (_) {}
+      try {
+        const parent = node.parentElement;
+        if (
+          parent &&
+          typeof HTMLMediaElement !== 'undefined' &&
+          parent instanceof HTMLMediaElement &&
+          typeof parent.load === 'function'
+        ) {
+          parent.load();
+        }
+      } catch (_) {}
+      try {
+        const tagName = String(node.tagName || 'media').toLowerCase();
+        hostLogger.post('resource.sanitized', `${tagName}.${normalizedAttributeName} skipped invalid media source ${String(rawValue || '')}`);
+      } catch (_) {}
+    } catch (_) {}
+  };
   const rewriteStyleValue = (value) => {
     const normalized = String(value || '');
     if (!normalized || normalized.toLowerCase().includes('file:///') === false) {
@@ -58,6 +133,14 @@ let webCompatibilityScriptBootstrapResourceRewriting = #"""
         enumerable: descriptor.enumerable === true,
         get: descriptor.get ? function() { return descriptor.get.call(this); } : undefined,
         set: function(value) {
+          if (
+            propertyName === 'src' &&
+            myWallpaperIsMediaOrSourceElement(this) &&
+            window.__myWallpaperIsInvalidMediaSourceValue(value)
+          ) {
+            myWallpaperClearInvalidMediaSource(this, propertyName, value);
+            return;
+          }
           descriptor.set.call(this, window.__myWallpaperRewriteLocalFileURL(value));
         }
       });
@@ -94,6 +177,14 @@ let webCompatibilityScriptBootstrapResourceRewriting = #"""
     if (typeof originalSetAttribute === 'function' && Element.prototype.__mwxSetAttributePatched !== true) {
       Element.prototype.setAttribute = function(name, value) {
         const normalizedName = String(name || '').toLowerCase();
+        if (
+          normalizedName === 'src' &&
+          myWallpaperIsMediaOrSourceElement(this) &&
+          window.__myWallpaperIsInvalidMediaSourceValue(value)
+        ) {
+          myWallpaperClearInvalidMediaSource(this, normalizedName, value);
+          return;
+        }
         if (['src', 'href', 'poster'].includes(normalizedName)) {
           return originalSetAttribute.call(this, name, window.__myWallpaperRewriteLocalFileURL(value));
         }
@@ -122,13 +213,18 @@ let webCompatibilityScriptBootstrapResourceRewriting = #"""
           attributesToNormalize.forEach((attributeName) => {
             const current = node.getAttribute(attributeName);
             if (current == null) return;
+            if (
+              attributeName === 'src' &&
+              myWallpaperIsMediaOrSourceElement(node) &&
+              window.__myWallpaperIsInvalidMediaSourceValue(current)
+            ) {
+              myWallpaperClearInvalidMediaSource(node, attributeName, current);
+              return;
+            }
             const rewritten = window.__myWallpaperRewriteLocalFileURL(current);
             if (rewritten === current) return;
             if (!rewritten) {
               node.removeAttribute(attributeName);
-              if (attributeName in node) {
-                try { node[attributeName] = ''; } catch (_) {}
-              }
               return;
             }
             if (typeof node.setAttribute === 'function') {

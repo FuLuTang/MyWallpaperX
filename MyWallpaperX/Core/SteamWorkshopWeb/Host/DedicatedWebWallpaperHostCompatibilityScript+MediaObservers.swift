@@ -49,7 +49,20 @@ let webCompatibilityScriptMediaObservers = #"""
     if (typeof HTMLMediaElement !== 'undefined' && typeof HTMLMediaElement.prototype.play === 'function') {
       const _originalPlay = HTMLMediaElement.prototype.play;
       HTMLMediaElement.prototype.play = function() {
-        const hasSrc = !!(this.currentSrc || (this.getAttribute && this.getAttribute('src')) || this.src);
+        const isInvalidMediaSource =
+          typeof window.__myWallpaperIsInvalidMediaSourceValue === 'function'
+            ? window.__myWallpaperIsInvalidMediaSourceValue
+            : (value) => !String(value || '').trim();
+        const mediaSrc = this.currentSrc || (this.getAttribute && this.getAttribute('src')) || this.src || '';
+        let hasSrc = !!mediaSrc && !isInvalidMediaSource(mediaSrc);
+        if (!hasSrc && typeof this.querySelectorAll === 'function') {
+          try {
+            hasSrc = Array.from(this.querySelectorAll('source')).some((sourceNode) => {
+              const sourceValue = sourceNode.currentSrc || (sourceNode.getAttribute && sourceNode.getAttribute('src')) || sourceNode.src || '';
+              return !!sourceValue && !isInvalidMediaSource(sourceValue);
+            });
+          } catch (_) {}
+        }
         if (!hasSrc) {
           hostLogger.post('resource.sanitized', 'play() skipped: no src on media node');
           return Promise.resolve();
