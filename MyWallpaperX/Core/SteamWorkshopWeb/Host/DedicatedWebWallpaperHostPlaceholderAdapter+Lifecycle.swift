@@ -291,13 +291,41 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
         let loweredMessage = message.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         if loweredType == "resource.error",
            loweredMessage.hasPrefix("audio ") {
+            if isOptionalLocalAudioDiagnosticMessage(loweredMessage) {
+                return .info
+            }
             return .warning
         }
         if loweredType == "media.error",
            loweredMessage.contains("tag=audio") {
+            if isOptionalLocalAudioDiagnosticMessage(loweredMessage) {
+                return .info
+            }
             return .warning
         }
         return severity
+    }
+
+    private func isOptionalLocalAudioDiagnosticMessage(_ loweredMessage: String) -> Bool {
+        let isLocalSource = loweredMessage.contains("mwx-local://wallpaper/") ||
+            loweredMessage.contains("http://127.0.0.1:") ||
+            loweredMessage.contains("http://localhost:")
+        guard isLocalSource else { return false }
+        if loweredMessage.contains("/null") {
+            return true
+        }
+        let hasAudioExtension = loweredMessage.contains(".ogg") ||
+            loweredMessage.contains(".mp3") ||
+            loweredMessage.contains(".wav") ||
+            loweredMessage.contains(".m4a") ||
+            loweredMessage.contains(".aac") ||
+            loweredMessage.contains(".flac")
+        guard hasAudioExtension else { return false }
+        if loweredMessage.contains("/sound/") || loweredMessage.contains("/sounds/") {
+            return true
+        }
+        return loweredMessage.contains("/audio/0-") ||
+            loweredMessage.contains("/audio/00-")
     }
 
 }

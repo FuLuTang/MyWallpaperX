@@ -58,12 +58,24 @@ let webCompatibilityScriptInteractionAndRuntimeLogging = #"""
       const tagName = target.tagName || 'resource';
       const source = target.currentSrc || target.src || target.href || '';
       try {
+        const normalizedTagName = String(tagName || '').toUpperCase();
         const sourceURL = source ? new URL(String(source), document.location.href) : null;
         const rawSource =
-          target.getAttribute && tagName === 'IMG'
+          target.getAttribute && ['IMG', 'SOURCE', 'AUDIO', 'VIDEO'].includes(normalizedTagName)
             ? String(target.getAttribute('src') || '').trim()
             : '';
-        if (tagName === 'IMG' && (!rawSource || (sourceURL && sourceURL.href === document.location.href))) {
+        if (normalizedTagName === 'IMG' && (!rawSource || (sourceURL && sourceURL.href === document.location.href))) {
+          hostLogger.post('resource.ignored', `${tagName} empty-src`);
+          return;
+        }
+        const invalidMediaSource =
+          ['SOURCE', 'AUDIO', 'VIDEO'].includes(normalizedTagName) &&
+          (
+            !rawSource && !String(source || '').trim() ||
+            (typeof window.__myWallpaperIsInvalidMediaSourceValue === 'function' &&
+              window.__myWallpaperIsInvalidMediaSourceValue(rawSource || source))
+          );
+        if (invalidMediaSource) {
           hostLogger.post('resource.ignored', `${tagName} empty-src`);
           return;
         }

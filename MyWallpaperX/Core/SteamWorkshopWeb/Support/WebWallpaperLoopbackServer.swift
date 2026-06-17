@@ -141,7 +141,11 @@ final class WebWallpaperLoopbackServer {
                 on: connection
             )
         } catch {
-            diagnosticHandler?("loopback.resource.error", .warning, error.localizedDescription, requestURL)
+            if schemeHandler.isOptionalMissingMediaRequest(requestURL) {
+                diagnosticHandler?("loopback.resource.optional", .info, error.localizedDescription, requestURL)
+            } else {
+                diagnosticHandler?("loopback.resource.error", .warning, error.localizedDescription, requestURL)
+            }
             sendError(404, message: error.localizedDescription, on: connection)
         }
     }
