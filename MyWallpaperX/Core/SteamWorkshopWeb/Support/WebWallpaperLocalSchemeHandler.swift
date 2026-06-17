@@ -198,7 +198,8 @@ final class WebWallpaperLocalSchemeHandler: NSObject, WKURLSchemeHandler {
             targetURL = resolvedRequestedURL
         }
         let normalizedTargetURL = targetURL.resolvingSymlinksInPath().standardizedFileURL
-        let didTraverseSymlink = originalURL.path != requestedURL.path || targetURL.standardizedFileURL.path != normalizedTargetURL.path
+        let didTraverseSymlink = Self.isMaterialPathRewrite(from: originalURL.path, to: requestedURL.path) ||
+            Self.isMaterialPathRewrite(from: targetURL.standardizedFileURL.path, to: normalizedTargetURL.path)
         if didTraverseSymlink, strictSymlinkPolicy {
             recordDeny(AccessDenied(reason: .symlinkRejected, requestURL: requestURL, candidateURL: originalURL, resolvedURL: normalizedTargetURL))
             return nil
@@ -321,6 +322,11 @@ final class WebWallpaperLocalSchemeHandler: NSObject, WKURLSchemeHandler {
             normalizedPath.hasSuffix(".m4a") ||
             normalizedPath.hasSuffix(".aac") ||
             normalizedPath.hasSuffix(".flac")
+    }
+
+    private static func isMaterialPathRewrite(from originalPath: String, to resolvedPath: String) -> Bool {
+        guard originalPath != resolvedPath else { return false }
+        return originalPath.compare(resolvedPath, options: [.caseInsensitive, .diacriticInsensitive]) != .orderedSame
     }
 
     private func recordDeny(_ denial: AccessDenied) {
