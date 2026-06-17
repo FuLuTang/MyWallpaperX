@@ -168,6 +168,7 @@ let webCompatibilityScriptBootstrapFoundation = #"""
       'loader.pending': 1000,
       'iframe.crossOriginAccess': 5000,
       'backstretch.noop': 1000,
+      'pointer.defer': 1000,
       'runtime.randomFile': 1000,
       'directory.access': 2000
     };
