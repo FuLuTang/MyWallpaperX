@@ -211,6 +211,9 @@ let webCompatibilityScriptHostBridge = #"""
   };
   window.__myWallpaperDrainPendingProperties = function() {
     const state = myWallpaperPropertyReplayState;
+    if (state.pendingProperties === null && !state.pendingSignature) {
+      return;
+    }
     const safeProperties = state.pendingProperties || {};
     const signature = state.pendingSignature || window.__myWallpaperStablePropertySignature(safeProperties);
     try {
@@ -411,20 +414,29 @@ let webCompatibilityScriptHostBridge = #"""
       try { listener(volume); } catch (_) {}
     }
   };
-  window.__myWallpaperSetPaused = function(isPaused) {
+  window.__myWallpaperSetPaused = function(isPaused, options) {
     const paused = !!isPaused;
+    const replayOptions = options || {};
+    const shouldNotifyPage =
+      !(replayOptions.initialReplay === true && paused === false && window.__myWallpaperLastNotifiedPaused !== true);
     window.wallpaperEngine_paused = paused;
-    try {
-      if (window.wallpaperPropertyListener && typeof window.wallpaperPropertyListener.setPaused === 'function') {
-        window.wallpaperPropertyListener.setPaused(paused);
+    if (shouldNotifyPage) {
+      try {
+        if (window.wallpaperPropertyListener && typeof window.wallpaperPropertyListener.setPaused === 'function') {
+          window.wallpaperPropertyListener.setPaused(paused);
+        }
+        if (window.wallpaperPropertyListener && typeof window.wallpaperPropertyListener.setPlaybackState === 'function') {
+          window.wallpaperPropertyListener.setPlaybackState(paused ? 'paused' : 'playing');
+        }
+        window.__myWallpaperLastNotifiedPaused = paused;
+      } catch (error) {
+        hostLogger.post('pause.error', error && error.message ? error.message : error);
       }
-      if (window.wallpaperPropertyListener && typeof window.wallpaperPropertyListener.setPlaybackState === 'function') {
-        window.wallpaperPropertyListener.setPlaybackState(paused ? 'paused' : 'playing');
-      }
-      window.dispatchEvent(new CustomEvent('wallpaper-pause-changed', { detail: paused }));
-    } catch (error) {
-      hostLogger.post('pause.error', error && error.message ? error.message : error);
     }
+    try {
+      window.dispatchEvent(new CustomEvent('wallpaper-pause-changed', { detail: paused }));
+    } catch (_) {}
+    if (!shouldNotifyPage) return;
     for (const listener of playbackStateListeners) {
       try { listener(paused); } catch (_) {}
     }
@@ -465,9 +477,12 @@ let webCompatibilityScriptHostBridge = #"""
     }
     wallpaperDispatchMediaPlayback(wallpaperPreferredMediaNode(), paused);
   };
+  window.__myWallpaperApplyInitialPausedState = function(isPaused) {
+    window.__myWallpaperSetPaused(!!isPaused, { initialReplay: true });
+  };
   try {
     window.__myWallpaperSetGlobalVolume(window.__myWallpaperInitialVolume);
-    window.__myWallpaperSetPaused(!!window.__myWallpaperInitialPaused);
+    window.__myWallpaperApplyInitialPausedState(!!window.__myWallpaperInitialPaused);
     window.__myWallpaperNotifyPluginLoaded('led');
     window.__myWallpaperNotifyPluginLoaded('rgb');
   } catch (error) {

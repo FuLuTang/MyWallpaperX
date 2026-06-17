@@ -195,7 +195,11 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
               }
               window.__myWallpaperApplyGeneralProperties(generalProperties);
               window.__myWallpaperSetGlobalVolume(\(volumeLiteral));
-              window.__myWallpaperSetPaused(\(pausedLiteral));
+              if (typeof window.__myWallpaperApplyInitialPausedState === 'function') {
+                window.__myWallpaperApplyInitialPausedState(\(pausedLiteral));
+              } else {
+                window.__myWallpaperSetPaused(\(pausedLiteral));
+              }
               const spectrum = \(spectrumLiteral);
               if (Array.isArray(spectrum)) {
                 window.__myWallpaperPushAudioSpectrum(spectrum);

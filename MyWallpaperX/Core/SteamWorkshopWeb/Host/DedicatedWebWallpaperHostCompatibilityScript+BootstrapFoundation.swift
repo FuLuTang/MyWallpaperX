@@ -238,13 +238,15 @@ let webCompatibilityScriptBootstrapFoundation = #"""
       }
     } catch (_) {}
     try {
-      if (typeof window.wallpaperPropertyListener.setPaused === 'function') {
-        window.wallpaperPropertyListener.setPaused(!!window.wallpaperEngine_paused);
-      }
-    } catch (_) {}
-    try {
-      if (typeof window.wallpaperPropertyListener.setPlaybackState === 'function') {
-        window.wallpaperPropertyListener.setPlaybackState(window.wallpaperEngine_paused ? 'paused' : 'playing');
+      if (typeof window.__myWallpaperApplyInitialPausedState === 'function') {
+        window.__myWallpaperApplyInitialPausedState(!!window.wallpaperEngine_paused);
+      } else if (window.wallpaperEngine_paused === true) {
+        if (typeof window.wallpaperPropertyListener.setPaused === 'function') {
+          window.wallpaperPropertyListener.setPaused(true);
+        }
+        if (typeof window.wallpaperPropertyListener.setPlaybackState === 'function') {
+          window.wallpaperPropertyListener.setPlaybackState('paused');
+        }
       }
     } catch (_) {}
     try {
