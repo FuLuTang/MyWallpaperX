@@ -165,6 +165,7 @@ let webCompatibilityScriptBootstrapFoundation = #"""
       'media.canplaythrough': 1000,
       'media.initial': 1000,
       'media.play.unsupported': 5000,
+      'loader.pending': 1000,
       'iframe.crossOriginAccess': 5000,
       'backstretch.noop': 1000,
       'runtime.randomFile': 1000,

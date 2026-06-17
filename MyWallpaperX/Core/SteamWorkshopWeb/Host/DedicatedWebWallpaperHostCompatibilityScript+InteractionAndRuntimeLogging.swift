@@ -1,19 +1,50 @@
 let webCompatibilityScriptInteractionAndRuntimeLogging = #"""
+  const serializedConsoleArgs = (args) => args.map(arg => {
+    if (typeof arg === 'string') return arg;
+    if (arg && typeof arg === 'object') {
+      const message = typeof arg.message === 'string' ? arg.message : '';
+      const stack = typeof arg.stack === 'string' ? arg.stack : '';
+      if (message || stack) {
+        return [message, stack].filter(Boolean).join(' ');
+      }
+    }
+    try { return JSON.stringify(arg); } catch (_) { return String(arg); }
+  }).join(' ');
+  const isTransientLoaderReferenceError = (message) => {
+    const normalized = String(message || '').toLowerCase();
+    return normalized.includes("can't find variable:") &&
+      normalized.includes('setupdate@') &&
+      normalized.includes('/js/loader.js') &&
+      (
+        normalized.includes("can't find variable: weather") ||
+        normalized.includes("can't find variable: date") ||
+        normalized.includes("can't find variable: note")
+      );
+  };
+  const isLocalStylesheetLink = (target, source) => {
+    try {
+      const tagName = String(target && target.tagName ? target.tagName : '').toUpperCase();
+      if (tagName !== 'LINK') return false;
+      const rel = String(target.getAttribute ? target.getAttribute('rel') || '' : '').toLowerCase();
+      if (!rel.split(/\s+/).includes('stylesheet')) return false;
+      if (!target.sheet) return false;
+      const sourceURL = new URL(String(source || ''), document.location.href);
+      const documentURL = new URL(document.location.href);
+      return sourceURL.protocol === 'mwx-local:' ||
+        sourceURL.origin === documentURL.origin;
+    } catch (_) {
+      return false;
+    }
+  };
   const wrapConsole = (name) => {
     const original = console[name];
     console[name] = function(...args) {
       try {
-        hostLogger.post(`console.${name}`, args.map(arg => {
-          if (typeof arg === 'string') return arg;
-          if (arg && typeof arg === 'object') {
-            const message = typeof arg.message === 'string' ? arg.message : '';
-            const stack = typeof arg.stack === 'string' ? arg.stack : '';
-            if (message || stack) {
-              return [message, stack].filter(Boolean).join(' ');
-            }
-          }
-          try { return JSON.stringify(arg); } catch (_) { return String(arg); }
-        }).join(' '));
+        const message = serializedConsoleArgs(args);
+        hostLogger.post(
+          name === 'error' && isTransientLoaderReferenceError(message) ? 'loader.pending' : `console.${name}`,
+          message
+        );
       } catch (_) {}
       if (typeof original === 'function') {
         return original.apply(this, args);
@@ -37,6 +68,10 @@ let webCompatibilityScriptInteractionAndRuntimeLogging = #"""
           return;
         }
       } catch (_) {}
+      if (isLocalStylesheetLink(target, source)) {
+        hostLogger.post('resource.stylesheet.partial', `${tagName} ${source}`.trim());
+        return;
+      }
       hostLogger.post('resource.error', `${tagName} ${source}`.trim());
       return;
     }
