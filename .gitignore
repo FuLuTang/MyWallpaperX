@@ -44,6 +44,7 @@ MyWallpaperX.xcodeproj/project.xcworkspace/xcuserdata/songziqiang.xcuserdatad/Us
 .build-cache/
 
 # Local tool/runtime artifacts
+.claude/
 .codex/
 .cursor/skills/
 docs/agents/data-source-script-agent/outputs/
