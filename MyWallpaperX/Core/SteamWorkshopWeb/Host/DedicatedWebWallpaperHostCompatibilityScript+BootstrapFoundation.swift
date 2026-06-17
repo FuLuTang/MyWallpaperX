@@ -20,6 +20,28 @@ let webCompatibilityScriptBootstrapFoundation = #"""
     PLAYBACK_PLAYING: 'playing',
     PLAYBACK_PAUSED: 'paused'
   };
+  window.__myWallpaperIsMediaPlayAbortError = function(error) {
+    const name = String((error && error.name) || '');
+    const message = String((error && error.message) || error || '').toLowerCase();
+    return name === 'AbortError' ||
+      message.includes('operation was aborted') ||
+      message.includes('interrupted by a call to pause') ||
+      message.includes('interrupted by a new load request');
+  };
+  window.__myWallpaperWrapMediaPlayPromise = function(playResult, node) {
+    if (!playResult || typeof playResult.catch !== 'function') return playResult;
+    return playResult.catch((error) => {
+      if (window.__myWallpaperIsMediaPlayAbortError(error)) {
+        try {
+          const tagName = node && node.tagName ? String(node.tagName).toLowerCase() : 'media';
+          const source = node ? String(node.currentSrc || node.src || '').trim() : '';
+          hostLogger.post('media.play.aborted', `${tagName} ${source}`.trim());
+        } catch (_) {}
+        return;
+      }
+      throw error;
+    });
+  };
   window.wallpaperMediaIntegration = Object.assign(
     {},
     window.wallpaperMediaIntegration || {},

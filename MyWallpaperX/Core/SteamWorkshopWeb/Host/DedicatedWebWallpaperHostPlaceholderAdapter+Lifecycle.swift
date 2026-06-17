@@ -246,9 +246,10 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
         screenID: CGDirectDisplayID?,
         url: String?
     ) {
+        let adjustedSeverity = adjustedDiagnosticSeverity(type: type, severity: severity, message: message)
         WebRuntimeDiagnosticsStore.shared.record(
             type: type,
-            severity: severity,
+            severity: adjustedSeverity,
             message: message,
             recordID: currentRequest?.recordID,
             screenID: screenID,
@@ -277,6 +278,26 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
             return .warning
         }
         return .info
+    }
+
+    func adjustedDiagnosticSeverity(
+        type: String,
+        severity: WebRuntimeDiagnosticEvent.Severity,
+        message: String
+    ) -> WebRuntimeDiagnosticEvent.Severity {
+        guard severity == .error else { return severity }
+
+        let loweredType = type.lowercased()
+        let loweredMessage = message.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if loweredType == "resource.error",
+           loweredMessage.hasPrefix("audio ") {
+            return .warning
+        }
+        if loweredType == "media.error",
+           loweredMessage.contains("tag=audio") {
+            return .warning
+        }
+        return severity
     }
 
 }

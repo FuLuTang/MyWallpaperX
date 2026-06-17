@@ -442,11 +442,13 @@ let webCompatibilityScriptHostBridge = #"""
     }
     for (const context of audioContextInstances) {
       try {
-        if (paused && typeof context.suspend === 'function') {
+        const contextState = String(context && context.state ? context.state : '').toLowerCase();
+        if (contextState === 'closed') continue;
+        if (paused && typeof context.suspend === 'function' && contextState !== 'suspended') {
           context.suspend().catch((error) => {
             hostLogger.post('audio.suspend.error', error && error.message ? error.message : error);
           });
-        } else if (!paused && typeof context.resume === 'function') {
+        } else if (!paused && typeof context.resume === 'function' && contextState !== 'running') {
           context.resume().catch((error) => {
             hostLogger.post('audio.resume.error', error && error.message ? error.message : error);
           });
@@ -467,9 +469,15 @@ let webCompatibilityScriptHostBridge = #"""
           if (!resolvedSource || normalizedSource.endsWith('/null') || normalizedSource === 'null') {
             continue;
           }
-          node.play().catch((error) => {
-            hostLogger.post('media.play.error', error && error.message ? error.message : error);
-          });
+          const playResult = node.play();
+          const wrappedPlayResult = typeof window.__myWallpaperWrapMediaPlayPromise === 'function'
+            ? window.__myWallpaperWrapMediaPlayPromise(playResult, node)
+            : playResult;
+          if (wrappedPlayResult && typeof wrappedPlayResult.catch === 'function') {
+            wrappedPlayResult.catch((error) => {
+              hostLogger.post('media.play.error', error && error.message ? error.message : error);
+            });
+          }
         }
       } catch (error) {
         hostLogger.post('media.control.error', error && error.message ? error.message : error);
