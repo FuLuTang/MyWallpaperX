@@ -153,6 +153,38 @@ let webCompatibilityScriptHostBridge = #"""
       message.includes('gl.canvas') ||
       message.includes('this.model.x');
   };
+  const myWallpaperInvokeUserPropertyCallback = function(listener, callback, properties) {
+    let scheduledAsyncWork = false;
+    const originalSetTimeout = window.setTimeout;
+    const originalSetInterval = window.setInterval;
+    const originalRequestAnimationFrame = window.requestAnimationFrame;
+    try {
+      window.setTimeout = function(...args) {
+        scheduledAsyncWork = true;
+        return originalSetTimeout.apply(this, args);
+      };
+      window.setInterval = function(...args) {
+        scheduledAsyncWork = true;
+        return originalSetInterval.apply(this, args);
+      };
+      if (typeof originalRequestAnimationFrame === 'function') {
+        window.requestAnimationFrame = function(...args) {
+          scheduledAsyncWork = true;
+          return originalRequestAnimationFrame.apply(this, args);
+        };
+      }
+    } catch (_) {}
+    try {
+      callback.call(listener, properties);
+      return { completed: true, scheduledAsyncWork };
+    } catch (error) {
+      return { completed: false, error, scheduledAsyncWork };
+    } finally {
+      try { window.setTimeout = originalSetTimeout; } catch (_) {}
+      try { window.setInterval = originalSetInterval; } catch (_) {}
+      try { window.requestAnimationFrame = originalRequestAnimationFrame; } catch (_) {}
+    }
+  };
   const myWallpaperRunAfterSettledFrames = function(callback) {
     try {
       if (typeof window.requestAnimationFrame !== 'function') {
@@ -246,15 +278,30 @@ let webCompatibilityScriptHostBridge = #"""
       return;
     }
 
-    try {
-      userPropertyCallback.call(listener, safeProperties);
+    const applyResult = myWallpaperInvokeUserPropertyCallback(listener, userPropertyCallback, safeProperties);
+    if (applyResult.completed === true) {
       window.__myWallpaperLastAppliedUserPropertySignature = signature;
       window.__myWallpaperLastAppliedUserPropertyCallback = userPropertyCallback;
       state.pendingProperties = null;
       state.pendingSignature = '';
       state.attempt = 0;
       window.dispatchEvent(new CustomEvent('wallpaper-properties-applied', { detail: safeProperties }));
-    } catch (error) {
+    } else {
+      const error = applyResult.error;
+      if (state.attempt === 0 && myWallpaperIsPropertyInitializationError(error) && applyResult.scheduledAsyncWork === true) {
+        window.__myWallpaperLastAppliedUserPropertySignature = signature;
+        window.__myWallpaperLastAppliedUserPropertyCallback = userPropertyCallback;
+        state.pendingProperties = null;
+        state.pendingSignature = '';
+        state.attempt = 0;
+        try {
+          window.dispatchEvent(new CustomEvent('wallpaper-properties-applied', {
+            detail: safeProperties
+          }));
+        } catch (_) {}
+        hostLogger.post('properties.deferred-side-effect', myWallpaperPropertyErrorMessage(error) || 'initialization error');
+        return;
+      }
       if (myWallpaperIsPropertyInitializationError(error) && state.attempt < myWallpaperPropertyRetryDelays.length) {
         const delay = myWallpaperPropertyRetryDelays[state.attempt] || 3000;
         state.attempt += 1;

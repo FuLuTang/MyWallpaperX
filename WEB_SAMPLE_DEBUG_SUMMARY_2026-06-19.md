@@ -701,3 +701,109 @@ Remaining known diagnostics after Fix 3:
 
 - Missing local sample resources such as `background.png`, `image/logo_nikke.png`, `bg_full.png`, `Placeholder.png`, and `img/faces/face-5.jpg` still need classification review.
 - Do not edit official sample files; if these are optional/decorative or have working fallback assets, prefer improving host diagnostic severity/classification instead of hiding or patching the sample.
+
+## Fix 4 - Avoid duplicate async property initialization replays for Live2D/Pixi wallpapers
+
+User-visible problem:
+
+- `2997985023` could start with multiple Live2D character instances visually overlapping.
+- The issue appeared in recent local changes and was not fixed by only avoiding local loopback resource proxying.
+
+Sample logic reviewed:
+
+- Official sample files were inspected but not modified:
+  - `/Users/songziqiang/Movies/MyWallpaperX/创意工坊/Web/2997985023/project.json`
+  - `/Users/songziqiang/Movies/MyWallpaperX/创意工坊/Web/2997985023/assets/js/wallpaper.js`
+  - `/Users/songziqiang/Movies/MyWallpaperX/创意工坊/Web/2997985023/assets/js/model.js`
+- The sample's `applyUserProperties` handles `modelName` by scheduling `model.loadModel(modelName)` with `setTimeout(...)`.
+- The same callback then continues to call `model.onResize(...)`, `model.videoContext...pause()`, and `model.updateBg(...)` while the async model load has not completed yet.
+- This can throw an initialization-time exception after a model-load side effect has already been scheduled.
+
+Root cause:
+
+- Host property replay previously treated this exception as an initialization failure and retried the whole `applyUserProperties` bag.
+- Every retry re-entered the sample callback and scheduled another async `loadModel(...)`.
+- When those async loads later completed, multiple Live2D/Pixi display objects could remain in the same stage, producing the observed overlapping characters.
+
+Changed files:
+
+- `MyWallpaperX/Core/SteamWorkshopWeb/Host/DedicatedWebWallpaperHostCompatibilityScript+HostBridge.swift`
+
+Implementation:
+
+- Wrapped page `applyUserProperties` invocation so the host can detect whether the callback scheduled async work through:
+  - `setTimeout`
+  - `setInterval`
+  - `requestAnimationFrame`
+- If the callback throws an initialization-style exception after scheduling async work, the host now treats the call as an async side-effecting initialization that should not be blindly replayed.
+- The host records the property signature as applied and logs `properties.deferred-side-effect` for diagnostics instead of scheduling another full replay.
+- This is intentionally narrower than a sample-specific workaround: it only applies when both conditions are true:
+  1. the error matches the existing initialization-error classifier;
+  2. the page callback already scheduled async work before throwing.
+
+Validation:
+
+- Build passed after the refined implementation:
+
+```sh
+/usr/bin/xcodebuild -project MyWallpaperX.xcodeproj -scheme MyWallpaperX -configuration Debug -derivedDataPath .codex/DerivedData build
+```
+
+- Targeted 2997985023 validation before broad regression:
+
+```text
+/tmp/mwx-target-2997985023-overlap-fix-20260619-062018
+```
+
+Result:
+
+- `properties.deferred-side-effect`: 1
+- `properties.applied.partial`: 0
+- `properties.skipped`: 0
+- `network.proxy`: 0
+- `assets/live2d`: 0
+- `promise.rejection`: 0
+- `window.error`: 0
+- `severity=error`: 0
+- `severity=warning`: 0
+- Screenshot: `/tmp/mwx-target-2997985023-overlap-fix-20260619-062018/2997985023.png`
+- Visual result: single Live2D character, no multi-character overlap.
+
+Related-sample regression scope:
+
+- Scope selection: samples with `wallpaperPropertyListener` / `wallpaperRegisterPropertyListener`, especially those whose property listeners or page logic use async APIs such as `setTimeout`, `setInterval`, `requestAnimationFrame`, Pixi, Live2D, or model-loading logic.
+- This is the relevant impact surface for the host property replay change; a full 55-sample run was not needed for this isolated property replay fix.
+
+Regression log directory:
+
+```text
+/tmp/mwx-target-property-async-regression-20260619-062328
+```
+
+Validated samples:
+
+```text
+1081733658 1396475780 1509243786 1648488669 1748506393 2997985023
+3530909637 3566247256 3601888127 3602501948 3603106230 3620596895
+3676193993 3689993041 3690554020 3696345105 3700131876 3700928191
+3701249553 3701797805 3702378813 3702822549 3703626233 3705960722
+884307090 921617616 923576681
+```
+
+Regression results:
+
+- All 27 selected samples reached `host.ready` and `navigation.finish`.
+- New `properties.deferred-side-effect` behavior triggered only in `2997985023` and only once.
+- No selected sample logged `properties.error` or `general-properties.error`.
+- No selected sample logged `window.error` or `promise.rejection`.
+- No selected sample had new `severity=error` diagnostics.
+- Existing warning/resource diagnostics remained limited to known missing/optional resources in some samples.
+- `884307090` still used remote host proxy successfully (`network.proxy=2`, `xhr.proxy=2`), confirming the separate remote network bridge path still works.
+- `3700131876` and `3700928191` still reported `properties.applied.partial` with 6 skipped properties each; this is the pre-existing raindrop property mapping problem and remains the next independent fix.
+- `3702378813` still reported one skipped property; this was not caused by the new async side-effect replay path because `properties.deferred-side-effect=0` for that sample.
+
+Fix 4 status: verified for 2997985023 and related property-listener/async sample set.
+
+Next issue:
+
+- Continue with `3700131876` / `3700928191` raindrop shader property mapping regression. Current evidence points to min/max property key mapping such as `spawnintervalmin/max` being applied to the wrong option path.
