@@ -155,6 +155,9 @@ let webCompatibilityScriptInteractionAndRuntimeLogging = #"""
   const canProxyNetworkRequest = (method, url) => {
     try {
       const normalizedURL = new URL(String(url || ''), document.location.href);
+      const documentURL = new URL(document.location.href);
+      if (normalizedURL.origin === documentURL.origin) return false;
+      if (normalizedURL.hostname === '127.0.0.1' || normalizedURL.hostname === 'localhost') return false;
       return ['http:', 'https:'].includes(normalizedURL.protocol) &&
         ['GET', 'HEAD'].includes(String(method || 'GET').toUpperCase());
     } catch (_) {
@@ -215,7 +218,7 @@ let webCompatibilityScriptInteractionAndRuntimeLogging = #"""
             hostLogger.post('fetch.ignored', `${method} ${localPath} optional`);
             throw error;
           }
-          if ((url.protocol === 'http:' || url.protocol === 'https:') && (method === 'GET' || method === 'HEAD')) {
+          if (canProxyNetworkRequest(method, url.href)) {
             return hostNetworkRequest(url.href, method, {}).then(payload => {
               hostLogger.post('fetch.proxy', `${method} ${url.href} status=${payload.status}`);
               return new Response(method === 'HEAD' ? null : (payload.body || ''), {
@@ -297,7 +300,7 @@ let webCompatibilityScriptInteractionAndRuntimeLogging = #"""
     try {
       const url = new URL(String(rawURL || ''), document.location.href);
       proxyURL = url.href;
-      shouldProxy = ['http:', 'https:'].includes(url.protocol) && ['GET', 'HEAD'].includes(method);
+      shouldProxy = canProxyNetworkRequest(method, url.href);
     } catch (_) {}
     if (shouldProxy && networkRequestHandler && typeof networkRequestHandler.postMessage === 'function') {
       xhr.__mwx_proxied = true;
