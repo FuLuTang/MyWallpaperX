@@ -293,6 +293,9 @@ final class WebWallpaperLocalSchemeHandler: NSObject, WKURLSchemeHandler {
         if Self.isPlaceholderMediaPath(normalizedPath, fileName: fileName) {
             return ("local-resource.placeholder", "placeholder_media_source")
         }
+        if fileName == "performance.layout.user.js" {
+            return ("local-resource.optional-user-layout", "optional_performance_layout_user")
+        }
         guard Self.isAudioPath(normalizedPath) else {
             return nil
         }

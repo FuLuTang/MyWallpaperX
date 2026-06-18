@@ -110,6 +110,12 @@ let webCompatibilityScriptInteractionAndRuntimeLogging = #"""
             headers: { 'Content-Type': 'application/json' }
           });
         }
+        if (path === '/performance') {
+          return new Response(JSON.stringify({ hwinfo: [], psutil: {} }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' }
+          });
+        }
         if (path === '/notes' || path === '/shortcuts') {
           return new Response(JSON.stringify([]), {
             status: 200,
