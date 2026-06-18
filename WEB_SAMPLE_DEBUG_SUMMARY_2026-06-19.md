@@ -616,3 +616,88 @@ Next diagnostic candidates after Fix 2:
 
 - Re-evaluate remote `xhr.error` / `fetch.error` groups as possible CORS / ATS / Chromium-vs-WKWebView compatibility gaps before classifying them as purely external service failures.
 - Keep missing image/CSS resources as diagnostics, but consider whether some are optional decorative fallbacks that should be `info` instead of `warning` only when the sample logic clearly treats them as optional or has a working fallback.
+
+## Fix 3 - Remote GET/HEAD Network Compatibility Proxy
+
+Root-cause analysis:
+
+- Several official WE web samples issue remote XHR/fetch calls from a local wallpaper origin.
+- In MyWallpaperX's WKWebView runtime these requests failed with `status=0` / `Load failed`, even when the same URL was reachable from the host process.
+- This is a host compatibility gap compared with Wallpaper Engine's Chromium-based runtime, which is more permissive for web wallpaper network access.
+- Affected observed groups:
+  - `1835932397`, `1849772671`, `884307090`: weather calls to `http://i.tianqi.com/index.php?c=code&id=11` and/or openspeech weather API.
+  - `3700632372`, `3702454590`: dependency-backed shells using `884307090` weather logic.
+  - `3697499196`: fetches Google Storage text assets; native host request reaches the server and gets real HTTP `401`, while WKWebView reported generic `Load failed`.
+
+Changed files:
+
+- `MyWallpaperX/Info.plist`
+- `MyWallpaperX/Core/SteamWorkshopWeb/Host/DedicatedWebWallpaperHostCompatibilityScript+InteractionAndRuntimeLogging.swift`
+- `MyWallpaperX/Core/SteamWorkshopWeb/Host/DedicatedWebWallpaperHostPlaceholderAdapter+Surface.swift`
+- `MyWallpaperX/Core/SteamWorkshopWeb/Host/DedicatedWebWallpaperHostPlaceholderAdapter+Lifecycle.swift`
+- `MyWallpaperX/Core/SteamWorkshopWeb/Host/DedicatedWebWallpaperHostPlaceholderAdapter+RuntimeBridge.swift`
+
+Implementation:
+
+- Added a restricted host network bridge message handler: `wallpaperHostNetworkRequest`.
+- Added JS-side remote network fallback:
+  - `fetch`: still tries native `fetch` first; if it fails for remote `http/https` `GET`/`HEAD`, it falls back to the host bridge and returns a synthetic `Response`.
+  - `XMLHttpRequest`: for remote `http/https` `GET`/`HEAD`, goes directly through the host bridge and synthesizes XHR `readyState`, `status`, `responseText`, `response`, and response header methods. This avoids calling the page's error handler before a proxy success arrives.
+- Swift-side bridge restrictions:
+  - Allows only `http` / `https` URLs.
+  - Allows only `GET` / `HEAD`.
+  - Does not forward request bodies.
+  - Forwards only a small safe header allowlist: `Accept`, `Accept-Language`, `Content-Type`.
+  - Uses a 10-second timeout and a 2 MiB response body limit.
+  - Logs `network.proxy` / `network.proxy.error` diagnostics so replay remains auditable.
+- Added ATS configuration for broader WE-style web wallpaper network access:
+  - `NSAllowsArbitraryLoads=true`
+  - `i.tianqi.com` HTTP exception for the legacy weather endpoint.
+
+Validation:
+
+- Build passed with no warnings:
+
+```sh
+/usr/bin/xcodebuild -project MyWallpaperX.xcodeproj -scheme MyWallpaperX -configuration Debug -derivedDataPath .codex/DerivedData build
+```
+
+- Final targeted log directory:
+
+```text
+/tmp/mwx-target-network-proxy-direct-xhr-20260619-055836
+```
+
+Validated samples and results:
+
+- `884307090`:
+  - `network.proxy`: 2
+  - `xhr.proxy`: 2
+  - `severity=error`: 0
+  - `severity=warning`: 0
+  - Weather requests returned HTTP 200 through host proxy.
+- `1835932397`:
+  - `network.proxy`: 2
+  - `xhr.proxy`: 2
+  - `severity=error`: 0
+  - `severity=warning`: 0
+  - Weather requests returned HTTP 200 through host proxy.
+- `3700632372`:
+  - `network.proxy`: 1
+  - `xhr.proxy`: 1
+  - `severity=error`: 0
+  - `severity=warning`: 0
+  - Openspeech weather request returned HTTP 200 through host proxy.
+- `3697499196`:
+  - `network.proxy`: 8
+  - `fetch.proxy`: 8
+  - `severity=error`: 0
+  - `severity=warning`: 0
+  - Google Storage now returns real HTTP 401 responses through host proxy instead of WKWebView `Load failed`; this is now correctly diagnosable as a remote authorization/status issue, not a host network failure.
+
+Fix 3 status: verified.
+
+Remaining known diagnostics after Fix 3:
+
+- Missing local sample resources such as `background.png`, `image/logo_nikke.png`, `bg_full.png`, `Placeholder.png`, and `img/faces/face-5.jpg` still need classification review.
+- Do not edit official sample files; if these are optional/decorative or have working fallback assets, prefer improving host diagnostic severity/classification instead of hiding or patching the sample.

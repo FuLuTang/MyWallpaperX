@@ -9,6 +9,8 @@ import WebKit
 import CoreGraphics
 
 extension DedicatedWebWallpaperHostPlaceholderAdapter {
+    private static let networkBridgeMaxBodyBytes = 2 * 1024 * 1024
+
     var currentGeneralProperties: [String: [String: Any]] {
         currentGeneralProperties(for: nil, screenID: nil)
     }
@@ -272,6 +274,137 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
         let levelLiterals = levels.map { String(format: "%.6f", $0) }.joined(separator: ",")
         webView.evaluateJavaScript(
             "window.__myWallpaperPushAudioSpectrum([\(levelLiterals)]);",
+            completionHandler: nil
+        )
+    }
+
+    func handleNetworkRequestMessage(_ body: [String: Any], webView: WKWebView) {
+        guard let requestID = body["requestID"] as? String,
+              let rawURLString = body["url"] as? String,
+              let url = URL(string: rawURLString),
+              let scheme = url.scheme?.lowercased(),
+              ["http", "https"].contains(scheme) else {
+            resolveNetworkRequest(
+                requestID: body["requestID"] as? String ?? "",
+                payload: ["ok": false, "error": "invalid_url"],
+                webView: webView
+            )
+            return
+        }
+
+        let method = ((body["method"] as? String) ?? "GET").uppercased()
+        guard method == "GET" || method == "HEAD" else {
+            resolveNetworkRequest(
+                requestID: requestID,
+                payload: ["ok": false, "error": "unsupported_method"],
+                webView: webView
+            )
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+        request.timeoutInterval = 10
+        request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        if let headers = body["headers"] as? [String: String] {
+            for (name, value) in headers {
+                let loweredName = name.lowercased()
+                guard ["accept", "accept-language", "content-type"].contains(loweredName) else {
+                    continue
+                }
+                request.setValue(value, forHTTPHeaderField: name)
+            }
+        }
+        if request.value(forHTTPHeaderField: "User-Agent") == nil {
+            request.setValue(
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) MyWallpaperX",
+                forHTTPHeaderField: "User-Agent"
+            )
+        }
+
+        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+            guard let adapter = self else { return }
+            Task { @MainActor in
+                if let error {
+                    adapter.resolveNetworkRequest(
+                        requestID: requestID,
+                        payload: ["ok": false, "error": error.localizedDescription],
+                        webView: webView
+                    )
+                    adapter.recordDiagnostic(
+                        type: "network.proxy.error",
+                        severity: .warning,
+                        message: "\(method) \(rawURLString) \(error.localizedDescription)",
+                        screenID: adapter.screenID(for: webView),
+                        url: webView.url?.absoluteString
+                    )
+                    return
+                }
+
+                guard let httpResponse = response as? HTTPURLResponse else {
+                    adapter.resolveNetworkRequest(
+                        requestID: requestID,
+                        payload: ["ok": false, "error": "invalid_response"],
+                        webView: webView
+                    )
+                    return
+                }
+
+                let bodyData = data ?? Data()
+                guard bodyData.count <= Self.networkBridgeMaxBodyBytes else {
+                    adapter.resolveNetworkRequest(
+                        requestID: requestID,
+                        payload: ["ok": false, "error": "response_too_large"],
+                        webView: webView
+                    )
+                    adapter.recordDiagnostic(
+                        type: "network.proxy.too-large",
+                        severity: .warning,
+                        message: "\(method) \(rawURLString) bytes=\(bodyData.count)",
+                        screenID: adapter.screenID(for: webView),
+                        url: webView.url?.absoluteString
+                    )
+                    return
+                }
+
+                var headerFields: [String: String] = [:]
+                for (key, value) in httpResponse.allHeaderFields {
+                    guard let key = key as? String else { continue }
+                    headerFields[key] = String(describing: value)
+                }
+                let textBody = String(data: bodyData, encoding: .utf8) ?? bodyData.base64EncodedString()
+                adapter.resolveNetworkRequest(
+                    requestID: requestID,
+                    payload: [
+                        "ok": true,
+                        "status": httpResponse.statusCode,
+                        "headers": headerFields,
+                        "body": textBody
+                    ],
+                    webView: webView
+                )
+                adapter.recordDiagnostic(
+                    type: "network.proxy",
+                    severity: .info,
+                    message: "\(method) \(rawURLString) status=\(httpResponse.statusCode) bytes=\(bodyData.count)",
+                    screenID: adapter.screenID(for: webView),
+                    url: webView.url?.absoluteString
+                )
+            }
+        }.resume()
+    }
+
+    private func resolveNetworkRequest(requestID: String, payload: [String: Any], webView: WKWebView) {
+        guard requestID.isEmpty == false else { return }
+        var responsePayload = payload
+        responsePayload["requestID"] = requestID
+        guard JSONSerialization.isValidJSONObject(responsePayload),
+              let data = try? JSONSerialization.data(withJSONObject: responsePayload),
+              let json = String(data: data, encoding: .utf8) else {
+            return
+        }
+        webView.evaluateJavaScript(
+            "window.__myWallpaperResolveNetworkRequest(\(json));",
             completionHandler: nil
         )
     }

@@ -202,6 +202,12 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
                 "window.__myWallpaperResolveRandomFile(\(escapedRequestID), \(escapedPath));",
                 completionHandler: nil
             )
+        case "wallpaperHostNetworkRequest":
+            guard let body = message.body as? [String: Any],
+                  let webView = self.webView(for: userContentController) else {
+                return
+            }
+            handleNetworkRequestMessage(body, webView: webView)
         default:
             return
         }
