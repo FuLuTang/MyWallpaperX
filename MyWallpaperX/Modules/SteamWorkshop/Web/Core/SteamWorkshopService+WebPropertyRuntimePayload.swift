@@ -245,14 +245,8 @@ extension SteamWorkshopService {
 
     private static func webRuntimeJSONValue(
         from value: SteamWorkshopWebPropertyValue,
-        forKind kind: SteamWorkshopWebPropertyKind?
+        forKind _: SteamWorkshopWebPropertyKind?
     ) -> Any {
-        if kind == .color,
-           case let .string(rawColor) = value,
-           let color = parseWebColorComponents(from: rawColor) {
-            return [color.red, color.green, color.blue]
-        }
-
         switch value {
         case let .string(string):
             return string

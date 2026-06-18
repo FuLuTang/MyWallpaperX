@@ -807,3 +807,230 @@ Fix 4 status: verified for 2997985023 and related property-listener/async sample
 Next issue:
 
 - Continue with `3700131876` / `3700928191` raindrop shader property mapping regression. Current evidence points to min/max property key mapping such as `spawnintervalmin/max` being applied to the wrong option path.
+
+## Continuation - 2026-06-19 Rain regression comparison
+
+User asked to compare pushed `origin/feature/scene` with the local unpushed commits because the raindrop/glass effect used to work and regressed in recent local work.
+
+Confirmed comparison result:
+
+- Local branch `feature/scene` is ahead of `origin/feature/scene` by 20 commits.
+- The visual regression is tied to commit `84099c0 Defer web property replay until runtime is ready`.
+- `4cc9ea1 Fix web color property payload compatibility` changed the first failing branch for `3700131876`/`3700928191` from `mistcolor` to `motionIntervalMax`, but it still preserved the official one-shot `applyUserProperties` interruption behavior.
+- `84099c0` introduced fallback that runs each property separately after the full callback fails. That changes JavaScript execution semantics: branches after the first script error continue running and can mutate `raindropFx.options` values such as `spawnSize`, producing abnormal rain visuals.
+
+Fix plan for this issue:
+
+1. Keep the retry/defer behavior for likely initialization timing errors.
+2. Keep the async side-effect guard used by `2997985023`.
+3. For non-initialization script errors, preserve official Wallpaper Engine callback semantics:
+   - keep side effects that already happened before the throw;
+   - record `properties.error` once;
+   - mark this property signature handled to avoid repeated replay;
+   - do not run per-property fallback.
+4. Validate `3700131876` and `3700928191` no longer produce `properties.applied.partial` or `properties.skipped` and instead stop at the `motionIntervalMax` diagnostic.
+5. Re-run `2997985023` and at least one prior property-listener regression sample to confirm the initialization/async paths still work.
+
+Implementation in progress:
+
+- Changed `MyWallpaperX/Core/SteamWorkshopWeb/Host/DedicatedWebWallpaperHostCompatibilityScript+HostBridge.swift` so non-initialization `applyUserProperties` failures no longer enter `myWallpaperApplyPropertiesIndividually`.
+- Build and targeted validation still pending at the time of this note.
+
+### Rain visual follow-up after first fix
+
+After disabling per-property fallback for non-initialization errors, `3700131876` rendered raindrops again, but user reported the visual was still worse than pushed `origin/feature/scene`: glass fog was too heavy and old drops appeared not to disappear while new drops kept accumulating.
+
+Additional root-cause analysis:
+
+- The first fix restored the execution behavior from commit `4cc9ea1`, but the pushed baseline predates `4cc9ea1`.
+- Commit `4cc9ea1` changed color property runtime payloads from normalized strings to `[r, g, b]` arrays.
+- Most official WE-style Web samples in this local library read colors with `value.split(" ")`, which indicates the official runtime payload is string-like.
+- The rain samples `3700131876` and `3700928191` have a script bug in `mistcolor`: `var f = i.mistcolor.value; f.push(1)`. With official string-like color payload this throws at `f.push`, matching pushed-baseline logs and stopping before mist/motion branches. With array color payload it succeeds and the sample applies extra mist/motion options, causing the heavier fog/lifecycle visual regression.
+
+Second fix in progress:
+
+- Keep parsing/normalization support in the app, but restore runtime JSON color values to string form when sending properties to the Web wallpaper JS.
+- This is a general WE compatibility correction, not a per-sample workaround.
+- Expected rain diagnostics after rebuild:
+  - `3700131876`/`3700928191` should report `f.push is not a function` again.
+  - No `properties.applied.partial` / `properties.skipped` should appear.
+  - Visual should be closer to pushed baseline because `misttime`, `motioninterval*`, `spawn*` branches are not reached.
+
+Cache effectiveness check:
+
+- First validation after restoring string color payload still reported `motionIntervalMax`, which meant the new payload code had not taken effect.
+- Root cause: `.mywallpaperx-web-runtime.json` cache stores `propertyPayloadJSON`, and its version was unchanged.
+- Updated `SteamWorkshopWebRuntimeCacheManifest.currentVersion` from 12 to 13 so runtime property payloads are regenerated after the color payload semantic change.
+
+Additional retry-classification finding:
+
+- After cache version 13, rain samples received string color payloads, but no `properties.error` appeared in the 10s run.
+- Explanation: WebKit reports the string `.push` failure as a message containing `.push` / `is undefined`, and the broad initialization-error classifier treated it as a timing error and kept retrying instead of preserving official one-shot failure semantics.
+- Updated `myWallpaperIsPropertyInitializationError` to classify `.push` / `push is not a function` as non-initialization script errors.
+
+Representative validation after `.push` classification fix:
+
+Log directory:
+
+```text
+/tmp/mwx-target-raindrop-push-classification-20260619-071809
+```
+
+Validation scope was intentionally narrowed after user feedback:
+
+- `3700131876`: primary rain/glass sample.
+- `3700928191`: closely related rain sample.
+- `2997985023`: Live2D async side-effect regression guard.
+- `3530909637`, `3566247256`, `884307090`, `923576681`: representative color/string-split samples and missing-resource baseline samples.
+- `3702378813`: representative non-initialization script error sample.
+
+Results:
+
+- Build succeeded.
+- `3700131876`: `properties.error=1`, message `f.push is not a function. (In 'f.push(1)', 'f.push' is undefined)`; `properties.applied.partial=0`; `properties.skipped=0`; `host.ready=1`; `navigation.finish=1`.
+- `3700928191`: same `f.push` diagnostic; no partial/skipped.
+- `2997985023`: `properties.deferred-side-effect=1`, no `window.error` or `promise.rejection`; the previously fixed overlapping model path remains guarded. One transient `audio.suspend.error: AudioDestinationNode is not initialized` appeared in this run and should be tracked separately only if reproducible.
+- Representative color split samples `3530909637`, `884307090`, `923576681`: no `properties.error`, no partial/skipped, no window/promise errors.
+- `3566247256`: only known missing `background.png` warnings.
+- `3702378813`: still reports expected non-initialization `audio.volume` property error with no partial/skipped.
+
+Current interpretation:
+
+- The runtime now matches pushed-baseline error semantics for the rain samples again: color payload is string-like, `.push` is treated as a sample script error, and the host does not continue applying later branches after that error.
+- If the visual is still not acceptable, the next step should be a single-sample visual comparison for `3700131876` against `origin/feature/scene`, not another broad sample run.
+
+User feedback after representative validation:
+
+- User still feels `3700131876` is too blurry compared with memory of the previous visual, and asked whether this may be the sample's correct default and whether transparency/clarity can be adjusted in the detail panel.
+- Checked `project.json`: there is no direct `opacity` property, but the detail-panel Web properties expose multiple controls that can reduce fog/blur/density:
+  - `mist` / `雾化开启` (bool, default project value false)
+  - `backgroundblursteps` / `背景模糊` (slider, min 1, max 10, default 1)
+  - `mistblurstep` / `雾化模糊步骤` (slider, min 1, max 10, default 4)
+  - `misttime` / `雾化时间` (slider, 1-100, default 10)
+  - `dropletsperseconds` / `每秒雨滴数` (slider, 1-1000, default 500)
+  - `evaporate` / `逐渐消失` (slider, 1-10000, default 10)
+  - `refractbase` / `折射线`, `refractscale` / `折射率`
+  - rain/droplet size and lighting sliders.
+- Important behavior note: changing a single safe property from the detail panel sends a delta property bag and can apply independently. Recommended representative adjustments for clarity should be tested manually on `3700131876` only, not by broad sample runs.
+
+## Follow-up - 3700131876 detail-panel slider has no visible effect
+
+User reported the blur slider in the detail panel has no effect, so the previous assumption that the heavy blur might simply be the correct default is likely wrong.
+
+Root-cause hypothesis confirmed from code:
+
+- Detail panel preview/update methods create a delta payload for the single changed property.
+- `WallpaperEngine.updateCurrentWebWallpaperProperties` then merged that delta into `currentWebPropertiesJSON` and dispatched the merged full property bag to the running Web page.
+- For `3700131876`, full-bag execution hits the sample's `mistcolor` script error before reaching the final `resizeCanvas(); raindropFx.resize(...)` refresh call.
+- Therefore sliders such as `backgroundblursteps` can mutate `raindropFx.options.backgroundBlurSteps` but never trigger the sample's final resize/blur refresh path, making the blur appear fixed.
+
+Fix in progress:
+
+- Keep `currentWebPropertiesJSON` as merged state for future launches/persistence.
+- Dispatch only the delta payload to the live Web runtime during a detail-panel property update.
+- Initial wallpaper launch still uses the full property payload.
+- This is a general Wallpaper Engine compatibility improvement: runtime property changes are incremental and should not replay unrelated broken sample branches.
+
+Representative validation after delta-dispatch fix:
+
+Log directory:
+
+```text
+/tmp/mwx-target-delta-property-update-20260619-073122
+```
+
+Scope was intentionally small per user request:
+
+- `3700131876`: primary rain sample and startup property error baseline.
+- `2997985023`: Live2D async side-effect regression guard.
+
+Results:
+
+- Build succeeded.
+- `3700131876`: startup still matches pushed-baseline semantics: one `properties.error` at `f.push is not a function`, no `properties.applied.partial`, no `properties.skipped`, no window/promise errors, `host.ready=1`, `navigation.finish=1`.
+- `2997985023`: one `properties.deferred-side-effect`, no window/promise errors, no partial/skipped, `host.ready=1`, `navigation.finish=1`.
+
+Remaining validation needed:
+
+- User should test the actual detail-panel blur slider in the app. The code path now dispatches only the single-property delta to the running Web page, so changing `backgroundblursteps` should avoid replaying unrelated `mistcolor` and should allow the sample's final resize/blur refresh path to run for that delta.
+- If the slider still appears fixed, next step is single-sample interactive debugging for `3700131876` only.
+
+## Follow-up - startup default value not refreshed / setting appears non-persistent
+
+User confirmed the blur slider works after the delta-dispatch fix, but found two remaining issues:
+
+1. The sample's panel shows default blur value `1`, but startup visual looks like a heavier stale/default blur until the slider is touched.
+2. After switching away and back, the visual returns to the stale/heavy state and the user must touch the slider again.
+
+Root-cause hypothesis:
+
+- Initial launch intentionally sends the full property bag to match WE startup behavior.
+- `3700131876` applies several early options, then throws at `mistcolor` (`f.push is not a function`) before reaching the script's final `resizeCanvas(); raindropFx.resize(...)` call.
+- The early option mutation (for example `backgroundBlurSteps = 1`) can therefore fail to rebuild the blur textures, so the visual remains at the constructor/default rendering until a later delta slider change reaches the final resize path.
+- Persisting a value equal to the baseline does not create an override, so re-launch still depends on initial full-bag application and hits the same stale refresh problem.
+
+Implementation in progress:
+
+- For non-initialization script errors after a full property callback, preserve official one-shot semantics (do not continue applying later properties), but schedule a resize event after settled frames.
+- This gives samples that refresh rendering on resize a chance to rebuild textures from the prefix side effects already applied before the error.
+- The diagnostic `properties.resize-after-error` is logged when this compensation fires.
+
+Representative validation after resize-compensation diagnostic rename:
+
+Log directory:
+
+```text
+/tmp/mwx-target-resize-after-script-failure-20260619-074410
+```
+
+Scope:
+
+- `3700131876` only for rain startup script-error/refresh behavior.
+- `2997985023` only for Live2D async side-effect regression guard.
+
+Results:
+
+- Build succeeded.
+- `3700131876`: `properties.error=1` with the expected `f.push is not a function` sample script error; `properties.resize-after-script-failure=1` at info severity; no partial/skipped/window/promise errors; `host.ready=1`; `navigation.finish=1`.
+- `2997985023`: `properties.deferred-side-effect=1`; no properties error, partial/skipped, window/promise errors; `host.ready=1`; `navigation.finish=1`.
+
+Conclusion:
+
+- Runtime property updates are now delta-dispatched, so detail-panel sliders can affect samples whose full property bag contains unrelated script errors.
+- Startup full-bag script errors now trigger a resize compensation event, so prefix-applied options can refresh renderer state without continuing past the sample error.
+- User should verify visually that switching away and back to `3700131876` now starts with the same blur state as after touching the blur slider.
+
+## Stop Point - 2026-06-19 07:50 Asia/Shanghai
+
+User requested to stop fixing and hand off current state.
+
+Current confirmed status:
+
+- `3700131876` startup now loads with the expected default low blur / value `1` visual after the resize-after-script-failure compensation.
+- Detail-panel blur slider is now effective while the wallpaper is running, after live property updates were changed to dispatch delta payloads instead of replaying the merged full property bag.
+- `2997985023` Live2D overlapping regression remains fixed in representative validation.
+
+Remaining issue, not fixed yet:
+
+- Slider value persistence / restoration is still broken.
+- Repro reported by user:
+  1. Open `3700131876`.
+  2. Move blur slider to another档位.
+  3. Switch to another wallpaper.
+  4. Switch back to `3700131876`.
+  5. The last selected档位 is not restored.
+- User also confirmed `3700928191` has the same persistence/restoration issue.
+- Do not assume this is rain-specific; likely affects Web property override persistence, runtime cache invalidation, or playback context regeneration for multiple samples.
+
+Recommended next investigation:
+
+1. Start from `SteamWorkshopItemDetailSheet.updateWebProperty` and `SteamWorkshopService.updateWebPropertyValue`.
+2. Verify where overrides are written and whether setting a non-baseline value is persisted to disk.
+3. Check whether switching wallpapers rebuilds `propertyPayloadJSON` from `effectiveWebPropertyValues` or reuses stale `.mywallpaperx-web-runtime.json` cache.
+4. Inspect the runtime cache invalidation signature (`overridesSignature`) and whether it changes after a property override save.
+5. Use only representative samples unless broader scope is justified:
+   - `3700131876` primary repro.
+   - `3700928191` related repro confirmation.
+   - `2997985023` regression guard for async property side effects.
+
+Do not modify official sample files under `/Users/songziqiang/Movies/MyWallpaperX/创意工坊/Web`.
