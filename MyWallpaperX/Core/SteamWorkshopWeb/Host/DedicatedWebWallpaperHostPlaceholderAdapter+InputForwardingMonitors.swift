@@ -8,6 +8,7 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
 
     func startGlobalMouseForwarding() {
         stopGlobalMouseForwarding()
+        activeInputForwardingStartedAt = ProcessInfo.processInfo.systemUptime
         localMouseMonitor = NSEvent.addLocalMonitorForEvents(
             matching: [.mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged, .leftMouseDown, .leftMouseUp, .rightMouseDown, .rightMouseUp, .otherMouseDown, .otherMouseUp, .scrollWheel]
         ) { [weak self] event in
@@ -38,6 +39,7 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
         lastPolledMouseLocation = nil
         lastHoveredScreenID = nil
         lastPointerMoveForwardedAt = 0
+        activeInputForwardingStartedAt = nil
     }
 
     func startPointerLocationPolling() {
