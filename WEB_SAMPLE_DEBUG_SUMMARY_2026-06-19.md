@@ -1034,3 +1034,76 @@ Recommended next investigation:
    - `2997985023` regression guard for async property side effects.
 
 Do not modify official sample files under `/Users/songziqiang/Movies/MyWallpaperX/创意工坊/Web`.
+
+## Follow-up - 2026-06-21 Slider drag commit persistence
+
+Resumed from:
+
+```text
+/Users/songziqiang/Documents/Development/MyWallpaperX/WEB_SAMPLE_HANDOFF_2026-06-19.md
+```
+
+Remaining user-visible problem:
+
+- Dragging a Web property slider changed the running wallpaper visually, but after switching away and back the selected档位 was not restored.
+- Confirmed repro samples from user:
+  - `3700131876`
+  - `3700928191`
+
+Root-cause hypothesis from code:
+
+- `NSSlider` was configured as continuous.
+- While dragging, `sliderChanged(_:)` sent preview updates only.
+- It committed the value only when an action arrived with `sender.isHighlighted == false`.
+- AppKit does not reliably send a final action after the highlight state has already cleared, so a drag could update the live wallpaper but never call `updateWebPropertyValue`.
+- Result: no override was saved to `UserDefaults`, no runtime cache invalidation happened, and switching wallpapers relaunched with baseline values.
+
+Changed file:
+
+- `MyWallpaperX/Modules/SteamWorkshop/UI/SteamWorkshopItemDetailSheet.swift`
+
+Implementation:
+
+- Keep drag-time slider updates as preview-only, so the detail panel does not rebuild on every tick.
+- Use a small `WebPropertySlider` subclass that records mouse tracking during `mouseDown`.
+- While `mouseDown` tracking is active, `sliderChanged(_:)` only previews the normalized value.
+- After AppKit finishes the slider tracking loop, `WebPropertySlider` commits the final normalized value once through the existing `updateWebPropertyValue` path.
+- Non-drag changes still commit immediately.
+- This avoids relying on a process-wide local `.leftMouseUp` monitor and keeps the commit tied to the slider control that initiated the drag.
+
+Validation:
+
+- Build succeeded outside the Codex sandbox:
+
+```sh
+/usr/bin/xcodebuild -project MyWallpaperX.xcodeproj -scheme MyWallpaperX -configuration Debug -derivedDataPath .codex/DerivedData build
+```
+
+- Runtime smoke / regression logs:
+
+```text
+/tmp/mwx-target-slider-tracking-20260621-041904
+```
+
+Results:
+
+- `3700131876`:
+  - `host.ready=1`
+  - `navigation.finish=1`
+  - expected `properties.error=1` with `f.push is not a function`
+  - `properties.resize-after-script-failure=1`
+  - no partial/skipped diagnostics in the checked output
+- `3700928191`:
+  - same expected `f.push` / resize-compensation behavior
+  - no partial/skipped diagnostics in the checked output
+- `2997985023`:
+  - `host.ready=1`
+  - `navigation.finish=1`
+  - expected `properties.deferred-side-effect=1`
+  - no window/promise error in the checked output
+
+Residual validation note:
+
+- Code review confirms the commit path writes overrides to `UserDefaults`, invalidates the in-memory Web runtime cache, and changes the runtime cache manifest `overridesSignature` used when switching back.
+- The runtime smoke verifies no regression in the affected samples.
+- The exact user repro still needs one manual UI check: drag `backgroundblursteps`, switch away, switch back, and confirm the slider value and visual are restored.

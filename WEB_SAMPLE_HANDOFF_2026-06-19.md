@@ -143,7 +143,46 @@ User manually confirmed after these fixes:
 - `3700131876` startup now loads with default blur/透明度 value `1` correctly.
 - The blur slider is effective while the wallpaper is running.
 
-## Current remaining issue, not fixed
+## Latest follow-up - 2026-06-21 slider drag commit persistence
+
+Current workspace change:
+
+- `MyWallpaperX/Modules/SteamWorkshop/UI/SteamWorkshopItemDetailSheet.swift`
+- Web property sliders now use a small `WebPropertySlider` subclass to detect AppKit mouse tracking.
+- Drag-time updates remain preview-only, so the detail panel avoids rebuilding on every slider tick.
+- When AppKit finishes the slider `mouseDown` tracking loop, the final normalized value is committed once through `updateWebPropertyValue`.
+- This targets the reported behavior where the running wallpaper changed visually but no persisted override was saved after dragging.
+
+Validation run:
+
+- Build succeeded outside the Codex sandbox:
+
+```sh
+/usr/bin/xcodebuild -project MyWallpaperX.xcodeproj -scheme MyWallpaperX -configuration Debug -derivedDataPath .codex/DerivedData build
+```
+
+- Runtime smoke / regression logs:
+
+```text
+/tmp/mwx-target-slider-tracking-20260621-041904
+```
+
+Results:
+
+- `3700131876`: expected `f.push is not a function` and `properties.resize-after-script-failure`; host/navigation ready; no partial/skipped in checked output.
+- `3700928191`: same expected rain-sample behavior.
+- `2997985023`: expected `properties.deferred-side-effect`; host/navigation ready.
+
+Manual verification still needed:
+
+1. Open `3700131876`.
+2. Drag `backgroundblursteps` / `背景模糊` to a non-default value.
+3. Switch to another wallpaper.
+4. Switch back to `3700131876`.
+5. Confirm the slider档位 and visual restore.
+6. Repeat once for `3700928191` if the first check passes.
+
+## Previous remaining issue
 
 User asked to stop before fixing this.
 

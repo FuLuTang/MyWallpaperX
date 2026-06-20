@@ -755,14 +755,17 @@ final class AppKitSteamWorkshopItemDetailView: NSView {
         switch definition.kind {
         case .slider:
             let target = WebPropertyActionTarget(view: self, record: record, definition: definition, summaryLabel: summaryLabel)
-            let slider = NSSlider(value: value.numberValue ?? definition.defaultValue.numberValue ?? definition.minimumValue ?? 0,
-                                  minValue: definition.minimumValue ?? 0,
-                                  maxValue: definition.maximumValue ?? max((definition.minimumValue ?? 0) + 1, value.numberValue ?? 1),
-                                  target: target,
-                                  action: #selector(WebPropertyActionTarget.sliderChanged(_:)))
+            let slider = WebPropertySlider(value: value.numberValue ?? definition.defaultValue.numberValue ?? definition.minimumValue ?? 0,
+                                           minValue: definition.minimumValue ?? 0,
+                                           maxValue: definition.maximumValue ?? max((definition.minimumValue ?? 0) + 1, value.numberValue ?? 1),
+                                           target: target,
+                                           action: #selector(WebPropertyActionTarget.sliderChanged(_:)))
             slider.isContinuous = true
             slider.identifier = NSUserInterfaceItemIdentifier(definition.key)
             slider.translatesAutoresizingMaskIntoConstraints = false
+            slider.onTrackingEnded = { [weak target] slider in
+                target?.sliderTrackingEnded(slider)
+            }
             retainActionTarget(target, for: slider)
             return slider
         case .toggle:
@@ -1254,6 +1257,18 @@ final class AppKitSteamWorkshopItemDetailView: NSView {
         ]
     }
 
+    private final class WebPropertySlider: NSSlider {
+        var isTrackingMouse = false
+        var onTrackingEnded: ((NSSlider) -> Void)?
+
+        override func mouseDown(with event: NSEvent) {
+            isTrackingMouse = true
+            super.mouseDown(with: event)
+            isTrackingMouse = false
+            onTrackingEnded?(self)
+        }
+    }
+
     private final class WebPropertyActionTarget: NSObject, NSTextFieldDelegate {
         weak var view: AppKitSteamWorkshopItemDetailView?
         let record: SteamWorkshopDownloadRecord
@@ -1299,8 +1314,12 @@ final class AppKitSteamWorkshopItemDetailView: NSView {
             sender.doubleValue = normalized
             summaryLabel?.stringValue = view?.valueSummary(.number(normalized), definition: definition) ?? String(normalized)
             view?.updateWebProperty(.number(normalized), definition: definition, record: record, preview: true)
-            if !sender.isHighlighted {
-                view?.updateWebProperty(.number(normalized), definition: definition, record: record)
+            if let slider = sender as? WebPropertySlider {
+                if !slider.isTrackingMouse {
+                    commitSliderValue(sender)
+                }
+            } else if !sender.isHighlighted {
+                commitSliderValue(sender)
             }
         }
 
@@ -1357,6 +1376,17 @@ final class AppKitSteamWorkshopItemDetailView: NSView {
             ) { [weak self] _ in
                 self?.commitPendingColor()
             }
+        }
+
+        private func commitSliderValue(_ sender: NSSlider) {
+            let normalized = view?.normalizedSliderValue(sender.doubleValue, definition: definition) ?? sender.doubleValue
+            sender.doubleValue = normalized
+            summaryLabel?.stringValue = view?.valueSummary(.number(normalized), definition: definition) ?? String(normalized)
+            view?.updateWebProperty(.number(normalized), definition: definition, record: record)
+        }
+
+        func sliderTrackingEnded(_ sender: NSSlider) {
+            commitSliderValue(sender)
         }
 
         private func previewTextFieldValue(_ rawValue: String) {
