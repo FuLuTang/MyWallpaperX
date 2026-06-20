@@ -139,6 +139,8 @@ xcodebuild -project MyWallpaperX.xcodeproj -scheme MyWallpaperX -configuration D
 
 如果这个项目对你有帮助，欢迎 [Star on GitHub](https://github.com/songziqiang9512/MyWallpaperX)。
 
+反馈交流 QQ 群：569399751
+
 <p align="center">
   <img src="Screenshot/IMG_3047.JPG" width="260" alt="收款码">
   <img src="Screenshot/IMG_3048.JPG" width="260" alt="收款码">
