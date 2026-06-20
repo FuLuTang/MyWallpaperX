@@ -77,6 +77,10 @@ extension SteamWorkshopService {
             if message.contains("pixi") || message.contains("live2d") || message.contains("视频纹理") || message.contains("origin 安全") {
                 flags.insert(.customSchemeSensitiveWebGL)
             }
+            if message.contains("iframe")
+                && (message.contains("跨 frame") || message.contains("同源限制") || message.contains("loopback") || message.contains("contentdocument") || message.contains("contentwindow")) {
+                flags.insert(.iframeCrossFrameAccess)
+            }
         }
         return Array(flags)
     }

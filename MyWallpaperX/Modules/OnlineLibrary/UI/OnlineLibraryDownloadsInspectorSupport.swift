@@ -7,6 +7,51 @@ import AppKit
 import AVFoundation
 import QuartzCore
 
+nonisolated struct OnlineLibraryDownloadedAssetMetadata: Sendable {
+    let fileSize: Int
+    let durationSeconds: Int
+    let resolutionString: String?
+
+    static func load(from url: URL) async -> OnlineLibraryDownloadedAssetMetadata {
+        let fileSize = (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0
+        let asset = AVURLAsset(url: url)
+        return OnlineLibraryDownloadedAssetMetadata(
+            fileSize: fileSize,
+            durationSeconds: await durationSeconds(for: asset),
+            resolutionString: await resolutionString(for: asset)
+        )
+    }
+
+    static func formatDuration(_ seconds: Int) -> String {
+        let minutes = seconds / 60
+        let remain = seconds % 60
+        if minutes > 0, remain > 0 { return "\(minutes)m\(remain)s" }
+        if minutes > 0 { return "\(minutes)m" }
+        return "\(max(0, seconds))s"
+    }
+
+    private static func durationSeconds(for asset: AVAsset) async -> Int {
+        guard let duration = try? await asset.load(.duration) else { return 0 }
+        let seconds = duration.seconds
+        guard seconds.isFinite else { return 0 }
+        return max(0, Int(seconds.rounded()))
+    }
+
+    private static func resolutionString(for asset: AVAsset) async -> String? {
+        guard let tracks = try? await asset.loadTracks(withMediaType: .video),
+              let track = tracks.first,
+              let naturalSize = try? await track.load(.naturalSize),
+              let preferredTransform = try? await track.load(.preferredTransform) else {
+            return nil
+        }
+        let transformed = naturalSize.applying(preferredTransform)
+        let width = Int(abs(transformed.width).rounded())
+        let height = Int(abs(transformed.height).rounded())
+        guard width > 0, height > 0 else { return nil }
+        return "\(width)×\(height)"
+    }
+}
+
 struct OnlineLibraryDownloadsInspectorSnapshot {
     let id: Int
     let title: String
@@ -20,26 +65,13 @@ struct OnlineLibraryDownloadsInspectorSnapshot {
     let fileURL: URL
     let previewImage: NSImage?
 
-    static func load(itemID: Int) -> OnlineLibraryDownloadsInspectorSnapshot? {
+    static func load(itemID: Int) async -> OnlineLibraryDownloadsInspectorSnapshot? {
         let url = OnlineLibraryService.downloadDirectory.appendingPathComponent("online_\(itemID).mp4")
         guard FileManager.default.fileExists(atPath: url.path) else { return nil }
 
         let attributes = (try? FileManager.default.attributesOfItem(atPath: url.path)) ?? [:]
-        let fileSize = attributes[.size] as? Int64 ?? 0
         let creationDate = attributes[.creationDate] as? Date
-
-        let asset = AVURLAsset(url: url)
-        let durationSeconds = max(0, Int(asset.duration.seconds.rounded()))
-
-        var resolutionText = "未知"
-        if let track = asset.tracks(withMediaType: .video).first {
-            let transformed = track.naturalSize.applying(track.preferredTransform)
-            let width = Int(abs(transformed.width).rounded())
-            let height = Int(abs(transformed.height).rounded())
-            if width > 0, height > 0 {
-                resolutionText = "\(width)×\(height)"
-            }
-        }
+        let metadata = await OnlineLibraryDownloadedAssetMetadata.load(from: url)
 
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
@@ -49,9 +81,9 @@ struct OnlineLibraryDownloadsInspectorSnapshot {
             id: itemID,
             title: url.lastPathComponent,
             fileExtension: url.pathExtension.uppercased(),
-            fileSizeText: ByteCountFormatter.string(fromByteCount: fileSize, countStyle: .file),
-            durationText: durationSeconds > 0 ? AppKitOLDownloadsItem.formatDuration(durationSeconds) : "未知",
-            resolutionText: resolutionText,
+            fileSizeText: ByteCountFormatter.string(fromByteCount: Int64(metadata.fileSize), countStyle: .file),
+            durationText: metadata.durationSeconds > 0 ? OnlineLibraryDownloadedAssetMetadata.formatDuration(metadata.durationSeconds) : "未知",
+            resolutionText: metadata.resolutionString ?? "未知",
             creationDateText: creationDate.map(formatter.string(from:)) ?? "未知",
             platformText: "Pixabay",
             path: url.path,

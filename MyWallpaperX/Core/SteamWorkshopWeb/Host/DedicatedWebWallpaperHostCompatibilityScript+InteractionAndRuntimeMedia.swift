@@ -71,7 +71,11 @@ let webCompatibilityScriptInteractionAndRuntimeMedia = #"""
             hostLogger.post('media.play.skipped', `${this.tagName ? String(this.tagName).toLowerCase() : 'media'} src=${resolvedSource || 'none'}`);
             return Promise.resolve();
           }
-          return originalPlay.apply(this, args);
+          const playResult = originalPlay.apply(this, args);
+          if (typeof window.__myWallpaperWrapMediaPlayPromise === 'function') {
+            return window.__myWallpaperWrapMediaPlayPromise(playResult, this);
+          }
+          return playResult;
         };
       }
       const originalSetAttribute = mediaProto.setAttribute;
@@ -194,4 +198,3 @@ let webCompatibilityScriptInteractionAndRuntimeMedia = #"""
     defineVisibilityProperty(Document.prototype, 'webkitVisibilityState', () => 'visible')
   ];
 """#
-

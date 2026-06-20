@@ -270,17 +270,40 @@ private extension OLHit {
     }
 }
 
-enum OLThumbnailRequestPriority {
+nonisolated enum OLThumbnailRequestPriority: Sendable {
     case visible
     case prefetch
+
+    var timeoutInterval: TimeInterval {
+        switch self {
+        case .visible:
+            return 12
+        case .prefetch:
+            return 8
+        }
+    }
+
+    var networkServiceType: URLRequest.NetworkServiceType {
+        switch self {
+        case .visible:
+            return .responsiveData
+        case .prefetch:
+            return .background
+        }
+    }
 }
 
 actor OLThumbnailRequestCoordinator {
+    private struct InFlightRequest {
+        let id: UUID
+        let task: Task<Data?, Never>
+    }
+
     static let shared = OLThumbnailRequestCoordinator()
 
     private let session: URLSession
     private let scheduler = OLThumbnailRequestScheduler()
-    private var inFlight: [String: Task<Data?, Never>] = [:]
+    private var inFlight: [String: InFlightRequest] = [:]
 
     private init() {
         let configuration = URLSessionConfiguration.default
@@ -294,17 +317,17 @@ actor OLThumbnailRequestCoordinator {
 
     func loadData(from url: URL, priority: OLThumbnailRequestPriority) async -> Data? {
         let key = url.absoluteString
-        if let task = inFlight[key] {
-            return await task.value
+        if let request = inFlight[key] {
+            return await request.task.value
         }
 
+        let requestID = UUID()
         let task = Task<Data?, Never> { [session, scheduler] in
-            defer { Task { await self.removeInFlightTask(forKey: key) } }
             return await scheduler.run(priority: priority) {
                 do {
                     var request = URLRequest(url: url)
-                    request.timeoutInterval = priority == .visible ? 12 : 8
-                    request.networkServiceType = priority == .visible ? .responsiveData : .background
+                    request.timeoutInterval = priority.timeoutInterval
+                    request.networkServiceType = priority.networkServiceType
                     let (data, response) = try await session.data(for: request)
                     guard let http = response as? HTTPURLResponse,
                           (200..<300).contains(http.statusCode) else {
@@ -316,11 +339,15 @@ actor OLThumbnailRequestCoordinator {
                 }
             }
         }
-        inFlight[key] = task
-        return await task.value
+        inFlight[key] = InFlightRequest(id: requestID, task: task)
+
+        let data = await task.value
+        removeInFlightTask(forKey: key, requestID: requestID)
+        return data
     }
 
-    private func removeInFlightTask(forKey key: String) {
+    private func removeInFlightTask(forKey key: String, requestID: UUID) {
+        guard inFlight[key]?.id == requestID else { return }
         inFlight.removeValue(forKey: key)
     }
 }

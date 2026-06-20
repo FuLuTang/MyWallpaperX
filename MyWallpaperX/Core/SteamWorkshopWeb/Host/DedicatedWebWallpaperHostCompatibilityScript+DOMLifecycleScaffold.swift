@@ -72,6 +72,156 @@ let webCompatibilityScriptDOMLifecycleScaffold = #"""
       };
       return { install };
     })();
+    const wallpaperCrossOriginFrameFallbacks = (() => {
+      const documentPropertyName = '__mwxCrossOriginFallbackDocument';
+      const windowPropertyName = '__mwxCrossOriginFallbackWindow';
+      const createFallbackDocument = (frame) => {
+        try {
+          if (frame && frame[documentPropertyName]) {
+            return frame[documentPropertyName];
+          }
+        } catch (_) {}
+        let fallbackDocument = null;
+        try {
+          fallbackDocument = document.implementation.createHTMLDocument('cross-origin iframe');
+          fallbackDocument.documentElement.setAttribute('data-mwx-cross-origin-frame', 'true');
+        } catch (_) {
+          fallbackDocument = document;
+        }
+        try {
+          Object.defineProperty(frame, documentPropertyName, {
+            configurable: true,
+            enumerable: false,
+            value: fallbackDocument
+          });
+        } catch (_) {}
+        return fallbackDocument;
+      };
+      const frameSourceIsLikelyCrossOrigin = (frame) => {
+        try {
+          if (!frame || typeof frame.getAttribute !== 'function') return false;
+          const rawSource = String(frame.getAttribute('src') || '').trim();
+          if (!rawSource || rawSource.toLowerCase() === 'about:blank') return false;
+          const frameURL = new URL(rawSource, document.location.href);
+          return frameURL.origin !== document.location.origin;
+        } catch (_) {
+          return false;
+        }
+      };
+      const postAccessDiagnostic = (frame, propertyName) => {
+        try {
+          const src = frame && typeof frame.getAttribute === 'function'
+            ? frame.getAttribute('src')
+            : '';
+          hostLogger.post('iframe.crossOriginAccess', `${propertyName} fallback ${String(src || '')}`);
+        } catch (_) {}
+      };
+      const createFallbackWindow = (frame, frameWindow) => {
+        try {
+          if (frame && frame[windowPropertyName]) {
+            return frame[windowPropertyName];
+          }
+        } catch (_) {}
+        const fallbackDocument = createFallbackDocument(frame);
+        const fallbackWindow = {
+          document: fallbackDocument,
+          postMessage(message, targetOrigin, transfer) {
+            try {
+              if (frameWindow && typeof frameWindow.postMessage === 'function') {
+                return frameWindow.postMessage(message, targetOrigin, transfer);
+              }
+            } catch (_) {}
+          },
+          addEventListener(type, listener, options) {
+            try {
+              if (frameWindow && typeof frameWindow.addEventListener === 'function') {
+                return frameWindow.addEventListener(type, listener, options);
+              }
+            } catch (_) {}
+          },
+          removeEventListener(type, listener, options) {
+            try {
+              if (frameWindow && typeof frameWindow.removeEventListener === 'function') {
+                return frameWindow.removeEventListener(type, listener, options);
+              }
+            } catch (_) {}
+          }
+        };
+        try {
+          fallbackWindow.window = fallbackWindow;
+          fallbackWindow.self = fallbackWindow;
+          fallbackWindow.top = window.top;
+          fallbackWindow.parent = window;
+        } catch (_) {}
+        try {
+          Object.defineProperty(frame, windowPropertyName, {
+            configurable: true,
+            enumerable: false,
+            value: fallbackWindow
+          });
+        } catch (_) {}
+        return fallbackWindow;
+      };
+      const install = () => {
+        const prototype = window.HTMLIFrameElement && window.HTMLIFrameElement.prototype;
+        if (!prototype || prototype.__mwxCrossOriginAccessPatched === true) return;
+        try {
+          const contentDocumentDescriptor = Object.getOwnPropertyDescriptor(prototype, 'contentDocument');
+          if (contentDocumentDescriptor && typeof contentDocumentDescriptor.get === 'function') {
+            Object.defineProperty(prototype, 'contentDocument', {
+              configurable: true,
+              enumerable: contentDocumentDescriptor.enumerable === true,
+              get: function() {
+                try {
+                  const frameDocument = contentDocumentDescriptor.get.call(this);
+                  if (frameDocument) return frameDocument;
+                  if (frameSourceIsLikelyCrossOrigin(this)) {
+                    postAccessDiagnostic(this, 'contentDocument');
+                    return createFallbackDocument(this);
+                  }
+                  return frameDocument;
+                } catch (_) {
+                  postAccessDiagnostic(this, 'contentDocument');
+                  return createFallbackDocument(this);
+                }
+              }
+            });
+          }
+        } catch (_) {}
+        try {
+          const contentWindowDescriptor = Object.getOwnPropertyDescriptor(prototype, 'contentWindow');
+          if (contentWindowDescriptor && typeof contentWindowDescriptor.get === 'function') {
+            Object.defineProperty(prototype, 'contentWindow', {
+              configurable: true,
+              enumerable: contentWindowDescriptor.enumerable === true,
+              get: function() {
+                try {
+                  const frameWindow = contentWindowDescriptor.get.call(this);
+                  if (frameSourceIsLikelyCrossOrigin(this)) {
+                    postAccessDiagnostic(this, 'contentWindow');
+                    return createFallbackWindow(this, frameWindow);
+                  }
+                  if (frameWindow && frameWindow.document) {
+                    return frameWindow;
+                  }
+                  return frameWindow;
+                } catch (_) {
+                  postAccessDiagnostic(this, 'contentWindow');
+                  try {
+                    return createFallbackWindow(this, contentWindowDescriptor.get.call(this));
+                  } catch (_) {
+                    return createFallbackWindow(this, null);
+                  }
+                }
+              }
+            });
+          }
+        } catch (_) {}
+        prototype.__mwxCrossOriginAccessPatched = true;
+      };
+      return { install };
+    })();
+    wallpaperCrossOriginFrameFallbacks.install();
     try {
       const originalQuerySelector = Element.prototype.querySelector;
       if (typeof originalQuerySelector === 'function' && Element.prototype.__mwxSliderQueryGuardPatched !== true) {

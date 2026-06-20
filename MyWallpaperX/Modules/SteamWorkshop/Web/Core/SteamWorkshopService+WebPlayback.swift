@@ -95,6 +95,7 @@ extension SteamWorkshopService {
             || flags.contains(.esModuleDependency)
             || flags.contains(.wasmStreamingUsage)
             || flags.contains(.customSchemeSensitiveWebGL)
+            || flags.contains(.iframeCrossFrameAccess)
         if requiresOriginCompatibility {
             return .highCompatibility
         }

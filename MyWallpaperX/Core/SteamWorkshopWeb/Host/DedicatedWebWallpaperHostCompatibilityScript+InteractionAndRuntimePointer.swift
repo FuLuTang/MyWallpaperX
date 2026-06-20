@@ -162,6 +162,59 @@ let webCompatibilityScriptInteractionAndRuntimePointer = #"""
       view: window
     };
   };
+  const pointerBootTime = (() => {
+    try { return performance.now(); } catch (_) { return Date.now(); }
+  })();
+  const buttonedPointerTypes = new Set(['pointerdown', 'pointerup', 'pointercancel']);
+  const readyInteractiveSelector = [
+    'canvas',
+    'video',
+    'iframe',
+    'object',
+    'embed',
+    'svg',
+    'img',
+    'button',
+    'input',
+    'select',
+    'textarea',
+    'a[href]',
+    '[role="button"]',
+    '[role="link"]',
+    '[onclick]',
+    '[tabindex]'
+  ].join(',');
+  const isVisibleInteractiveContent = function(element) {
+    try {
+      if (!element || typeof element.getBoundingClientRect !== 'function') return false;
+      const rect = element.getBoundingClientRect();
+      if (rect.width <= 1 || rect.height <= 1) return false;
+      const style = window.getComputedStyle ? window.getComputedStyle(element) : null;
+      if (style && (style.display === 'none' || style.visibility === 'hidden' || style.pointerEvents === 'none')) return false;
+      return true;
+    } catch (_) {
+      return false;
+    }
+  };
+  const shouldDeferButtonedPointerEvent = function(type, target) {
+    try {
+      if (!buttonedPointerTypes.has(String(type))) return false;
+      const now = typeof performance !== 'undefined' && typeof performance.now === 'function'
+        ? performance.now()
+        : Date.now();
+      if (now - pointerBootTime > 6000) return false;
+      if (!target || target.nodeType !== 1 || typeof target.getBoundingClientRect !== 'function') return false;
+      if (target.matches && target.matches(readyInteractiveSelector)) return false;
+      const rect = target.getBoundingClientRect();
+      const viewportArea = Math.max(1, (window.innerWidth || 1) * (window.innerHeight || 1));
+      if ((rect.width * rect.height) < viewportArea * 0.25) return false;
+      const readyDescendant = target.querySelector && Array.from(target.querySelectorAll(readyInteractiveSelector)).some(isVisibleInteractiveContent);
+      if (readyDescendant) return false;
+      return true;
+    } catch (_) {
+      return false;
+    }
+  };
   const enrichMouseLikeEvent = function(event, target, clientX, clientY) {
     if (!event || !target || typeof Object.defineProperty !== 'function') {
       return event;
@@ -207,6 +260,14 @@ let webCompatibilityScriptInteractionAndRuntimePointer = #"""
       let target = wallpaperState.captureTarget || document.elementFromPoint(clientX, clientY) || document.body || document.documentElement;
       if (!target) return;
       window.__myWallpaperUpdateHoverTarget(target, mouseEventInitBase(clientX, clientY, buttonValue, buttonsValue));
+      if (shouldDeferButtonedPointerEvent(type, target)) {
+        hostLogger.post('pointer.defer', `${String(type)} target=${target.tagName || 'unknown'} id=${target.id || ''}`.trim());
+        if (String(type) === 'pointerup' || String(type) === 'pointercancel' || buttonsValue === 0) {
+          wallpaperState.captureTarget = null;
+          wallpaperState.captureButtons = 0;
+        }
+        return;
+      }
       const pointerLikeTypes = new Set(['pointermove', 'pointerdown', 'pointerup', 'pointercancel']);
       const pointerToMouseType = { 'pointerdown': 'mousedown', 'pointerup': 'mouseup', 'pointermove': 'mousemove', 'pointercancel': 'mouseleave' };
       const mouseEventInit = mouseEventInitBase(clientX, clientY, buttonValue, buttonsValue);

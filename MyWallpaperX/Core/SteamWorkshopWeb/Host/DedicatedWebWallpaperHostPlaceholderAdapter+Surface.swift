@@ -38,6 +38,7 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
         controller.add(self, name: "wallpaperHostLog")
         controller.add(self, name: "wallpaperHostRandomFile")
         controller.add(self, name: "wallpaperHostInteractiveRegions")
+        controller.add(self, name: "wallpaperHostNetworkRequest")
         controller.addUserScript(
             WKUserScript(
                 source: Self.webCompatibilityScript(
@@ -109,6 +110,7 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
             surface.webView.configuration.userContentController.removeScriptMessageHandler(forName: "wallpaperHostLog")
             surface.webView.configuration.userContentController.removeScriptMessageHandler(forName: "wallpaperHostRandomFile")
             surface.webView.configuration.userContentController.removeScriptMessageHandler(forName: "wallpaperHostInteractiveRegions")
+            surface.webView.configuration.userContentController.removeScriptMessageHandler(forName: "wallpaperHostNetworkRequest")
             surface.webView.loadHTMLString("", baseURL: nil)
             surface.webView.removeFromSuperview()
             surface.window.orderOut(nil)

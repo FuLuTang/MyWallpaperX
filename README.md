@@ -39,14 +39,14 @@
 
 <table width="100%">
   <tr>
-    <td width="33%"><img src="截图/截屏2026-05-12%2006.00.16.png" width="100%" alt="本地视频壁纸库"><p align="center"><b>本地壁纸库</b><br><sub>导入、搜索、收藏与标签管理</sub></p></td>
-    <td width="33%"><img src="截图/截屏2026-05-12%2006.02.03.png" width="100%" alt="壁纸浏览与管理"><p align="center"><b>浏览与管理</b><br><sub>macOS 原生列表、网格与 Quick Look 预览</sub></p></td>
-    <td width="33%"><img src="截图/截屏2026-05-12%2006.03.09.png" width="100%" alt="在线壁纸资源"><p align="center"><b>在线壁纸资源</b><br><sub>浏览 Pixabay 在线库并下载纳入本地</sub></p></td>
+    <td width="33%"><img src="Screenshot/截屏2026-05-12%2006.00.16.png" width="100%" alt="本地视频壁纸库"><p align="center"><b>本地壁纸库</b><br><sub>导入、搜索、收藏与标签管理</sub></p></td>
+    <td width="33%"><img src="Screenshot/截屏2026-05-12%2006.02.03.png" width="100%" alt="壁纸浏览与管理"><p align="center"><b>浏览与管理</b><br><sub>macOS 原生列表、网格与 Quick Look 预览</sub></p></td>
+    <td width="33%"><img src="Screenshot/截屏2026-05-12%2006.03.09.png" width="100%" alt="在线壁纸资源"><p align="center"><b>在线壁纸资源</b><br><sub>浏览 Pixabay 在线库并下载纳入本地</sub></p></td>
   </tr>
   <tr>
-    <td width="33%"><img src="截图/截屏2026-05-12%2006.03.56.png" width="100%" alt="Steam Workshop"><p align="center"><b>Steam Workshop</b><br><sub>原生网格浏览、下载和管理创意工坊</sub></p></td>
-    <td width="33%"><img src="截图/截屏2026-05-12%2006.05.39.png" width="100%" alt="下载与详情"><p align="center"><b>下载与详情面板</b><br><sub>集中查看下载状态、文件位置和素材信息</sub></p></td>
-    <td width="33%"><img src="截图/截屏2026-05-12%2006.00.16.png" width="100%" alt="桌面播放"><p align="center"><b>桌面播放</b><br><sub>独立守护进程承载视频 / Web / Scene 渲染</sub></p></td>
+    <td width="33%"><img src="Screenshot/截屏2026-05-12%2006.03.56.png" width="100%" alt="Steam Workshop"><p align="center"><b>Steam Workshop</b><br><sub>原生网格浏览、下载和管理创意工坊</sub></p></td>
+    <td width="33%"><img src="Screenshot/截屏2026-05-12%2006.05.39.png" width="100%" alt="下载与详情"><p align="center"><b>下载与详情面板</b><br><sub>集中查看下载状态、文件位置和素材信息</sub></p></td>
+    <td width="33%"><img src="Screenshot/截屏2026-05-12%2006.00.16.png" width="100%" alt="桌面播放"><p align="center"><b>桌面播放</b><br><sub>独立守护进程承载视频 / Web / Scene 渲染</sub></p></td>
   </tr>
 </table>
 
@@ -140,8 +140,8 @@ xcodebuild -project MyWallpaperX.xcodeproj -scheme MyWallpaperX -configuration D
 如果这个项目对你有帮助，欢迎 [Star on GitHub](https://github.com/songziqiang9512/MyWallpaperX)。
 
 <p align="center">
-  <img src="收款码/IMG_3047.JPG" width="260" alt="收款码">
-  <img src="收款码/IMG_3048.JPG" width="260" alt="收款码">
+  <img src="Screenshot/IMG_3047.JPG" width="260" alt="收款码">
+  <img src="Screenshot/IMG_3048.JPG" width="260" alt="收款码">
 </p>
 
 ---

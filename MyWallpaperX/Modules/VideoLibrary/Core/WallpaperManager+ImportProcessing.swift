@@ -38,6 +38,13 @@ extension WallpaperManager {
         let counters: ImportCounters
     }
 
+    nonisolated private struct ImportedAssetMetadataUpdate: Sendable {
+        let path: String
+        let size: Int64
+        let duration: Int?
+        let resolution: String?
+    }
+
     func loadSampleData() {
         // 只在首次没有任何导入清单时注入内置示例。
         // 后续启动完全以持久化的 wallpapers 列表为准（包含空列表），避免删除后又恢复。
@@ -143,40 +150,60 @@ extension WallpaperManager {
 
             // 阶段3：静帧完成后补填 fileSize, duration, resolution，供「按大小排序」直接读缓存，不再做主线程磁盘 I/O。
             Task {
-                var metadataUpdates: [(path: String, size: Int64, duration: Int?, resolution: String?)] = []
-                for url in normalizedURLs {
-                    guard await self.pathExists(url.path) else { continue }
-                    let asset = AVURLAsset(url: url)
-                    let durationSec = (try? await asset.load(.duration))?.seconds
-                    let duration = durationSec.map { Int($0.rounded()) }
-                    
-                    var resString: String? = nil
-                    if let tracks = try? await asset.loadTracks(withMediaType: .video),
-                       let track = tracks.first,
-                       let size = try? await track.load(.naturalSize),
-                       let transform = try? await track.load(.preferredTransform) {
-                        let transformedSize = size.applying(transform)
-                        resString = "\(Int(abs(transformedSize.width))) × \(Int(abs(transformedSize.height)))"
-                    }
-
-                    if let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
-                       let size = attrs[.size] as? Int64 {
-                        metadataUpdates.append((url.path, size, duration, resString))
-                    }
-                }
+                let metadataUpdates = await Self.collectImportedAssetMetadata(for: normalizedURLs)
                 guard !metadataUpdates.isEmpty else { return }
                 await MainActor.run {
-                    for update in metadataUpdates {
-                        let normalized = self.normalizedPath(update.path)
-                        if let index = self.wallpapers.firstIndex(where: { self.normalizedPath($0.path) == normalized }) {
-                            self.wallpapers[index].fileSize = update.size
-                            self.wallpapers[index].duration = update.duration
-                            self.wallpapers[index].resolution = update.resolution
-                            // 复用现有可见卡片刷新通道，确保导入后元数据能及时显示。
-                            self.notifyThumbnailReady(forPath: update.path)
-                        }
-                    }
+                    self.applyImportedAssetMetadataUpdates(metadataUpdates)
                 }
+            }
+        }
+    }
+
+    nonisolated private static func collectImportedAssetMetadata(for urls: [URL]) async -> [ImportedAssetMetadataUpdate] {
+        var updates: [ImportedAssetMetadataUpdate] = []
+        updates.reserveCapacity(urls.count)
+
+        for url in urls {
+            guard FileManager.default.fileExists(atPath: url.path) else { continue }
+
+            let asset = AVURLAsset(url: url)
+            let durationSec = (try? await asset.load(.duration))?.seconds
+            let duration = durationSec.map { Int($0.rounded()) }
+
+            var resolution: String?
+            if let tracks = try? await asset.loadTracks(withMediaType: .video),
+               let track = tracks.first,
+               let size = try? await track.load(.naturalSize),
+               let transform = try? await track.load(.preferredTransform) {
+                let transformedSize = size.applying(transform)
+                resolution = "\(Int(abs(transformedSize.width))) × \(Int(abs(transformedSize.height)))"
+            }
+
+            if let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+               let size = attrs[.size] as? Int64 {
+                updates.append(
+                    ImportedAssetMetadataUpdate(
+                        path: url.path,
+                        size: size,
+                        duration: duration,
+                        resolution: resolution
+                    )
+                )
+            }
+        }
+
+        return updates
+    }
+
+    private func applyImportedAssetMetadataUpdates(_ updates: [ImportedAssetMetadataUpdate]) {
+        for update in updates {
+            let normalized = normalizedPath(update.path)
+            if let index = wallpapers.firstIndex(where: { normalizedPath($0.path) == normalized }) {
+                wallpapers[index].fileSize = update.size
+                wallpapers[index].duration = update.duration
+                wallpapers[index].resolution = update.resolution
+                // 复用现有可见卡片刷新通道，确保导入后元数据能及时显示。
+                notifyThumbnailReady(forPath: update.path)
             }
         }
     }

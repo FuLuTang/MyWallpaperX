@@ -64,6 +64,7 @@ final class WebWallpaperLocalSchemeHandler: NSObject, WKURLSchemeHandler {
         guard let resource = resolvedResource(for: requestURL, allowsDirectoryIndexFallback: true) else {
             let error = deniedAccess(for: requestURL)
                 ?? AccessDenied(reason: .invalidURL, requestURL: requestURL, candidateURL: nil, resolvedURL: nil)
+            silenceFailedMediaRequestIfNeeded(requestURL: requestURL, in: webView)
             urlSchemeTask.didFailWithError(error)
             return
         }
@@ -197,7 +198,8 @@ final class WebWallpaperLocalSchemeHandler: NSObject, WKURLSchemeHandler {
             targetURL = resolvedRequestedURL
         }
         let normalizedTargetURL = targetURL.resolvingSymlinksInPath().standardizedFileURL
-        let didTraverseSymlink = originalURL.path != requestedURL.path || targetURL.standardizedFileURL.path != normalizedTargetURL.path
+        let didTraverseSymlink = Self.isMaterialPathRewrite(from: originalURL.path, to: requestedURL.path) ||
+            Self.isMaterialPathRewrite(from: targetURL.standardizedFileURL.path, to: normalizedTargetURL.path)
         if didTraverseSymlink, strictSymlinkPolicy {
             recordDeny(AccessDenied(reason: .symlinkRejected, requestURL: requestURL, candidateURL: originalURL, resolvedURL: normalizedTargetURL))
             return nil
@@ -279,6 +281,57 @@ final class WebWallpaperLocalSchemeHandler: NSObject, WKURLSchemeHandler {
         return nil
     }
 
+    func isOptionalMissingMediaRequest(_ requestURL: URL) -> Bool {
+        optionalMissingMediaDiagnostic(for: requestURL) != nil
+    }
+
+    private func optionalMissingMediaDiagnostic(for requestURL: URL) -> (type: String, message: String)? {
+        let normalizedPath = requestURL.path.removingPercentEncoding?.lowercased() ?? requestURL.path.lowercased()
+        let components = normalizedPath.split(separator: "/").map(String.init)
+        let fileName = components.last ?? ""
+        let directoryNames = Set(components.dropLast())
+        if Self.isPlaceholderMediaPath(normalizedPath, fileName: fileName) {
+            return ("local-resource.placeholder", "placeholder_media_source")
+        }
+        if fileName == "performance.layout.user.js" {
+            return ("local-resource.optional-user-layout", "optional_performance_layout_user")
+        }
+        guard Self.isAudioPath(normalizedPath) else {
+            return nil
+        }
+        if fileName.hasPrefix("0-") || fileName.hasPrefix("00-") {
+            return ("local-resource.optional-audio", "optional_audio_none_placeholder")
+        }
+        if directoryNames.contains("sound") || directoryNames.contains("sounds") {
+            return ("local-resource.optional-audio", "optional_audio_missing")
+        }
+        return nil
+    }
+
+    private static func isPlaceholderMediaPath(_ normalizedPath: String, fileName: String) -> Bool {
+        if fileName == "null" || fileName == "undefined" || fileName == "(null)" || fileName == "about:blank" {
+            return true
+        }
+        return normalizedPath.hasSuffix("/null") ||
+            normalizedPath.hasSuffix("/undefined") ||
+            normalizedPath.hasSuffix("/(null)") ||
+            normalizedPath.hasSuffix("/about:blank")
+    }
+
+    private static func isAudioPath(_ normalizedPath: String) -> Bool {
+        normalizedPath.hasSuffix(".ogg") ||
+            normalizedPath.hasSuffix(".mp3") ||
+            normalizedPath.hasSuffix(".wav") ||
+            normalizedPath.hasSuffix(".m4a") ||
+            normalizedPath.hasSuffix(".aac") ||
+            normalizedPath.hasSuffix(".flac")
+    }
+
+    private static func isMaterialPathRewrite(from originalPath: String, to resolvedPath: String) -> Bool {
+        guard originalPath != resolvedPath else { return false }
+        return originalPath.compare(resolvedPath, options: [.caseInsensitive, .diacriticInsensitive]) != .orderedSame
+    }
+
     private func recordDeny(_ denial: AccessDenied) {
         deniedAccessByRequestURL[denial.requestURL.absoluteString] = denial
         let candidate = denial.candidateURL?.path ?? ""
@@ -290,6 +343,11 @@ final class WebWallpaperLocalSchemeHandler: NSObject, WKURLSchemeHandler {
         ]
         .compactMap { $0 }
         .joined(separator: " ")
+        if denial.reason == .missing,
+           let diagnostic = optionalMissingMediaDiagnostic(for: denial.requestURL) {
+            diagnosticHandler?(diagnostic.type, .info, "\(diagnostic.message) \(message)", denial.requestURL)
+            return
+        }
         diagnosticHandler?("local-resource-deny", .warning, message, denial.requestURL)
     }
 

@@ -55,7 +55,10 @@ extension SteamWorkshopService {
             entryURL: standardizedEntryURL,
             rootURL: effectiveRootURL
         )
-        let runtimeRiskFlags = resolvedWebStructuralRiskFlags(for: record, sampleStructure: webSampleStructure(for: record))
+        var runtimeRiskFlags = resolvedWebStructuralRiskFlags(for: record, sampleStructure: webSampleStructure(for: record))
+        if staticContentSummary.usesIframeCrossFrameAccess {
+            runtimeRiskFlags = runtimeRiskFlags.union(with: [.iframeCrossFrameAccess])
+        }
         let presetResourceBindingsByKey = resolvedWebPresetResourceBindings(for: record)
         let baselineVisiblePropertyKeys = propertyDefinitions
             .filter { shouldDisplayWebProperty($0, values: baselineValues) }

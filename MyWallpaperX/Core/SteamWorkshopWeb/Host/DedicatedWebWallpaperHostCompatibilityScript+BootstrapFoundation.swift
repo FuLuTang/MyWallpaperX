@@ -20,6 +20,50 @@ let webCompatibilityScriptBootstrapFoundation = #"""
     PLAYBACK_PLAYING: 'playing',
     PLAYBACK_PAUSED: 'paused'
   };
+  window.__myWallpaperIsMediaPlayAbortError = function(error) {
+    const name = String((error && error.name) || '');
+    const message = String((error && error.message) || error || '').toLowerCase();
+    return name === 'AbortError' ||
+      message.includes('operation was aborted') ||
+      message.includes('interrupted by a call to pause') ||
+      message.includes('interrupted by a new load request');
+  };
+  window.__myWallpaperIsOptionalAudioPlayError = function(error, node) {
+    try {
+      const tagName = String((node && node.tagName) || '').toLowerCase();
+      if (tagName !== 'audio') return false;
+      const name = String((error && error.name) || '');
+      const message = String((error && error.message) || error || '').toLowerCase();
+      const code = node && node.error ? Number(node.error.code || 0) : 0;
+      return name === 'NotSupportedError' ||
+        code === 4 ||
+        message.includes('operation is not supported') ||
+        message.includes('not supported');
+    } catch (_) {
+      return false;
+    }
+  };
+  window.__myWallpaperWrapMediaPlayPromise = function(playResult, node) {
+    if (!playResult || typeof playResult.catch !== 'function') return playResult;
+    return playResult.catch((error) => {
+      if (window.__myWallpaperIsMediaPlayAbortError(error)) {
+        try {
+          const tagName = node && node.tagName ? String(node.tagName).toLowerCase() : 'media';
+          const source = node ? String(node.currentSrc || node.src || '').trim() : '';
+          hostLogger.post('media.play.aborted', `${tagName} ${source}`.trim());
+        } catch (_) {}
+        return;
+      }
+      if (window.__myWallpaperIsOptionalAudioPlayError(error, node)) {
+        try {
+          const source = node ? String(node.currentSrc || node.src || '').trim() : '';
+          hostLogger.post('media.play.unsupported', `audio ${source}`.trim());
+        } catch (_) {}
+        return;
+      }
+      throw error;
+    });
+  };
   window.wallpaperMediaIntegration = Object.assign(
     {},
     window.wallpaperMediaIntegration || {},
@@ -120,6 +164,11 @@ let webCompatibilityScriptBootstrapFoundation = #"""
       'media.canplay': 1000,
       'media.canplaythrough': 1000,
       'media.initial': 1000,
+      'media.play.unsupported': 5000,
+      'loader.pending': 1000,
+      'iframe.crossOriginAccess': 5000,
+      'backstretch.noop': 1000,
+      'pointer.defer': 1000,
       'runtime.randomFile': 1000,
       'directory.access': 2000
     };
@@ -237,13 +286,15 @@ let webCompatibilityScriptBootstrapFoundation = #"""
       }
     } catch (_) {}
     try {
-      if (typeof window.wallpaperPropertyListener.setPaused === 'function') {
-        window.wallpaperPropertyListener.setPaused(!!window.wallpaperEngine_paused);
-      }
-    } catch (_) {}
-    try {
-      if (typeof window.wallpaperPropertyListener.setPlaybackState === 'function') {
-        window.wallpaperPropertyListener.setPlaybackState(window.wallpaperEngine_paused ? 'paused' : 'playing');
+      if (typeof window.__myWallpaperApplyInitialPausedState === 'function') {
+        window.__myWallpaperApplyInitialPausedState(!!window.wallpaperEngine_paused);
+      } else if (window.wallpaperEngine_paused === true) {
+        if (typeof window.wallpaperPropertyListener.setPaused === 'function') {
+          window.wallpaperPropertyListener.setPaused(true);
+        }
+        if (typeof window.wallpaperPropertyListener.setPlaybackState === 'function') {
+          window.wallpaperPropertyListener.setPlaybackState('paused');
+        }
       }
     } catch (_) {}
     try {

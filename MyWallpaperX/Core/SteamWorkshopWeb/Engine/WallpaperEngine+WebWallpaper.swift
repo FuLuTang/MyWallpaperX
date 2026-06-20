@@ -34,7 +34,7 @@ extension WallpaperEngine {
             baseJSON: currentWebPropertiesJSON,
             deltaJSON: propertiesJSON
         )
-        dispatchWebRuntimeCommand(.applyProperties(currentWebPropertiesJSON ?? "{}"))
+        dispatchWebRuntimeCommand(.applyProperties(propertiesJSON ?? "{}"))
     }
 
     public func playDiagnosticWebWallpaper() {

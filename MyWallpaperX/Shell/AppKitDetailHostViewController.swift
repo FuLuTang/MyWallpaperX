@@ -358,13 +358,12 @@ final class AppKitDetailHostViewController: NSViewController {
         }
 
         let cardID = onlineDownloadsInspectorCardID(for: itemID)
-        let snapshot = OnlineLibraryDownloadsInspectorSnapshot.load(itemID: itemID)
         lastOnlineDownloadsInspectorCardID = cardID
         InspectorHostActions.postOpen(
             module: .onlineLibrary,
             presentation: .infoPanel(
                 cardID: cardID,
-                title: snapshot?.title ?? "online_\(itemID).mp4",
+                title: "online_\(itemID).mp4",
                 subtitle: "在线图库已下载项",
                 preferredWidth: 356,
                 focusPolicy: .preserveCurrentResponder

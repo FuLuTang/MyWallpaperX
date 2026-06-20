@@ -121,30 +121,263 @@ let webCompatibilityScriptHostBridge = #"""
       try { return JSON.stringify(value || {}); } catch (_) { return ''; }
     }
   };
+  const myWallpaperPropertyReplayState = window.__myWallpaperPropertyReplayState = window.__myWallpaperPropertyReplayState || {
+    pendingProperties: null,
+    pendingSignature: '',
+    attempt: 0,
+    timer: null,
+    loadScheduled: false,
+    reportedSkips: {}
+  };
+  const myWallpaperPropertyRetryDelays = [80, 140, 220, 340, 520, 780, 1100, 1400, 1800, 2200, 2600, 3000];
+  const myWallpaperPropertyErrorMessage = function(error) {
+    if (!error) return '';
+    if (error && error.message) return String(error.message);
+    try { return String(error); } catch (_) { return ''; }
+  };
+  const myWallpaperIsPropertyInitializationError = function(error) {
+    const message = myWallpaperPropertyErrorMessage(error).toLowerCase();
+    if (!message) return false;
+    if (
+      message.includes('audio.volume') ||
+      message.includes('motionintervalmax') ||
+      message.includes('.push') ||
+      message.includes('push is not a function')
+    ) {
+      return false;
+    }
+    return message.includes('undefined is not an object') ||
+      message.includes('null is not an object') ||
+      message.includes('cannot read properties of undefined') ||
+      message.includes('cannot read properties of null') ||
+      message.includes('is undefined') ||
+      message.includes('has no properties') ||
+      message.includes('gl.canvas') ||
+      message.includes('this.model.x');
+  };
+  const myWallpaperInvokeUserPropertyCallback = function(listener, callback, properties) {
+    let scheduledAsyncWork = false;
+    const originalSetTimeout = window.setTimeout;
+    const originalSetInterval = window.setInterval;
+    const originalRequestAnimationFrame = window.requestAnimationFrame;
+    try {
+      window.setTimeout = function(...args) {
+        scheduledAsyncWork = true;
+        return originalSetTimeout.apply(this, args);
+      };
+      window.setInterval = function(...args) {
+        scheduledAsyncWork = true;
+        return originalSetInterval.apply(this, args);
+      };
+      if (typeof originalRequestAnimationFrame === 'function') {
+        window.requestAnimationFrame = function(...args) {
+          scheduledAsyncWork = true;
+          return originalRequestAnimationFrame.apply(this, args);
+        };
+      }
+    } catch (_) {}
+    try {
+      callback.call(listener, properties);
+      return { completed: true, scheduledAsyncWork };
+    } catch (error) {
+      return { completed: false, error, scheduledAsyncWork };
+    } finally {
+      try { window.setTimeout = originalSetTimeout; } catch (_) {}
+      try { window.setInterval = originalSetInterval; } catch (_) {}
+      try { window.requestAnimationFrame = originalRequestAnimationFrame; } catch (_) {}
+    }
+  };
+  const myWallpaperRunAfterSettledFrames = function(callback) {
+    try {
+      if (typeof window.requestAnimationFrame !== 'function') {
+        window.setTimeout(callback, 0);
+        return;
+      }
+      let framesRemaining = 2;
+      const step = () => {
+        if (framesRemaining <= 0) {
+          window.setTimeout(callback, 0);
+          return;
+        }
+        framesRemaining -= 1;
+        window.requestAnimationFrame(step);
+      };
+      window.requestAnimationFrame(step);
+    } catch (_) {
+      try { window.setTimeout(callback, 0); } catch (_) {}
+    }
+  };
+  const myWallpaperSchedulePendingPropertyApply = function(delayMS) {
+    try {
+      if (myWallpaperPropertyReplayState.timer !== null) return;
+      myWallpaperPropertyReplayState.timer = window.setTimeout(() => {
+        myWallpaperPropertyReplayState.timer = null;
+        myWallpaperRunAfterSettledFrames(window.__myWallpaperDrainPendingProperties);
+      }, Math.max(0, Number(delayMS) || 0));
+    } catch (_) {}
+  };
+  const myWallpaperDispatchResizeAfterPropertyError = function(reason) {
+    try {
+      myWallpaperRunAfterSettledFrames(() => {
+        try {
+          window.dispatchEvent(new Event('resize'));
+          hostLogger.post('properties.resize-after-script-failure', reason || 'script error');
+        } catch (error) {
+          hostLogger.post('properties.resize-after-script-failure.failed', myWallpaperPropertyErrorMessage(error) || error);
+        }
+      });
+    } catch (_) {}
+  };
+  const myWallpaperReportSkippedProperty = function(signature, key, error) {
+    try {
+      const message = myWallpaperPropertyErrorMessage(error) || 'unknown error';
+      const skipKey = [signature || '', key || '', message].join('|');
+      const reported = myWallpaperPropertyReplayState.reportedSkips || {};
+      if (reported[skipKey] === true) return;
+      reported[skipKey] = true;
+      myWallpaperPropertyReplayState.reportedSkips = reported;
+      hostLogger.post('properties.skipped', `${key}: ${message}`);
+    } catch (_) {}
+  };
+  const myWallpaperApplyPropertiesIndividually = function(properties, listener, callback, signature) {
+    let appliedCount = 0;
+    let skippedCount = 0;
+    for (const [key, value] of Object.entries(properties || {})) {
+      const singleProperty = {};
+      singleProperty[key] = value;
+      try {
+        callback.call(listener, singleProperty);
+        appliedCount += 1;
+      } catch (error) {
+        skippedCount += 1;
+        myWallpaperReportSkippedProperty(signature, key, error);
+      }
+    }
+    return { appliedCount, skippedCount };
+  };
+  window.__myWallpaperDrainPendingProperties = function() {
+    const state = myWallpaperPropertyReplayState;
+    if (state.pendingProperties === null && !state.pendingSignature) {
+      return;
+    }
+    const safeProperties = state.pendingProperties || {};
+    const signature = state.pendingSignature || window.__myWallpaperStablePropertySignature(safeProperties);
+    try {
+      if (document.readyState !== 'complete') {
+        if (state.loadScheduled !== true) {
+          state.loadScheduled = true;
+          window.addEventListener('load', () => {
+            state.loadScheduled = false;
+            myWallpaperSchedulePendingPropertyApply(0);
+          }, { once: true });
+        }
+        return;
+      }
+    } catch (_) {}
+    const hasUserPropertyListener = window.wallpaperPropertyListener && typeof window.wallpaperPropertyListener.applyUserProperties === 'function';
+    if (!hasUserPropertyListener) {
+      myWallpaperSchedulePendingPropertyApply(80);
+      return;
+    }
+    const listener = window.wallpaperPropertyListener;
+    const userPropertyCallback = listener.applyUserProperties;
+    if (
+      signature &&
+      signature === window.__myWallpaperLastAppliedUserPropertySignature &&
+      userPropertyCallback === window.__myWallpaperLastAppliedUserPropertyCallback
+    ) {
+      state.pendingProperties = null;
+      state.pendingSignature = '';
+      state.attempt = 0;
+      return;
+    }
+
+    const applyResult = myWallpaperInvokeUserPropertyCallback(listener, userPropertyCallback, safeProperties);
+    if (applyResult.completed === true) {
+      window.__myWallpaperLastAppliedUserPropertySignature = signature;
+      window.__myWallpaperLastAppliedUserPropertyCallback = userPropertyCallback;
+      state.pendingProperties = null;
+      state.pendingSignature = '';
+      state.attempt = 0;
+      window.dispatchEvent(new CustomEvent('wallpaper-properties-applied', { detail: safeProperties }));
+    } else {
+      const error = applyResult.error;
+      const isInitializationError = myWallpaperIsPropertyInitializationError(error);
+      if (state.attempt === 0 && isInitializationError && applyResult.scheduledAsyncWork === true) {
+        window.__myWallpaperLastAppliedUserPropertySignature = signature;
+        window.__myWallpaperLastAppliedUserPropertyCallback = userPropertyCallback;
+        state.pendingProperties = null;
+        state.pendingSignature = '';
+        state.attempt = 0;
+        try {
+          window.dispatchEvent(new CustomEvent('wallpaper-properties-applied', {
+            detail: safeProperties
+          }));
+        } catch (_) {}
+        hostLogger.post('properties.deferred-side-effect', myWallpaperPropertyErrorMessage(error) || 'initialization error');
+        return;
+      }
+      if (isInitializationError && state.attempt < myWallpaperPropertyRetryDelays.length) {
+        const delay = myWallpaperPropertyRetryDelays[state.attempt] || 3000;
+        state.attempt += 1;
+        myWallpaperSchedulePendingPropertyApply(delay);
+        return;
+      }
+      if (!isInitializationError) {
+        window.__myWallpaperLastAppliedUserPropertySignature = signature;
+        window.__myWallpaperLastAppliedUserPropertyCallback = userPropertyCallback;
+        state.pendingProperties = null;
+        state.pendingSignature = '';
+        state.attempt = 0;
+        try {
+          window.dispatchEvent(new CustomEvent('wallpaper-properties-applied', {
+            detail: safeProperties
+          }));
+        } catch (_) {}
+        const message = myWallpaperPropertyErrorMessage(error) || error;
+        hostLogger.post('properties.error', message);
+        myWallpaperDispatchResizeAfterPropertyError(message);
+        return;
+      }
+
+      const isolatedResult = myWallpaperApplyPropertiesIndividually(
+        safeProperties,
+        listener,
+        userPropertyCallback,
+        signature
+      );
+      window.__myWallpaperLastAppliedUserPropertySignature = signature;
+      window.__myWallpaperLastAppliedUserPropertyCallback = userPropertyCallback;
+      state.pendingProperties = null;
+      state.pendingSignature = '';
+      state.attempt = 0;
+      try {
+        window.dispatchEvent(new CustomEvent('wallpaper-properties-applied', {
+          detail: safeProperties
+        }));
+      } catch (_) {}
+      if (isolatedResult.skippedCount > 0) {
+        hostLogger.post('properties.applied.partial', `applied=${isolatedResult.appliedCount} skipped=${isolatedResult.skippedCount}`);
+      }
+    }
+  };
   window.__myWallpaperApplyProperties = function(properties) {
     const safeProperties = window.__myWallpaperNormalizePropertyBag(properties || {});
     window.__myWallpaperLastUserProperties = safeProperties;
-    try {
-      const hasUserPropertyListener = window.wallpaperPropertyListener && typeof window.wallpaperPropertyListener.applyUserProperties === 'function';
-      const userPropertyCallback = hasUserPropertyListener ? window.wallpaperPropertyListener.applyUserProperties : null;
-      const signature = window.__myWallpaperStablePropertySignature(safeProperties);
-      if (
-        hasUserPropertyListener &&
-        signature &&
-        signature === window.__myWallpaperLastAppliedUserPropertySignature &&
-        userPropertyCallback === window.__myWallpaperLastAppliedUserPropertyCallback
-      ) {
-        return;
-      }
-      if (hasUserPropertyListener) {
-        window.wallpaperPropertyListener.applyUserProperties(safeProperties);
-        window.__myWallpaperLastAppliedUserPropertySignature = signature;
-        window.__myWallpaperLastAppliedUserPropertyCallback = userPropertyCallback;
-      }
-      window.dispatchEvent(new CustomEvent('wallpaper-properties-applied', { detail: safeProperties }));
-    } catch (error) {
-      hostLogger.post('properties.error', error && error.message ? error.message : error);
+    const signature = window.__myWallpaperStablePropertySignature(safeProperties);
+    if (
+      signature &&
+      signature === window.__myWallpaperLastAppliedUserPropertySignature &&
+      window.wallpaperPropertyListener &&
+      typeof window.wallpaperPropertyListener.applyUserProperties === 'function' &&
+      window.wallpaperPropertyListener.applyUserProperties === window.__myWallpaperLastAppliedUserPropertyCallback
+    ) {
+      return;
     }
+    myWallpaperPropertyReplayState.pendingProperties = safeProperties;
+    myWallpaperPropertyReplayState.pendingSignature = signature;
+    myWallpaperPropertyReplayState.attempt = 0;
+    myWallpaperSchedulePendingPropertyApply(0);
   };
   window.__myWallpaperApplyGeneralProperties = function(properties) {
     const normalizedProperties = window.__myWallpaperNormalizePropertyBag(properties || {});
@@ -259,30 +492,41 @@ let webCompatibilityScriptHostBridge = #"""
       try { listener(volume); } catch (_) {}
     }
   };
-  window.__myWallpaperSetPaused = function(isPaused) {
+  window.__myWallpaperSetPaused = function(isPaused, options) {
     const paused = !!isPaused;
+    const replayOptions = options || {};
+    const shouldNotifyPage =
+      !(replayOptions.initialReplay === true && paused === false && window.__myWallpaperLastNotifiedPaused !== true);
     window.wallpaperEngine_paused = paused;
-    try {
-      if (window.wallpaperPropertyListener && typeof window.wallpaperPropertyListener.setPaused === 'function') {
-        window.wallpaperPropertyListener.setPaused(paused);
+    if (shouldNotifyPage) {
+      try {
+        if (window.wallpaperPropertyListener && typeof window.wallpaperPropertyListener.setPaused === 'function') {
+          window.wallpaperPropertyListener.setPaused(paused);
+        }
+        if (window.wallpaperPropertyListener && typeof window.wallpaperPropertyListener.setPlaybackState === 'function') {
+          window.wallpaperPropertyListener.setPlaybackState(paused ? 'paused' : 'playing');
+        }
+        window.__myWallpaperLastNotifiedPaused = paused;
+      } catch (error) {
+        hostLogger.post('pause.error', error && error.message ? error.message : error);
       }
-      if (window.wallpaperPropertyListener && typeof window.wallpaperPropertyListener.setPlaybackState === 'function') {
-        window.wallpaperPropertyListener.setPlaybackState(paused ? 'paused' : 'playing');
-      }
-      window.dispatchEvent(new CustomEvent('wallpaper-pause-changed', { detail: paused }));
-    } catch (error) {
-      hostLogger.post('pause.error', error && error.message ? error.message : error);
     }
+    try {
+      window.dispatchEvent(new CustomEvent('wallpaper-pause-changed', { detail: paused }));
+    } catch (_) {}
+    if (!shouldNotifyPage) return;
     for (const listener of playbackStateListeners) {
       try { listener(paused); } catch (_) {}
     }
     for (const context of audioContextInstances) {
       try {
-        if (paused && typeof context.suspend === 'function') {
+        const contextState = String(context && context.state ? context.state : '').toLowerCase();
+        if (contextState === 'closed') continue;
+        if (paused && typeof context.suspend === 'function' && contextState !== 'suspended') {
           context.suspend().catch((error) => {
             hostLogger.post('audio.suspend.error', error && error.message ? error.message : error);
           });
-        } else if (!paused && typeof context.resume === 'function') {
+        } else if (!paused && typeof context.resume === 'function' && contextState !== 'running') {
           context.resume().catch((error) => {
             hostLogger.post('audio.resume.error', error && error.message ? error.message : error);
           });
@@ -303,9 +547,15 @@ let webCompatibilityScriptHostBridge = #"""
           if (!resolvedSource || normalizedSource.endsWith('/null') || normalizedSource === 'null') {
             continue;
           }
-          node.play().catch((error) => {
-            hostLogger.post('media.play.error', error && error.message ? error.message : error);
-          });
+          const playResult = node.play();
+          const wrappedPlayResult = typeof window.__myWallpaperWrapMediaPlayPromise === 'function'
+            ? window.__myWallpaperWrapMediaPlayPromise(playResult, node)
+            : playResult;
+          if (wrappedPlayResult && typeof wrappedPlayResult.catch === 'function') {
+            wrappedPlayResult.catch((error) => {
+              hostLogger.post('media.play.error', error && error.message ? error.message : error);
+            });
+          }
         }
       } catch (error) {
         hostLogger.post('media.control.error', error && error.message ? error.message : error);
@@ -313,9 +563,12 @@ let webCompatibilityScriptHostBridge = #"""
     }
     wallpaperDispatchMediaPlayback(wallpaperPreferredMediaNode(), paused);
   };
+  window.__myWallpaperApplyInitialPausedState = function(isPaused) {
+    window.__myWallpaperSetPaused(!!isPaused, { initialReplay: true });
+  };
   try {
     window.__myWallpaperSetGlobalVolume(window.__myWallpaperInitialVolume);
-    window.__myWallpaperSetPaused(!!window.__myWallpaperInitialPaused);
+    window.__myWallpaperApplyInitialPausedState(!!window.__myWallpaperInitialPaused);
     window.__myWallpaperNotifyPluginLoaded('led');
     window.__myWallpaperNotifyPluginLoaded('rgb');
   } catch (error) {

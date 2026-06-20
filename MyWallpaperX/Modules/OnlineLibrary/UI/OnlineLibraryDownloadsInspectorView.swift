@@ -7,13 +7,24 @@ import AppKit
 
 final class OnlineLibraryDownloadsInspectorView: NSView {
     private let itemID: Int
-    private let snapshot: OnlineLibraryDownloadsInspectorSnapshot?
+    private var snapshot: OnlineLibraryDownloadsInspectorSnapshot?
+    private var isLoadingSnapshot = true
+    private var snapshotLoadTask: Task<Void, Never>?
+    private let rootStack = NSStackView()
+    private let scrollView = InspectorFadingScrollView()
+    private let documentContainer = NSView()
+    private let contentStack = NSStackView()
+    private var footerView: NSView?
 
     init(itemID: Int) {
         self.itemID = itemID
-        self.snapshot = OnlineLibraryDownloadsInspectorSnapshot.load(itemID: itemID)
         super.init(frame: .zero)
         setup()
+        loadSnapshot()
+    }
+
+    deinit {
+        snapshotLoadTask?.cancel()
     }
 
     @available(*, unavailable)
@@ -65,36 +76,29 @@ final class OnlineLibraryDownloadsInspectorView: NSView {
         wantsLayer = true
         layer?.backgroundColor = NSColor.clear.cgColor
 
-        let rootStack = NSStackView()
         rootStack.orientation = .vertical
         rootStack.alignment = .leading
         rootStack.spacing = 12
         rootStack.translatesAutoresizingMaskIntoConstraints = false
 
-        let scrollView = InspectorFadingScrollView()
         scrollView.drawsBackground = false
         scrollView.hasVerticalScroller = false
         scrollView.hasHorizontalScroller = false
         scrollView.translatesAutoresizingMaskIntoConstraints = false
 
-        let contentStack = NSStackView()
         contentStack.orientation = .vertical
         contentStack.alignment = .leading
         contentStack.spacing = 16
         contentStack.edgeInsets = NSEdgeInsets(top: 0, left: 2, bottom: 0, right: 2)
         contentStack.translatesAutoresizingMaskIntoConstraints = false
 
-        buildContent(in: contentStack)
-        let documentContainer = NSView()
         documentContainer.translatesAutoresizingMaskIntoConstraints = false
         documentContainer.addSubview(contentStack)
         scrollView.documentView = documentContainer
 
-        let footer = makeFooterActions()
-
         addSubview(rootStack)
         rootStack.addArrangedSubview(scrollView)
-        rootStack.addArrangedSubview(footer)
+        rebuildContent()
 
         NSLayoutConstraint.activate([
             rootStack.leadingAnchor.constraint(equalTo: leadingAnchor),
@@ -108,9 +112,38 @@ final class OnlineLibraryDownloadsInspectorView: NSView {
             contentStack.trailingAnchor.constraint(equalTo: documentContainer.trailingAnchor),
             contentStack.centerYAnchor.constraint(equalTo: documentContainer.centerYAnchor),
             contentStack.topAnchor.constraint(greaterThanOrEqualTo: documentContainer.topAnchor),
-            contentStack.bottomAnchor.constraint(lessThanOrEqualTo: documentContainer.bottomAnchor),
-            footer.widthAnchor.constraint(equalTo: rootStack.widthAnchor)
+            contentStack.bottomAnchor.constraint(lessThanOrEqualTo: documentContainer.bottomAnchor)
         ])
+    }
+
+    private func loadSnapshot() {
+        snapshotLoadTask = Task { [weak self, itemID] in
+            let loadedSnapshot = await OnlineLibraryDownloadsInspectorSnapshot.load(itemID: itemID)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                guard let self else { return }
+                self.snapshot = loadedSnapshot
+                self.isLoadingSnapshot = false
+                self.rebuildContent()
+            }
+        }
+    }
+
+    private func rebuildContent() {
+        contentStack.arrangedSubviews.forEach {
+            contentStack.removeArrangedSubview($0)
+            $0.removeFromSuperview()
+        }
+        buildContent(in: contentStack)
+
+        if let footerView {
+            rootStack.removeArrangedSubview(footerView)
+            footerView.removeFromSuperview()
+        }
+        let footer = makeFooterActions()
+        footerView = footer
+        rootStack.addArrangedSubview(footer)
+        footer.widthAnchor.constraint(equalTo: rootStack.widthAnchor).isActive = true
     }
 
     private func buildContent(in stack: NSStackView) {
@@ -269,7 +302,7 @@ final class OnlineLibraryDownloadsInspectorView: NSView {
         stack.addArrangedSubview(icon)
 
         let label = OnlineLibraryDownloadsInspectorViews.makeLabel(
-            "当前下载项文件可能已被移动或删除。",
+            isLoadingSnapshot ? "正在读取下载项信息。" : "当前下载项文件可能已被移动或删除。",
             font: .systemFont(ofSize: 12),
             color: .secondaryLabelColor
         )

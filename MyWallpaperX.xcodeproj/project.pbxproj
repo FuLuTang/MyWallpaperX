@@ -14,6 +14,7 @@
 		A10000052F6B0001005688A8 /* QuartzCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A10000152F6B0001005688A8 /* QuartzCore.framework */; };
 		A10000062F6B0001005688A8 /* MyWallpaperXHelp in Resources */ = {isa = PBXBuildFile; fileRef = 98E9DA272F786FCC00C96FC7 /* MyWallpaperXHelp */; };
 		A20000012F800001005688A8 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = A20000112F800001005688A8 /* Sparkle */; };
+		A20000022F800002005688A8 /* AppIntents.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A20000122F800002005688A8 /* AppIntents.framework */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -36,6 +37,7 @@
 		A10000132F6B0001005688A8 /* AVFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AVFoundation.framework; path = System/Library/Frameworks/AVFoundation.framework; sourceTree = SDKROOT; };
 		A10000142F6B0001005688A8 /* CoreGraphics.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreGraphics.framework; path = System/Library/Frameworks/CoreGraphics.framework; sourceTree = SDKROOT; };
 		A10000152F6B0001005688A8 /* QuartzCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = QuartzCore.framework; path = System/Library/Frameworks/QuartzCore.framework; sourceTree = SDKROOT; };
+		A20000122F800002005688A8 /* AppIntents.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AppIntents.framework; path = System/Library/Frameworks/AppIntents.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -86,6 +88,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A20000022F800002005688A8 /* AppIntents.framework in Frameworks */,
 				A20000012F800001005688A8 /* Sparkle in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -127,6 +130,7 @@
 		A10000342F6B0001005688A8 /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
+				A20000122F800002005688A8 /* AppIntents.framework */,
 				A10000122F6B0001005688A8 /* AppKit.framework */,
 				A10000132F6B0001005688A8 /* AVFoundation.framework */,
 				A10000142F6B0001005688A8 /* CoreGraphics.framework */,
@@ -410,7 +414,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
-				MARKETING_VERSION = 2.0.3;
+				MARKETING_VERSION = 2.0.4;
 				PRODUCT_BUNDLE_IDENTIFIER = com.songziqiang.MyWallpaperX;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -454,7 +458,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
-				MARKETING_VERSION = 2.0.3;
+				MARKETING_VERSION = 2.0.4;
 				PRODUCT_BUNDLE_IDENTIFIER = com.songziqiang.MyWallpaperX;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";

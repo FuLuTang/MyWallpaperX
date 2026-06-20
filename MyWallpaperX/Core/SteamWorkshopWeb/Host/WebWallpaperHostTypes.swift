@@ -229,6 +229,7 @@ final class DedicatedWebWallpaperHostPlaceholderAdapter: NSObject, WallpaperEngi
     var lastPolledMouseLocation: NSPoint?
     var lastHoveredScreenID: CGDirectDisplayID?
     var lastPointerMoveForwardedAt: TimeInterval = 0
+    var activeInputForwardingStartedAt: TimeInterval?
     var interactiveRegionsByScreen: [CGDirectDisplayID: [InteractiveRegion]] = [:]
     var interactiveRegionRegistrationByScreen: [CGDirectDisplayID: InteractiveRegionRegistration] = [:]
     var transientCaptureReleaseWorkItems: [CGDirectDisplayID: DispatchWorkItem] = [:]
@@ -236,6 +237,7 @@ final class DedicatedWebWallpaperHostPlaceholderAdapter: NSObject, WallpaperEngi
     var lastPreheatedRegionIDByScreen: [CGDirectDisplayID: String] = [:]
 
     static let pointerMoveThrottleInterval: TimeInterval = 1.0 / 30.0
+    static let activeClickWarmupDuration: TimeInterval = 0.45
     static let transientCaptureDuration: TimeInterval = 0.03
     static let dragCaptureDuration: TimeInterval = 0.12
     static let hoverPreheatInset: CGFloat = 0.03
