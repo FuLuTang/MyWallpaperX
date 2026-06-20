@@ -78,11 +78,9 @@ extension SteamWorkshopService {
         cancelDownloadImmediately(showFeedback: false)
         logoutImmediately()
 
-        let fileManager = FileManager.default
-        try? fileManager.removeItem(at: cacheDirectoryURL)
-        try? fileManager.removeItem(at: Self.detailCacheDirectoryURL())
-        try? fileManager.removeItem(at: runtimeInstallRootURL)
-        try? fileManager.removeItem(at: libraryRootURL)
+        clearSteamWorkshopCacheDirectory(cacheDirectoryURL)
+        clearSteamWorkshopCacheDirectory(Self.detailCacheDirectoryURL())
+        clearSteamWorkshopCacheDirectory(runtimeInstallRootURL)
         SteamWorkshopPreviewImageCache.shared.removeAll()
         ThumbnailCache.clearDiskCache()
         Task {
@@ -158,5 +156,37 @@ extension SteamWorkshopService {
         navigationVersion += 1
         currentPageTitle = browseContext.title
         statusMessage = "Steam 创意工坊已恢复到初始状态。下次进入时会像首次使用一样重新加载。"
+    }
+
+    private func clearSteamWorkshopCacheDirectory(_ url: URL) {
+        let standardizedURL = url.resolvingSymlinksInPath().standardizedFileURL
+        guard isAllowedSteamWorkshopCacheDeletionTarget(standardizedURL) else {
+            assertionFailure("Refusing to clear non-cache Steam Workshop path: \(standardizedURL.path)")
+            return
+        }
+        try? FileManager.default.removeItem(at: standardizedURL)
+    }
+
+    private func isAllowedSteamWorkshopCacheDeletionTarget(_ url: URL) -> Bool {
+        let path = url.path
+        let cacheRoot = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)
+            .first?
+            .resolvingSymlinksInPath()
+            .standardizedFileURL
+            .path
+        let appSupportRoot = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
+            .first?
+            .appendingPathComponent("MyWallpaperX", isDirectory: true)
+            .resolvingSymlinksInPath()
+            .standardizedFileURL
+            .path
+
+        if let cacheRoot, path == cacheRoot || path.hasPrefix(cacheRoot + "/") {
+            return true
+        }
+        if let appSupportRoot, path == appSupportRoot || path.hasPrefix(appSupportRoot + "/") {
+            return true
+        }
+        return false
     }
 }
