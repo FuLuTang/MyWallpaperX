@@ -116,6 +116,7 @@ final class SteamWorkshopService: ObservableObject {
 
     var webValidationReportCache: [String: CachedWebValidationReport] = [:]
     var webRuntimeModelCache: [String: CachedWebRuntimeModel] = [:]
+    var activeWebPropertySecurityScopedURLs: [String: URL] = [:]
 
     // MARK: - Runtime tasks and processes
 

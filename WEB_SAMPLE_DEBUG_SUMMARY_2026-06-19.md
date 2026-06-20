@@ -1107,3 +1107,60 @@ Residual validation note:
 - Code review confirms the commit path writes overrides to `UserDefaults`, invalidates the in-memory Web runtime cache, and changes the runtime cache manifest `overridesSignature` used when switching back.
 - The runtime smoke verifies no regression in the affected samples.
 - The exact user repro still needs one manual UI check: drag `backgroundblursteps`, switch away, switch back, and confirm the slider value and visual are restored.
+
+## Follow-up - 2026-06-21 Background file property selection for `923576681` / `3702651975`
+
+Problem reported by user:
+
+- `923576681` and dependency-backed sample `3702651975` do not show background material as expected.
+- Manually selecting a background image from the Web property panel is ineffective.
+
+Source/runtime analysis:
+
+- `3702651975` declares `dependency: 923576681` and supplies a preset `backgroundimageb = files/wallpaperflare.com_wallpaper.jpg`.
+- `923576681/main.js` reads `properties.backgroundimageb.value`, prepends `file:///`, and assigns it to `#bottom.style.backgroundImage`.
+- Existing bootstrap CSS URL rewriting can normalize the resulting `file:////Users/...` style value into `mwx-local://wallpaper/__absolute__/...`, so the extra slash is not the root cause.
+- The app is sandboxed (`com.apple.security.app-sandbox = true`).
+- Existing Web file-property bookmarks were created without `.withSecurityScope`, resolved without `.withSecurityScope`, and did not call `startAccessingSecurityScopedResource()`.
+- A second issue was found in `updateWebPropertyBookmark`: saving a newly selected file used `resolvedWebRuntimeAssetURL`, whose binding resolution preferred an existing bookmark for that same property. That could recreate or preserve the old bookmark instead of bookmarking the newly selected raw value.
+
+Changed files:
+
+- `MyWallpaperX/Modules/SteamWorkshop/Core/SteamWorkshopService.swift`
+- `MyWallpaperX/Modules/SteamWorkshop/Web/Core/SteamWorkshopService+WebPropertyOverridePersistence.swift`
+- `MyWallpaperX/Modules/SteamWorkshop/Web/Core/SteamWorkshopService+WebPropertySupport.swift`
+
+Implementation:
+
+- Track active security-scoped Web property URLs on `SteamWorkshopService`.
+- Create file/directory property bookmarks with `.withSecurityScope`.
+- Resolve bookmarks with `.withSecurityScope`, start security-scoped access, and keep access active while the service lives.
+- Stop old security-scoped access when clearing/replacing a bookmark.
+- Add a `usesBookmarks` flag to `resolvedWebResourceBinding`, defaulting to existing behavior.
+- When saving a new file-property bookmark, resolve the current raw value with `usesBookmarks: false` so stale bookmarks do not override the newly selected path.
+
+Validation status:
+
+- Pre-fix targeted runtime logs:
+
+```text
+/tmp/mwx-target-923-bg-20260621-042858
+```
+
+- `923576681` and `3702651975` reached `host.ready` and `navigation.finish` with no `properties.error`, `window.error`, or `promise.rejection`.
+- Build and post-fix runtime validation are still pending because the Codex sandbox-external command quota blocked `xcodebuild` after the code change.
+- Required next validation when quota is available:
+  1. Build Debug app.
+  2. Rerun `923576681` and `3702651975`.
+  3. In the UI, reselect a background image for `backgroundimageb` so a fresh security-scoped bookmark is created.
+  4. Confirm the selected background displays and persists across switching away/back.
+  5. Run a representative non-file-property Web sample such as `2997985023` to confirm no unrelated Web runtime regression.
+
+### Deferred status - 2026-06-21
+
+- User reset settings and retested after the current workspace attempt; the background still did not display and manual background selection remained ineffective.
+- The current code attempt is therefore not a confirmed fix.
+- Keep the issue open and deferred. Next pass should inspect the live WebView DOM/style/resource flow instead of relying on runtime payload/cache inspection alone:
+  - `#bottom.style.backgroundImage` after `applyUserProperties`.
+  - Whether the rewritten `mwx-local://wallpaper/__absolute__/...` request is issued and succeeds.
+  - Whether another property branch or layout layer clears, covers, or visually hides `#bottom`.

@@ -30,47 +30,97 @@ extension SteamWorkshopService {
         record: SteamWorkshopDownloadRecord
     ) {
         guard definition.kind == .file || definition.kind == .directory else { return }
-        let key = WebPropertyOverrideStore.bookmarkPrefix + record.id + "." + definition.key
-        guard let resolvedURL = resolvedWebRuntimeAssetURL(forKey: definition.key, definition: definition, rawValue: value, record: record),
-              let bookmark = try? resolvedURL.bookmarkData() else {
+        let key = webPropertyBookmarkKey(forKey: definition.key, record: record)
+        guard let resolvedURL = resolvedWebResourceBinding(
+            forKey: definition.key,
+            definition: definition,
+            rawValue: value,
+            record: record,
+            usesBookmarks: false
+        )?.resolvedURL,
+              let bookmark = makeWebPropertyBookmarkData(for: resolvedURL) else {
             defaults.removeObject(forKey: key)
+            updateWebPropertySecurityScope(nil, forBookmarkKey: key)
             return
         }
         defaults.set(bookmark, forKey: key)
+        updateWebPropertySecurityScope(resolvedURL, forBookmarkKey: key)
     }
 
     func clearWebPropertyBookmarks(for record: SteamWorkshopDownloadRecord) {
         let prefix = WebPropertyOverrideStore.bookmarkPrefix + record.id + "."
         for key in defaults.dictionaryRepresentation().keys where key.hasPrefix(prefix) {
             defaults.removeObject(forKey: key)
+            updateWebPropertySecurityScope(nil, forBookmarkKey: key)
         }
     }
 
     func resolvedBookmarkedWebPropertyURL(forKey key: String, record: SteamWorkshopDownloadRecord) -> URL? {
-        let bookmarkKey = WebPropertyOverrideStore.bookmarkPrefix + record.id + "." + key
+        let bookmarkKey = webPropertyBookmarkKey(forKey: key, record: record)
         guard let bookmarkData = defaults.data(forKey: bookmarkKey) else {
+            updateWebPropertySecurityScope(nil, forBookmarkKey: bookmarkKey)
             return nil
         }
 
         var isStale = false
-        guard let resolvedURL = try? URL(
-            resolvingBookmarkData: bookmarkData,
-            options: [],
-            relativeTo: nil,
-            bookmarkDataIsStale: &isStale
-        ).resolvingSymlinksInPath().standardizedFileURL else {
+        guard let resolvedURL = resolveWebPropertyBookmarkData(bookmarkData, bookmarkDataIsStale: &isStale) else {
             defaults.removeObject(forKey: bookmarkKey)
+            updateWebPropertySecurityScope(nil, forBookmarkKey: bookmarkKey)
             return nil
         }
+        updateWebPropertySecurityScope(resolvedURL, forBookmarkKey: bookmarkKey)
 
         guard FileManager.default.fileExists(atPath: resolvedURL.path) else {
             defaults.removeObject(forKey: bookmarkKey)
+            updateWebPropertySecurityScope(nil, forBookmarkKey: bookmarkKey)
             return nil
         }
 
-        if isStale, let refreshedBookmark = try? resolvedURL.bookmarkData() {
+        if isStale, let refreshedBookmark = makeWebPropertyBookmarkData(for: resolvedURL) {
             defaults.set(refreshedBookmark, forKey: bookmarkKey)
         }
         return resolvedURL
+    }
+
+    private func webPropertyBookmarkKey(forKey key: String, record: SteamWorkshopDownloadRecord) -> String {
+        WebPropertyOverrideStore.bookmarkPrefix + record.id + "." + key
+    }
+
+    private func makeWebPropertyBookmarkData(for url: URL) -> Data? {
+        try? url.bookmarkData(options: [.withSecurityScope], includingResourceValuesForKeys: nil, relativeTo: nil)
+    }
+
+    private func resolveWebPropertyBookmarkData(_ data: Data, bookmarkDataIsStale isStale: inout Bool) -> URL? {
+        if let url = try? URL(
+            resolvingBookmarkData: data,
+            options: [.withSecurityScope],
+            relativeTo: nil,
+            bookmarkDataIsStale: &isStale
+        ).resolvingSymlinksInPath().standardizedFileURL {
+            return url
+        }
+
+        return try? URL(
+            resolvingBookmarkData: data,
+            options: [],
+            relativeTo: nil,
+            bookmarkDataIsStale: &isStale
+        ).resolvingSymlinksInPath().standardizedFileURL
+    }
+
+    private func updateWebPropertySecurityScope(_ url: URL?, forBookmarkKey key: String) {
+        let normalizedURL = url?.resolvingSymlinksInPath().standardizedFileURL
+        if let existingURL = activeWebPropertySecurityScopedURLs[key] {
+            if existingURL.path == normalizedURL?.path {
+                return
+            }
+            existingURL.stopAccessingSecurityScopedResource()
+            activeWebPropertySecurityScopedURLs.removeValue(forKey: key)
+        }
+
+        guard let normalizedURL else { return }
+        if normalizedURL.startAccessingSecurityScopedResource() {
+            activeWebPropertySecurityScopedURLs[key] = normalizedURL
+        }
     }
 }

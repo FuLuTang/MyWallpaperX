@@ -145,6 +145,10 @@ User manually confirmed after these fixes:
 
 ## Latest follow-up - 2026-06-21 slider drag commit persistence
 
+Status:
+
+- Committed as `8e26b1c Fix web slider drag persistence`.
+
 Current workspace change:
 
 - `MyWallpaperX/Modules/SteamWorkshop/UI/SteamWorkshopItemDetailSheet.swift`
@@ -181,6 +185,44 @@ Manual verification still needed:
 4. Switch back to `3700131876`.
 5. Confirm the slider档位 and visual restore.
 6. Repeat once for `3700928191` if the first check passes.
+
+## Deferred follow-up - 2026-06-21 background file property selection
+
+Current user-visible problem:
+
+- `923576681` and dependency-backed `3702651975` do not show expected background material.
+- Manually selecting a background image from the Web property panel is ineffective.
+- User reset settings and retested after the current workspace attempt; the fix was still ineffective. This issue is intentionally deferred for now.
+
+Confirmed analysis:
+
+- `3702651975` depends on `923576681` and presets `backgroundimageb = files/wallpaperflare.com_wallpaper.jpg`.
+- `923576681/main.js` prepends `file:///` to `properties.backgroundimageb.value` and assigns the result to `#bottom.style.backgroundImage`.
+- The existing CSS URL rewrite path can normalize `file:////Users/...` into `mwx-local://wallpaper/__absolute__/...`; the extra slash is not the root cause.
+- The app is sandboxed.
+- Existing file-property bookmarks were not security-scoped and did not start security-scoped access.
+- Saving a newly selected file also reused `resolvedWebRuntimeAssetURL`, which preferred the old bookmark over the new raw path.
+
+Current uncommitted code change:
+
+- `MyWallpaperX/Modules/SteamWorkshop/Core/SteamWorkshopService.swift`
+- `MyWallpaperX/Modules/SteamWorkshop/Web/Core/SteamWorkshopService+WebPropertyOverridePersistence.swift`
+- `MyWallpaperX/Modules/SteamWorkshop/Web/Core/SteamWorkshopService+WebPropertySupport.swift`
+
+Implementation intent:
+
+- Store Web file/directory property bookmarks with `.withSecurityScope`.
+- Resolve them with `.withSecurityScope` and keep `startAccessingSecurityScopedResource()` active on `SteamWorkshopService`.
+- Stop old security-scoped access when a bookmark is cleared or replaced.
+- Add `usesBookmarks` to `resolvedWebResourceBinding`; bookmark saving uses `usesBookmarks: false` so the current raw selected path replaces any stale bookmark.
+
+Validation status:
+
+- Static `git diff --check` passed.
+- Build passed after the attempted fix.
+- Targeted runtime runs for `923576681`, `3702651975`, and `2997985023` reached `host.ready` / `navigation.finish`.
+- Cache inspection showed `3702651975`'s preset resource binding can resolve `backgroundimageb` to `3702651975/files/wallpaperflare.com_wallpaper.jpg`, but user manual retest still found the wallpaper background ineffective after resetting settings.
+- Treat the current hypothesis as incomplete. Next investigation should inspect the actual WebView DOM/style/resource request result for `#bottom.style.backgroundImage`, `mwx-local://wallpaper/__absolute__/...` load success, and whether the sample's later property branches clear or cover the background.
 
 ## Previous remaining issue
 

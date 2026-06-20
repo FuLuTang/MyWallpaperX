@@ -82,7 +82,8 @@ extension SteamWorkshopService {
         forKey key: String,
         definition: SteamWorkshopWebPropertyDefinition?,
         rawValue: SteamWorkshopWebPropertyValue,
-        record: SteamWorkshopDownloadRecord
+        record: SteamWorkshopDownloadRecord,
+        usesBookmarks: Bool = true
     ) -> ResolvedWebResourceBinding? {
         guard let rawPath = rawValue.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines),
               !rawPath.isEmpty else {
@@ -106,7 +107,9 @@ extension SteamWorkshopService {
             return nil
         }
 
-        if let bookmarkURL = resolvedBookmarkedWebPropertyURL(forKey: key, record: record) {
+        if usesBookmarks,
+           shouldUseBookmarkedWebPropertyURL(forRawPath: normalized),
+           let bookmarkURL = resolvedBookmarkedWebPropertyURL(forKey: key, record: record) {
             return ResolvedWebResourceBinding(
                 key: key,
                 rawValue: rawPath,
@@ -134,6 +137,8 @@ extension SteamWorkshopService {
 
         var candidateRoots: [(ResolvedWebResourceBindingSource, URL)] = []
         if record.isDependencyBackedWeb {
+            // Dependency-backed presets commonly point at files owned by the shell sample,
+            // while scripts and property definitions come from the dependency host.
             candidateRoots.append((.shellRoot, record.webShellRootURL))
         }
         if let rootURL = record.webHostRootURL ?? record.resolvedWebRootURL {
@@ -207,6 +212,12 @@ extension SteamWorkshopService {
             return rawValue
         }
         return rawValue
+    }
+
+    private func shouldUseBookmarkedWebPropertyURL(forRawPath rawPath: String) -> Bool {
+        let normalizedPath = rawPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard normalizedPath.hasPrefix("/") else { return false }
+        return existingWebResourceURL(for: URL(fileURLWithPath: normalizedPath)) == nil
     }
 
 }
