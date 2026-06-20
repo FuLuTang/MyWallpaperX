@@ -64,8 +64,8 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
             let now = ProcessInfo.processInfo.systemUptime
             guard now - lastPointerMoveForwardedAt >= Self.pointerMoveThrottleInterval else { return }
             lastPointerMoveForwardedAt = now
-        } else if isActiveInputEvent(event),
-                  isWithinActiveInputWarmup {
+        } else if isStartupClickEvent(event),
+                  isWithinActiveClickWarmup {
             return
         }
         let screenLocation: NSPoint
@@ -160,15 +160,15 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
         }
     }
 
-    var isWithinActiveInputWarmup: Bool {
+    var isWithinActiveClickWarmup: Bool {
         guard let activeInputForwardingStartedAt else { return false }
-        return ProcessInfo.processInfo.systemUptime - activeInputForwardingStartedAt < Self.activeInputWarmupDuration
+        return ProcessInfo.processInfo.systemUptime - activeInputForwardingStartedAt < Self.activeClickWarmupDuration
     }
 
-    func isActiveInputEvent(_ event: NSEvent) -> Bool {
+    func isStartupClickEvent(_ event: NSEvent) -> Bool {
         switch event.type {
         case .leftMouseDown, .leftMouseUp, .rightMouseDown, .rightMouseUp, .otherMouseDown, .otherMouseUp,
-             .leftMouseDragged, .rightMouseDragged, .otherMouseDragged, .scrollWheel:
+             .leftMouseDragged, .rightMouseDragged, .otherMouseDragged:
             return true
         default:
             return false

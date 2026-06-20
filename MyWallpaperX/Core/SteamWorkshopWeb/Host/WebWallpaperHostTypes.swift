@@ -237,7 +237,7 @@ final class DedicatedWebWallpaperHostPlaceholderAdapter: NSObject, WallpaperEngi
     var lastPreheatedRegionIDByScreen: [CGDirectDisplayID: String] = [:]
 
     static let pointerMoveThrottleInterval: TimeInterval = 1.0 / 30.0
-    static let activeInputWarmupDuration: TimeInterval = 3.5
+    static let activeClickWarmupDuration: TimeInterval = 0.45
     static let transientCaptureDuration: TimeInterval = 0.03
     static let dragCaptureDuration: TimeInterval = 0.12
     static let hoverPreheatInset: CGFloat = 0.03
