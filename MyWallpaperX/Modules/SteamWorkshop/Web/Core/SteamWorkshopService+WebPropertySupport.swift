@@ -107,8 +107,10 @@ extension SteamWorkshopService {
             return nil
         }
 
+        let candidateRoots = webResourceCandidateRoots(for: record)
+
         if usesBookmarks,
-           shouldUseBookmarkedWebPropertyURL(forRawPath: normalized),
+           kind != .pathlikePreset,
            let bookmarkURL = resolvedBookmarkedWebPropertyURL(forKey: key, record: record) {
             return ResolvedWebResourceBinding(
                 key: key,
@@ -124,36 +126,25 @@ extension SteamWorkshopService {
         if normalized.hasPrefix("/") {
             let candidateURL = URL(fileURLWithPath: normalized).resolvingSymlinksInPath().standardizedFileURL
             let resolvedCandidateURL = existingWebResourceURL(for: candidateURL)
+            let bundledRoot = resolvedCandidateURL.flatMap { candidateURL in
+                candidateRoots.first { isWebResource(candidateURL, containedIn: $0.1) }
+            }
             return ResolvedWebResourceBinding(
                 key: key,
                 rawValue: rawPath,
                 kind: kind,
                 fileType: definition?.fileType,
-                resolvedURL: resolvedCandidateURL,
-                source: resolvedCandidateURL != nil ? .absolutePath : .unresolved,
+                resolvedURL: bundledRoot == nil && usesBookmarks ? nil : resolvedCandidateURL,
+                source: bundledRoot?.0 ?? (resolvedCandidateURL != nil && !usesBookmarks ? .absolutePath : .unresolved),
                 origin: origin
             )
         }
 
-        var candidateRoots: [(ResolvedWebResourceBindingSource, URL)] = []
-        if record.isDependencyBackedWeb {
-            // Dependency-backed presets commonly point at files owned by the shell sample,
-            // while scripts and property definitions come from the dependency host.
-            candidateRoots.append((.shellRoot, record.webShellRootURL))
-        }
-        if let rootURL = record.webHostRootURL ?? record.resolvedWebRootURL {
-            let standardizedRootURL = rootURL.resolvingSymlinksInPath().standardizedFileURL
-            if candidateRoots.contains(where: { $0.1.path == standardizedRootURL.path }) == false {
-                candidateRoots.append((.hostRoot, standardizedRootURL))
-            }
-        }
-        let standardizedFolderURL = record.folderURL.resolvingSymlinksInPath().standardizedFileURL
-        if candidateRoots.contains(where: { $0.1.path == standardizedFolderURL.path }) == false {
-            candidateRoots.append((.recordFolder, standardizedFolderURL))
-        }
-
         for (source, rootURL) in candidateRoots {
             let candidateURL = rootURL.appendingPathComponent(normalized).resolvingSymlinksInPath().standardizedFileURL
+            guard isWebResource(candidateURL, containedIn: rootURL) else {
+                continue
+            }
             if let resolvedCandidateURL = existingWebResourceURL(for: candidateURL) {
                 return ResolvedWebResourceBinding(
                     key: key,
@@ -176,6 +167,32 @@ extension SteamWorkshopService {
             source: .unresolved,
             origin: origin
         )
+    }
+
+    private func webResourceCandidateRoots(for record: SteamWorkshopDownloadRecord) -> [(ResolvedWebResourceBindingSource, URL)] {
+        var candidateRoots: [(ResolvedWebResourceBindingSource, URL)] = []
+        if record.isDependencyBackedWeb {
+            // Dependency-backed presets commonly point at files owned by the shell sample,
+            // while scripts and property definitions come from the dependency host.
+            candidateRoots.append((.shellRoot, record.webShellRootURL))
+        }
+        if let rootURL = record.webHostRootURL ?? record.resolvedWebRootURL {
+            let standardizedRootURL = rootURL.resolvingSymlinksInPath().standardizedFileURL
+            if candidateRoots.contains(where: { $0.1.path == standardizedRootURL.path }) == false {
+                candidateRoots.append((.hostRoot, standardizedRootURL))
+            }
+        }
+        let standardizedFolderURL = record.folderURL.resolvingSymlinksInPath().standardizedFileURL
+        if candidateRoots.contains(where: { $0.1.path == standardizedFolderURL.path }) == false {
+            candidateRoots.append((.recordFolder, standardizedFolderURL))
+        }
+        return candidateRoots
+    }
+
+    private func isWebResource(_ candidateURL: URL, containedIn rootURL: URL) -> Bool {
+        let candidatePath = candidateURL.resolvingSymlinksInPath().standardizedFileURL.path
+        let rootPath = rootURL.resolvingSymlinksInPath().standardizedFileURL.path
+        return candidatePath == rootPath || candidatePath.hasPrefix(rootPath + "/")
     }
 
     func resolvedWebRuntimeAssetURL(
@@ -212,12 +229,6 @@ extension SteamWorkshopService {
             return rawValue
         }
         return rawValue
-    }
-
-    private func shouldUseBookmarkedWebPropertyURL(forRawPath rawPath: String) -> Bool {
-        let normalizedPath = rawPath.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard normalizedPath.hasPrefix("/") else { return false }
-        return existingWebResourceURL(for: URL(fileURLWithPath: normalizedPath)) == nil
     }
 
 }
