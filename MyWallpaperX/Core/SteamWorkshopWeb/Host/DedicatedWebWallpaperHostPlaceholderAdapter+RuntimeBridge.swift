@@ -222,7 +222,6 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
     }
 
     func applyProperties(_ propertiesJSON: String, to webView: WKWebView) {
-        refreshReadableResourceRoots(using: propertiesJSON)
         let escapedProperties = WebWallpaperHostSupport.javaScriptQuotedString(propertiesJSON)
         webView.evaluateJavaScript(
             """

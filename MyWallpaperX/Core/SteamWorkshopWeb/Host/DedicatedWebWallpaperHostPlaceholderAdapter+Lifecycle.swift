@@ -134,17 +134,22 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
                 currentVolume = volume
                 forEachWebView { self.applyVolume(volume, to: $0) }
             case let .applyProperties(propertiesJSON):
+                let effectivePropertiesJSON = mergedWebPropertiesJSON(
+                    baseJSON: currentRequest?.propertiesJSON,
+                    deltaJSON: propertiesJSON
+                )
                 if let request = currentRequest {
                     currentRequest = WallpaperEngine.WebWallpaperLaunchRequest(
                         entryURL: request.entryURL,
                         rootURL: request.rootURL,
-                        propertiesJSON: propertiesJSON,
+                        propertiesJSON: effectivePropertiesJSON,
                         source: request.source,
                         recordID: request.recordID,
                         runtimeProfile: request.runtimeProfile
                     )
                 }
-                syncFetchAllDirectoryProperties(using: propertiesJSON)
+                refreshReadableResourceRoots(using: effectivePropertiesJSON)
+                syncFetchAllDirectoryProperties(using: effectivePropertiesJSON)
                 forEachWebView { self.applyProperties(propertiesJSON, to: $0) }
             case .stop:
                 teardownHostSurfaces()
@@ -157,6 +162,30 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
                 break
             }
         }
+    }
+
+    private func mergedWebPropertiesJSON(baseJSON: String?, deltaJSON: String) -> String {
+        guard let deltaData = deltaJSON.data(using: .utf8),
+              let delta = try? JSONSerialization.jsonObject(with: deltaData) as? [String: Any] else {
+            return baseJSON ?? deltaJSON
+        }
+
+        var merged: [String: Any] = [:]
+        if let baseJSON,
+           let baseData = baseJSON.data(using: .utf8),
+           let base = try? JSONSerialization.jsonObject(with: baseData) as? [String: Any] {
+            merged = base
+        }
+        for (key, value) in delta {
+            merged[key] = value
+        }
+
+        guard JSONSerialization.isValidJSONObject(merged),
+              let mergedData = try? JSONSerialization.data(withJSONObject: merged),
+              let mergedJSON = String(data: mergedData, encoding: .utf8) else {
+            return baseJSON ?? deltaJSON
+        }
+        return mergedJSON
     }
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
