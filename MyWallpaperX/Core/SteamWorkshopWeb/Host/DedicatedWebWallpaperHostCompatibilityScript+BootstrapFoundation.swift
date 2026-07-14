@@ -16,9 +16,9 @@ let webCompatibilityScriptBootstrapFoundation = #"""
   const audioContextInstances = new Set();
   const randomFileRequestTimeoutMS = 8000;
   const mediaPlaybackConstants = {
-    PLAYBACK_STOPPED: 'stopped',
-    PLAYBACK_PLAYING: 'playing',
-    PLAYBACK_PAUSED: 'paused'
+    PLAYBACK_STOPPED: 0,
+    PLAYBACK_PLAYING: 1,
+    PLAYBACK_PAUSED: 2
   };
   window.__myWallpaperIsMediaPlayAbortError = function(error) {
     const name = String((error && error.name) || '');
