@@ -31,7 +31,7 @@
 - 多角色任务没有经过 `Integrator` 收口
 - 需要验证的交付没有经过 `Verifier`
 - 没有 diff patch，只有口头说明
-- 改了公共协议，却没同步 `docs/framework-architecture-memo.md`
+- 改了公共协议，却没同步 `docs/architecture/framework-architecture-memo.md`
 - 改了统一 Inspector 宿主接入，却没同时检查宿主 / bridge / 模块内容三者关系
 
 ---
@@ -42,7 +42,7 @@
 
 检查：
 
-- 是否先读了 `docs/framework-architecture-memo.md`
+- 是否先读了 `docs/architecture/framework-architecture-memo.md`
 - 是否明确列出涉及文件
 - 是否明确列出涉及模块
 - 是否列出通知 / 路由 / 菜单 / 焦点 / 工具栏触点
@@ -242,7 +242,7 @@
 
 检查：
 
-- 是否更新 `docs/framework-architecture-memo.md`
+- 是否更新 `docs/architecture/framework-architecture-memo.md`
 - 是否错误更新了 `docs/framework-fix-archive.md`
 
 规则：

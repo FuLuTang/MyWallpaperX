@@ -335,11 +335,11 @@
 
 当前已形成这些实验脚本，可作为后续参考：
 
-- `scripts/4khd_image_probe.py`
+- `script/data-source-probes/4khd_image_probe.py`
   - 用于列表页 / 详情页采样
-- `scripts/4khd_gallery_dump.py`
+- `script/data-source-probes/4khd_gallery_dump.py`
   - 用于图集分页枚举和图片 URL 导出
-- `scripts/4khd_origin_probe.py`
+- `script/data-source-probes/4khd_origin_probe.py`
   - 用于测试代理图与原图候选 URL
 
 这些脚本目前适合做：

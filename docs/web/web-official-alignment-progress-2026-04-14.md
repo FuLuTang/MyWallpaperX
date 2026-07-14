@@ -225,9 +225,9 @@
 
 建议把这几份文档视为当前主参考：
 
-- `docs/wallpaper-engine-web-rules-reference-2026-04-14.md`
-- `docs/web-project-json-runtime-model-plan-2026-04-14.md`
-- `docs/web-official-alignment-progress-2026-04-15.md`
+- `docs/web/wallpaper-engine-web-rules-reference-2026-04-14.md`
+- `docs/web/web-project-json-runtime-model-plan-2026-04-14.md`
+- `docs/web/web-official-alignment-progress-2026-04-14.md`
 
 其中：
 

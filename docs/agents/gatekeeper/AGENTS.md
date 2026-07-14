@@ -9,7 +9,7 @@
 - 焦点是否同步：`moduleDidBecomeActive` 与 `ModuleFocusable`
 - InspectorHost 是否同步：宿主通知、bridge 接入、模块详情内容与关闭时序
 - 跨模块行为是否仍走 Notification + Coordinator 中转
-- 框架文档是否同步：`docs/framework-architecture-memo.md`
+- 框架文档是否同步：`docs/architecture/framework-architecture-memo.md`
 - 修复归档是否被误写：`docs/framework-fix-archive.md` 只记录真实已修复缺陷
 
 ## 统一强制规则

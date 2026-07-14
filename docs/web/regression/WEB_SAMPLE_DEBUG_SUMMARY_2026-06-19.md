@@ -1040,7 +1040,7 @@ Do not modify official sample files under `/Users/songziqiang/Movies/MyWallpaper
 Resumed from:
 
 ```text
-/Users/songziqiang/Documents/Development/MyWallpaperX/WEB_SAMPLE_HANDOFF_2026-06-19.md
+/Users/songziqiang/Documents/Development/MyWallpaperX/docs/web/regression/WEB_SAMPLE_HANDOFF_2026-06-19.md
 ```
 
 Remaining user-visible problem:

@@ -172,11 +172,11 @@ descriptor 的职责是：
 
 ## 7. 当前文档分工建议
 
-- `docs/wallpaper-engine-web-rules-reference-2026-04-14.md`
+- `docs/web/wallpaper-engine-web-rules-reference-2026-04-14.md`
   - 记录官方规则与项目内稳定解释
-- `docs/web-project-json-runtime-model-plan-2026-04-14.md`
+- `docs/web/web-project-json-runtime-model-plan-2026-04-14.md`
   - 记录当前解析层 / 运行层主方案
-- `docs/web-official-alignment-progress-2026-04-14.md`
+- `docs/web/web-official-alignment-progress-2026-04-14.md`
   - 记录当前落地状态与剩余缺口
 
 详细设计如果后续继续保留，应只服务实现，不再单独维护一份大量重复的长篇说明。

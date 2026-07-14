@@ -223,7 +223,7 @@
 5. [collaboration-protocol.md](/Users/songziqiang/Documents/Development/MyWallpaperX/docs/agents/collaboration-protocol.md)
 6. [integrator/AGENTS.md](/Users/songziqiang/Documents/Development/MyWallpaperX/docs/agents/integrator/AGENTS.md)
 7. [verifier/AGENTS.md](/Users/songziqiang/Documents/Development/MyWallpaperX/docs/agents/verifier/AGENTS.md)
-8. [../web-docs-index.md](/Users/songziqiang/Documents/Development/MyWallpaperX/docs/web-docs-index.md)
+8. [../web/README.md](/Users/songziqiang/Documents/Development/MyWallpaperX/docs/web/README.md)
 9. 再进入你需要的具体角色文件
 
 ---
@@ -238,7 +238,7 @@
 - 如果公共协议变化，确保：
   - 本目录文档
   - 各角色文档
-  - `docs/framework-architecture-memo.md`
+  - `docs/architecture/framework-architecture-memo.md`
   三者一致
 
 ---

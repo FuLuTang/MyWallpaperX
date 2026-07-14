@@ -5,7 +5,7 @@ This file is for resuming in a fresh Codex window with minimal context loss.
 ## Must-read first
 
 1. `/Users/songziqiang/Documents/Development/MyWallpaperX/AGENTS.md`
-2. `/Users/songziqiang/Documents/Development/MyWallpaperX/WEB_SAMPLE_DEBUG_SUMMARY_2026-06-19.md`
+2. `/Users/songziqiang/Documents/Development/MyWallpaperX/docs/web/regression/WEB_SAMPLE_DEBUG_SUMMARY_2026-06-19.md`
 3. This handoff file.
 
 Project root:

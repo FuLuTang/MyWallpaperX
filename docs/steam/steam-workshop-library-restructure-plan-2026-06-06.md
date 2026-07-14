@@ -107,7 +107,7 @@ After SteamCMD download succeeds:
 Add a local script, proposed path:
 
 ```text
-scripts/migrate_steam_workshop_library_v2.py
+script/migrate_steam_workshop_library_v2.py
 ```
 
 Behavior:
@@ -204,7 +204,7 @@ Important current behavior:
    - apply mode
    - manifest
    - validation
-   - Status: implemented at `scripts/migrate_steam_workshop_library_v2.py`. Dry-run does not modify files unless `--write-manifest` is passed; `--apply` writes a manifest and migrates.
+   - Status: implemented at `script/migrate_steam_workshop_library_v2.py`. Dry-run does not modify files unless `--write-manifest` is passed; `--apply` writes a manifest and migrates.
 8. Verification:
    - `git status --short`
    - static search for old assumptions
@@ -231,7 +231,7 @@ Status as of 2026-06-06 20:48 Asia/Shanghai:
 - `reloadInstalledItems()` now discovers direct video files in `Video/`, direct Web directories in `Web/`, and direct Scene directories in `Scene/`. Video files without metadata still produce degraded local ready records.
 - Metadata refresh from the download inspector now preserves video metadata naming by video basename instead of writing `<itemID>.json`.
 - Delete behavior now removes the normalized video file plus matching video metadata for video records, and removes only normalized `Web/<itemID>` or `Scene/<itemID>` directories for project records.
-- The migration script exists at `scripts/migrate_steam_workshop_library_v2.py`.
+- The migration script exists at `script/migrate_steam_workshop_library_v2.py`.
   - Default mode is dry-run and does not write a manifest.
   - `--apply` writes `.migration/steam-workshop-library-v2-<timestamp>.json` and performs the migration.
   - Video migration validates the new video file and metadata before deleting the old `<itemID>` directory.
@@ -240,7 +240,7 @@ Status as of 2026-06-06 20:48 Asia/Shanghai:
 
 Verification completed:
 
-- `python3 -m py_compile scripts/migrate_steam_workshop_library_v2.py` passed.
+- `python3 -m py_compile script/migrate_steam_workshop_library_v2.py` passed.
 - `git diff --check` passed.
 - Temporary migration test passed for one video, one Web, and one Scene sample. The video result had exactly one file in `Video/` and metadata named by video basename while preserving item ID in JSON.
 - Real default library dry-run for `~/Movies/MyWallpaperX/创意工坊` planned 76 items without modifying files: 55 Web, 13 Video, 8 Scene.
@@ -262,6 +262,6 @@ Follow-up verification:
 
 - Static search found no remaining references to `loadExistingDownloadMetadataSnapshot`, `exportPrimaryVideoIfPossible`, `persistDownloadMetadataIfPossible`, or `libraryRootURL.appendingPathComponent(id, isDirectory: true)`.
 - Migration dry-run against `~/Movies/MyWallpaperX/创意工坊` returned `count: 0`.
-- `python3 -m py_compile scripts/migrate_steam_workshop_library_v2.py` passed.
+- `python3 -m py_compile script/migrate_steam_workshop_library_v2.py` passed.
 - `git diff --check` passed.
 - `xcodebuild -project MyWallpaperX.xcodeproj -scheme MyWallpaperX -configuration Debug build` passed.

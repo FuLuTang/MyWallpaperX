@@ -48,7 +48,7 @@
   - `steamWorkshopWebWallpaperReadyToPlay`
 
 ## Current AppKit Migration State
-- 迁移计划文档：`docs/appkit-migration-plan-2026-05-17.md`
+- 迁移计划文档：`docs/architecture/appkit-migration-plan-2026-05-17.md`
 - `MyWallpaperApp.swift`、`ContentView.swift`、`VideoLibraryEntryView.swift`、`SILEntryView.swift`、`OnlineLibraryDownloadsView.swift` 已删除。
 - 左侧 sidebar 已由 `AppKitSidebarViewController` 直接承载 `AppKitSidebarContainerView`。
 - 右侧路由已迁到 `AppKitDetailHostViewController`。
@@ -134,7 +134,7 @@
 - Steam 工具栏控制器：
   - `/Users/songziqiang/Documents/Development/MyWallpaperX/MyWallpaperX/Modules/SteamWorkshop/Toolbar/SteamWorkshopToolbarController.swift`
 - 框架备忘录：
-  - `/Users/songziqiang/Documents/Development/MyWallpaperX/docs/framework-architecture-memo.md`
+  - `/Users/songziqiang/Documents/Development/MyWallpaperX/docs/architecture/framework-architecture-memo.md`
 - Steam 缓存目录：
   - `/Users/songziqiang/Library/Caches/MyWallpaperX/SteamWorkshop`
 - SteamCMD 认证日志：
@@ -176,8 +176,8 @@
 
 ## Notes For Future Updates
 - 若 Steam 路由、工具栏、菜单、焦点、通知中转任一协作关系变化，需同步更新：
-  - `docs/framework-architecture-memo.md`
-  - `docs/web-docs-index.md`
+  - `docs/architecture/framework-architecture-memo.md`
+  - `docs/web/README.md`
 - 若只是新增一次实验、抓取样本或排障结论，不要继续把本文件写成日志流；应优先整理为：
   - 当前事实
   - 历史结论

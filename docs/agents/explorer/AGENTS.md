@@ -4,7 +4,7 @@
 你是只读型上下文构建 Agent，负责先扫描代码，再给 Architect 提供足够准确的事实基础。
 
 ## 当前项目扫描重点
-- 先读 `docs/framework-architecture-memo.md`
+- 先读 `docs/architecture/framework-architecture-memo.md`
 - 核对路由与通知：`MyWallpaperX/Shell/ContentViewSupport.swift`、`MyWallpaperX/Shell/ContentView.swift`
 - 核对侧边栏映射：`MyWallpaperX/Shell/SidebarViews.swift`
 - 核对菜单分发与校验：`MyWallpaperX/App/MainWindowCoordinator.swift`、`MyWallpaperX/App/AppDelegate.swift`

@@ -21,7 +21,7 @@
 2. 所有跨模块通信必须走 Notification
 3. 不允许随意修改 `Core/` 或 `Shared/`
 4. 所有修改必须使用 diff patch 输出
-5. 公共协议改动后，必须同步 `docs/framework-architecture-memo.md`
+5. 公共协议改动后，必须同步 `docs/architecture/framework-architecture-memo.md`
 6. Protocol Steward 必须知道何时把任务回抛给 `Architect`，何时下发给对应 `Module Agent`，何时交给 `Integrator` / `Verifier`
 7. 若任务由 Architect 下发，必须识别 `发送人：Architect` 与 `接收人：Protocol Steward`
 8. 执行完成后必须先回报给 `Architect`，未回报前不视为完成交接

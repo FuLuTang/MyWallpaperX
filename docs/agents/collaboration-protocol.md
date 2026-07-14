@@ -100,7 +100,7 @@
 - `App/`
 - `Shell/`
 - `Shared/`
-- `docs/framework-architecture-memo.md`
+- `docs/architecture/framework-architecture-memo.md`
 - `InspectorHost`
 - 路由、通知、菜单、焦点、工具栏
 

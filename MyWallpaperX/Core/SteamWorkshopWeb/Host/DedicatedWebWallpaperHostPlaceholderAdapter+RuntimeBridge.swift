@@ -7,6 +7,139 @@ import Foundation
 import AppKit
 import WebKit
 import CoreGraphics
+import Darwin
+
+private enum WebNetworkBridgeFailure: Error, Equatable {
+    case destinationNotAllowed
+    case responseTooLarge
+    case invalidResponse
+    case transport(String)
+
+    var message: String {
+        switch self {
+        case .destinationNotAllowed:
+            return "destination_not_allowed"
+        case .responseTooLarge:
+            return "response_too_large"
+        case .invalidResponse:
+            return "invalid_response"
+        case let .transport(message):
+            return message
+        }
+    }
+}
+
+private struct WebNetworkBridgeResponse {
+    let response: HTTPURLResponse
+    let body: Data
+}
+
+private final class WebNetworkBridgeRequest: NSObject, URLSessionDataDelegate, URLSessionTaskDelegate {
+    private let request: URLRequest
+    private let maximumBodyBytes: Int
+    private let allowsURL: (URL) -> Bool
+    private let completion: (Result<WebNetworkBridgeResponse, WebNetworkBridgeFailure>) -> Void
+    private var session: URLSession?
+    private var response: HTTPURLResponse?
+    private var body = Data()
+    private var failure: WebNetworkBridgeFailure?
+    private var completed = false
+
+    init(
+        request: URLRequest,
+        maximumBodyBytes: Int,
+        allowsURL: @escaping (URL) -> Bool,
+        completion: @escaping (Result<WebNetworkBridgeResponse, WebNetworkBridgeFailure>) -> Void
+    ) {
+        self.request = request
+        self.maximumBodyBytes = maximumBodyBytes
+        self.allowsURL = allowsURL
+        self.completion = completion
+    }
+
+    func start() {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        configuration.httpCookieStorage = nil
+        configuration.urlCredentialStorage = nil
+        let session = URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
+        self.session = session
+        session.dataTask(with: request).resume()
+    }
+
+    func urlSession(
+        _: URLSession,
+        dataTask: URLSessionDataTask,
+        didReceive response: URLResponse,
+        completionHandler: @escaping (URLSession.ResponseDisposition) -> Void
+    ) {
+        guard let httpResponse = response as? HTTPURLResponse else {
+            failure = .invalidResponse
+            dataTask.cancel()
+            completionHandler(.cancel)
+            return
+        }
+        self.response = httpResponse
+        if response.expectedContentLength > Int64(maximumBodyBytes) {
+            failure = .responseTooLarge
+            dataTask.cancel()
+            completionHandler(.cancel)
+            return
+        }
+        completionHandler(.allow)
+    }
+
+    func urlSession(_: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+        guard failure == nil else { return }
+        guard body.count <= maximumBodyBytes - data.count else {
+            failure = .responseTooLarge
+            dataTask.cancel()
+            return
+        }
+        body.append(data)
+    }
+
+    func urlSession(
+        _: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection _: HTTPURLResponse,
+        newRequest request: URLRequest,
+        completionHandler: @escaping (URLRequest?) -> Void
+    ) {
+        guard let destinationURL = request.url, allowsURL(destinationURL) else {
+            failure = .destinationNotAllowed
+            completionHandler(nil)
+            return
+        }
+        completionHandler(request)
+    }
+
+    func urlSession(_: URLSession, task _: URLSessionTask, didCompleteWithError error: Error?) {
+        defer {
+            session?.finishTasksAndInvalidate()
+            session = nil
+        }
+        if let failure {
+            finish(.failure(failure))
+            return
+        }
+        if let error {
+            finish(.failure(.transport(error.localizedDescription)))
+            return
+        }
+        guard let response else {
+            finish(.failure(.invalidResponse))
+            return
+        }
+        finish(.success(WebNetworkBridgeResponse(response: response, body: body)))
+    }
+
+    private func finish(_ result: Result<WebNetworkBridgeResponse, WebNetworkBridgeFailure>) {
+        guard completed == false else { return }
+        completed = true
+        completion(result)
+    }
+}
 
 extension DedicatedWebWallpaperHostPlaceholderAdapter {
     private static let networkBridgeMaxBodyBytes = 2 * 1024 * 1024
@@ -321,76 +454,205 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
             )
         }
 
-        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
-            guard let adapter = self else { return }
-            Task { @MainActor in
-                if let error {
-                    adapter.resolveNetworkRequest(
+        let allowedHosts = allowedNetworkBridgeHosts()
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            guard Self.allowsNetworkBridgeURL(url, allowedHosts: allowedHosts) else {
+                Task { @MainActor in
+                    guard let self else { return }
+                    self.resolveNetworkRequest(
                         requestID: requestID,
-                        payload: ["ok": false, "error": error.localizedDescription],
+                        payload: ["ok": false, "error": WebNetworkBridgeFailure.destinationNotAllowed.message],
                         webView: webView
                     )
-                    adapter.recordDiagnostic(
-                        type: "network.proxy.error",
+                    self.recordDiagnostic(
+                        type: "network.proxy.denied",
                         severity: .warning,
-                        message: "\(method) \(rawURLString) \(error.localizedDescription)",
-                        screenID: adapter.screenID(for: webView),
+                        message: "\(method) \(rawURLString)",
+                        screenID: self.screenID(for: webView),
                         url: webView.url?.absoluteString
                     )
-                    return
                 }
-
-                guard let httpResponse = response as? HTTPURLResponse else {
-                    adapter.resolveNetworkRequest(
-                        requestID: requestID,
-                        payload: ["ok": false, "error": "invalid_response"],
-                        webView: webView
-                    )
-                    return
-                }
-
-                let bodyData = data ?? Data()
-                guard bodyData.count <= Self.networkBridgeMaxBodyBytes else {
-                    adapter.resolveNetworkRequest(
-                        requestID: requestID,
-                        payload: ["ok": false, "error": "response_too_large"],
-                        webView: webView
-                    )
-                    adapter.recordDiagnostic(
-                        type: "network.proxy.too-large",
-                        severity: .warning,
-                        message: "\(method) \(rawURLString) bytes=\(bodyData.count)",
-                        screenID: adapter.screenID(for: webView),
-                        url: webView.url?.absoluteString
-                    )
-                    return
-                }
-
-                var headerFields: [String: String] = [:]
-                for (key, value) in httpResponse.allHeaderFields {
-                    guard let key = key as? String else { continue }
-                    headerFields[key] = String(describing: value)
-                }
-                let textBody = String(data: bodyData, encoding: .utf8) ?? bodyData.base64EncodedString()
-                adapter.resolveNetworkRequest(
-                    requestID: requestID,
-                    payload: [
-                        "ok": true,
-                        "status": httpResponse.statusCode,
-                        "headers": headerFields,
-                        "body": textBody
-                    ],
-                    webView: webView
-                )
-                adapter.recordDiagnostic(
-                    type: "network.proxy",
-                    severity: .info,
-                    message: "\(method) \(rawURLString) status=\(httpResponse.statusCode) bytes=\(bodyData.count)",
-                    screenID: adapter.screenID(for: webView),
-                    url: webView.url?.absoluteString
-                )
+                return
             }
-        }.resume()
+
+            let bridgeRequest = WebNetworkBridgeRequest(
+                request: request,
+                maximumBodyBytes: Self.networkBridgeMaxBodyBytes,
+                allowsURL: { Self.allowsNetworkBridgeURL($0, allowedHosts: allowedHosts) }
+            ) { [weak self] result in
+                Task { @MainActor in
+                    guard let self else { return }
+                    switch result {
+                    case let .success(result):
+                        var headerFields: [String: String] = [:]
+                        for (key, value) in result.response.allHeaderFields {
+                            guard let key = key as? String else { continue }
+                            headerFields[key] = String(describing: value)
+                        }
+                        let textBody = String(data: result.body, encoding: .utf8) ?? result.body.base64EncodedString()
+                        self.resolveNetworkRequest(
+                            requestID: requestID,
+                            payload: [
+                                "ok": true,
+                                "status": result.response.statusCode,
+                                "headers": headerFields,
+                                "body": textBody
+                            ],
+                            webView: webView
+                        )
+                        self.recordDiagnostic(
+                            type: "network.proxy",
+                            severity: .info,
+                            message: "\(method) \(rawURLString) status=\(result.response.statusCode) bytes=\(result.body.count)",
+                            screenID: self.screenID(for: webView),
+                            url: webView.url?.absoluteString
+                        )
+                    case let .failure(failure):
+                        self.resolveNetworkRequest(
+                            requestID: requestID,
+                            payload: ["ok": false, "error": failure.message],
+                            webView: webView
+                        )
+                        self.recordDiagnostic(
+                            type: failure == .responseTooLarge ? "network.proxy.too-large" : "network.proxy.error",
+                            severity: .warning,
+                            message: "\(method) \(rawURLString) \(failure.message)",
+                            screenID: self.screenID(for: webView),
+                            url: webView.url?.absoluteString
+                        )
+                    }
+                }
+            }
+            bridgeRequest.start()
+        }
+    }
+
+    private func allowedNetworkBridgeHosts() -> Set<String> {
+        guard let recordID = currentRequest?.recordID,
+              let record = SteamWorkshopService.shared.latestDownloadRecord(for: recordID),
+              let descriptor = SteamWorkshopService.shared.resolvedWebProjectDescriptor(for: record) else {
+            return []
+        }
+        return Set(descriptor.staticContentSummary.externalDependencyHosts.compactMap(Self.normalizedNetworkBridgeHost))
+    }
+
+    private static func allowsNetworkBridgeURL(_ url: URL, allowedHosts: Set<String>) -> Bool {
+        guard url.user == nil,
+              url.password == nil,
+              let host = normalizedNetworkBridgeHost(url.host),
+              allowedHosts.contains(host) else {
+            return false
+        }
+        return resolvesToPublicNetworkAddresses(host: host)
+    }
+
+    private static func normalizedNetworkBridgeHost(_ rawHost: String?) -> String? {
+        guard let rawHost else { return nil }
+        let host = rawHost.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard host.isEmpty == false else { return nil }
+        return host.hasSuffix(".") ? String(host.dropLast()) : host
+    }
+
+    private static func resolvesToPublicNetworkAddresses(host: String) -> Bool {
+        var hints = addrinfo(
+            ai_flags: AI_ADDRCONFIG,
+            ai_family: AF_UNSPEC,
+            ai_socktype: SOCK_STREAM,
+            ai_protocol: 0,
+            ai_addrlen: 0,
+            ai_canonname: nil,
+            ai_addr: nil,
+            ai_next: nil
+        )
+        var results: UnsafeMutablePointer<addrinfo>?
+        guard getaddrinfo(host, nil, &hints, &results) == 0,
+              let firstResult = results else {
+            return false
+        }
+        defer { freeaddrinfo(firstResult) }
+
+        var foundAddress = false
+        var currentResult: UnsafeMutablePointer<addrinfo>? = firstResult
+        while let result = currentResult {
+            let info = result.pointee
+            guard let address = info.ai_addr else {
+                currentResult = info.ai_next
+                continue
+            }
+            switch info.ai_family {
+            case AF_INET:
+                let ipv4 = address.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { $0.pointee.sin_addr }
+                if isNonPublicIPv4Address(UInt32(bigEndian: ipv4.s_addr)) {
+                    return false
+                }
+                foundAddress = true
+            case AF_INET6:
+                let ipv6 = address.withMemoryRebound(to: sockaddr_in6.self, capacity: 1) { $0.pointee.sin6_addr }
+                let bytes = withUnsafeBytes(of: ipv6) { Array($0) }
+                if isNonPublicIPv6Address(bytes) {
+                    return false
+                }
+                foundAddress = true
+            default:
+                break
+            }
+            currentResult = info.ai_next
+        }
+        return foundAddress
+    }
+
+    private static func isNonPublicIPv4Address(_ address: UInt32) -> Bool {
+        let first = UInt8((address >> 24) & 0xff)
+        let second = UInt8((address >> 16) & 0xff)
+        let third = UInt8((address >> 8) & 0xff)
+        if first == 0 || first == 10 || first == 127 || first >= 224 {
+            return true
+        }
+        if first == 100, (64...127).contains(second) {
+            return true
+        }
+        if first == 169, second == 254 {
+            return true
+        }
+        if first == 172, (16...31).contains(second) {
+            return true
+        }
+        if first == 192, second == 0, third == 0 {
+            return true
+        }
+        if first == 192, second == 0, third == 2 {
+            return true
+        }
+        if first == 192, second == 88, third == 99 {
+            return true
+        }
+        if first == 192, second == 168 {
+            return true
+        }
+        if first == 198, second == 18 || second == 19 || second == 51 {
+            return true
+        }
+        return first == 203 && second == 0 && third == 113
+    }
+
+    private static func isNonPublicIPv6Address(_ bytes: [UInt8]) -> Bool {
+        guard bytes.count == 16 else { return true }
+        if bytes.allSatisfy({ $0 == 0 }) || (bytes.dropLast().allSatisfy({ $0 == 0 }) && bytes.last == 1) {
+            return true
+        }
+        if bytes[0] & 0xfe == 0xfc || bytes[0] == 0xff || (bytes[0] == 0xfe && bytes[1] & 0xc0 == 0x80) {
+            return true
+        }
+        if bytes[0] == 0x20, bytes[1] == 0x01, bytes[2] == 0x0d, bytes[3] == 0xb8 {
+            return true
+        }
+        let isIPv4Mapped = bytes.prefix(10).allSatisfy { $0 == 0 } && bytes[10] == 0xff && bytes[11] == 0xff
+        let isIPv4Compatible = bytes.prefix(12).allSatisfy { $0 == 0 }
+        if isIPv4Mapped || isIPv4Compatible {
+            let ipv4 = UInt32(bytes[12]) << 24 | UInt32(bytes[13]) << 16 | UInt32(bytes[14]) << 8 | UInt32(bytes[15])
+            return isNonPublicIPv4Address(ipv4)
+        }
+        return false
     }
 
     private func resolveNetworkRequest(requestID: String, payload: [String: Any], webView: WKWebView) {

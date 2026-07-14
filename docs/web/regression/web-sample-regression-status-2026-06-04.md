@@ -10,7 +10,7 @@
   - `DedicatedWebWallpaperHostCompatibilityScript+InteractionAndRuntimeLogging.swift`
   - `DedicatedWebWallpaperHostPlaceholderAdapter+Surface.swift`
   - `WebWallpaperLocalSchemeHandler.swift`
-- 参考资料仍以 `docs/2026-05-31/web*` 为路线参考，实际结论以当前代码和 App 运行日志为准。
+- 参考资料仍以 `docs/web/archive/web-*` 为路线参考，实际结论以当前代码和 App 运行日志为准。
 
 ## 构建
 

@@ -239,7 +239,7 @@ extension SteamWorkshopService {
             return []
         }
         let nsRange = NSRange(content.startIndex..<content.endIndex, in: content)
-        return regex.matches(in: content, options: [], range: nsRange).compactMap { match in
+        var references = regex.matches(in: content, options: [], range: nsRange).compactMap { match in
             for index in 1..<match.numberOfRanges {
                 let range = match.range(at: index)
                 guard range.location != NSNotFound,
@@ -262,6 +262,17 @@ extension SteamWorkshopService {
             }
             return nil
         }
+
+        let externalURLPattern = #"\bhttps?://[^\s"'`<>\\]+"#
+        if let externalURLRegex = try? NSRegularExpression(pattern: externalURLPattern, options: [.caseInsensitive]) {
+            references += externalURLRegex.matches(in: content, options: [], range: nsRange).compactMap { match in
+                guard let range = Range(match.range, in: content) else { return nil }
+                let rawURL = String(content[range])
+                    .trimmingCharacters(in: CharacterSet(charactersIn: ".,;:!?)]}"))
+                return rawURL.isEmpty ? nil : .external(rawURL)
+            }
+        }
+        return references
     }
 
     static func resolveWebResourceURL(_ path: String, relativeTo fileURL: URL, rootURL: URL) -> URL? {
