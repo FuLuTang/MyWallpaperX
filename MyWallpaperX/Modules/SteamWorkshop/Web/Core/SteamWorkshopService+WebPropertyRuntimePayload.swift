@@ -101,7 +101,14 @@ extension SteamWorkshopService {
         }
 
         let visibleOptionsByKey = Dictionary(uniqueKeysWithValues: resolvedDefinitions.map { definition in
-            (definition.key, visibleWebPropertyOptions(for: definition, values: effectiveValues))
+            (
+                definition.key,
+                visibleWebPropertyOptions(
+                    for: definition,
+                    values: effectiveValues,
+                    definitions: resolvedDefinitions
+                )
+            )
         })
 
         var normalizedProperties: [String: [String: Any]] = [:]
@@ -144,6 +151,9 @@ extension SteamWorkshopService {
             "value": webRuntimeJSONValue(from: value, forKind: definition.kind)
         ]
         mergeWebRuntimePropertyMetadata(into: &payload, definition: definition)
+        if let text = webRuntimeSelectedOptionText(for: definition, value: value) {
+            payload["text"] = text
+        }
         if !visibleOptions.isEmpty {
             payload["options"] = visibleOptions.map { option in
                 [
@@ -204,6 +214,9 @@ extension SteamWorkshopService {
             ]
             if let definition {
                 mergeWebRuntimePropertyMetadata(into: &propertyPayload, definition: definition)
+                if let text = webRuntimeSelectedOptionText(for: definition, value: value) {
+                    propertyPayload["text"] = text
+                }
             }
             payload[key] = propertyPayload
         }
@@ -213,6 +226,14 @@ extension SteamWorkshopService {
             return nil
         }
         return json
+    }
+
+    private static func webRuntimeSelectedOptionText(
+        for definition: SteamWorkshopWebPropertyDefinition,
+        value: SteamWorkshopWebPropertyValue
+    ) -> String? {
+        guard definition.kind == .combo else { return nil }
+        return definition.options.first(where: { $0.value == value })?.label
     }
 
     private static func mergeWebRuntimePropertyMetadata(

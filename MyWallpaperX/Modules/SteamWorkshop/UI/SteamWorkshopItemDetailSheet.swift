@@ -457,7 +457,12 @@ final class AppKitSteamWorkshopItemDetailView: NSView {
 
         let values = service.effectiveWebPropertyValues(for: record, descriptor: descriptor)
         let renderableDefinitions = descriptor.propertyDefinitions.filter {
-            service.shouldRenderWebPropertyControl($0) && service.shouldDisplayWebProperty($0, values: values)
+            service.shouldRenderWebPropertyControl($0)
+                && service.shouldDisplayWebProperty(
+                    $0,
+                    values: values,
+                    definitions: descriptor.propertyDefinitions
+                )
         }
         guard !renderableDefinitions.isEmpty else { return }
 
@@ -515,7 +520,14 @@ final class AppKitSteamWorkshopItemDetailView: NSView {
             let primary = renderableDefinitions.filter { service.isPrimaryWebPropertyControl($0) }
             let advanced = renderableDefinitions.filter { !service.isPrimaryWebPropertyControl($0) }
             let visibleOptionsByKey = Dictionary(uniqueKeysWithValues: renderableDefinitions.map {
-                ($0.key, service.visibleWebPropertyOptions(for: $0, values: values))
+                (
+                    $0.key,
+                    service.visibleWebPropertyOptions(
+                        for: $0,
+                        values: values,
+                        definitions: descriptor.propertyDefinitions
+                    )
+                )
             })
 
             primary.forEach {

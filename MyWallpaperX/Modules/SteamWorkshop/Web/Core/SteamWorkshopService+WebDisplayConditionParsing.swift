@@ -71,11 +71,17 @@ extension SteamWorkshopService {
     struct WebDisplayConditionParser {
         private let tokens: [WebDisplayConditionToken]
         private let values: [String: SteamWorkshopWebPropertyValue]
+        private let comboTextValues: [String: String]
         private var index = 0
 
-        init(tokens: [WebDisplayConditionToken], values: [String: SteamWorkshopWebPropertyValue]) {
+        init(
+            tokens: [WebDisplayConditionToken],
+            values: [String: SteamWorkshopWebPropertyValue],
+            comboTextValues: [String: String]
+        ) {
             self.tokens = tokens
             self.values = values
+            self.comboTextValues = comboTextValues
         }
 
         var isAtEnd: Bool {
@@ -186,7 +192,7 @@ extension SteamWorkshopService {
             }
 
             if field == "text" {
-                return .string(value.displayConditionTextValue)
+                return .string(comboTextValues[key] ?? value.displayConditionTextValue)
             }
 
             switch value {

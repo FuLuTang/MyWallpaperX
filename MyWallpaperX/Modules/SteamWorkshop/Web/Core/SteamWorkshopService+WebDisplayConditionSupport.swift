@@ -3,7 +3,8 @@ import Foundation
 extension SteamWorkshopService {
     static func evaluateWebDisplayCondition(
         _ condition: String,
-        values: [String: SteamWorkshopWebPropertyValue]
+        values: [String: SteamWorkshopWebPropertyValue],
+        definitions: [SteamWorkshopWebPropertyDefinition]
     ) -> Bool {
         let trimmed = condition.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return true }
@@ -16,7 +17,19 @@ extension SteamWorkshopService {
             return true
         }
 
-        var parser = WebDisplayConditionParser(tokens: tokens, values: values)
+        let comboTextValues = definitions.reduce(into: [String: String]()) { result, definition in
+            guard definition.kind == .combo else { return }
+            let value = values[definition.key] ?? definition.defaultValue
+            if let option = definition.options.first(where: { $0.value == value }) {
+                result[definition.key] = option.label
+            }
+        }
+
+        var parser = WebDisplayConditionParser(
+            tokens: tokens,
+            values: values,
+            comboTextValues: comboTextValues
+        )
         guard let result = parser.parse(),
               parser.isAtEnd else {
             return true

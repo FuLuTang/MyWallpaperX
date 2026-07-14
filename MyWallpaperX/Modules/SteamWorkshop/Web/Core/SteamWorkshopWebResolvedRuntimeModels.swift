@@ -61,10 +61,23 @@ extension SteamWorkshopService {
         }
         let presetResourceBindingsByKey = resolvedWebPresetResourceBindings(for: record)
         let baselineVisiblePropertyKeys = propertyDefinitions
-            .filter { shouldDisplayWebProperty($0, values: baselineValues) }
+            .filter {
+                shouldDisplayWebProperty(
+                    $0,
+                    values: baselineValues,
+                    definitions: propertyDefinitions
+                )
+            }
             .map(\.key)
         let baselineVisibleOptionsByKey = Dictionary(uniqueKeysWithValues: propertyDefinitions.map { definition in
-            (definition.key, visibleWebPropertyOptions(for: definition, values: baselineValues))
+            (
+                definition.key,
+                visibleWebPropertyOptions(
+                    for: definition,
+                    values: baselineValues,
+                    definitions: propertyDefinitions
+                )
+            )
         })
         let baselinePreconditionStates = resolvedWebRuntimePreconditions(
             for: record,
@@ -149,11 +162,24 @@ extension SteamWorkshopService {
         let userOverrides = webPropertyOverrides(for: record)
         let effectiveValues = effectiveWebPropertyValues(for: record, descriptor: descriptor)
         let visiblePropertyKeys = descriptor.propertyDefinitions
-            .filter { shouldDisplayWebProperty($0, values: effectiveValues) }
+            .filter {
+                shouldDisplayWebProperty(
+                    $0,
+                    values: effectiveValues,
+                    definitions: descriptor.propertyDefinitions
+                )
+            }
             .map(\.key)
 
         let visibleOptionsByKey = Dictionary(uniqueKeysWithValues: descriptor.propertyDefinitions.map { definition in
-            (definition.key, visibleWebPropertyOptions(for: definition, values: effectiveValues))
+            (
+                definition.key,
+                visibleWebPropertyOptions(
+                    for: definition,
+                    values: effectiveValues,
+                    definitions: descriptor.propertyDefinitions
+                )
+            )
         })
 
         let resolvedRuntimeValues = Dictionary(uniqueKeysWithValues: descriptor.propertyDefinitions.map { definition in

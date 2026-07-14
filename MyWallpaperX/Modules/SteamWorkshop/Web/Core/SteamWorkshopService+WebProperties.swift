@@ -152,16 +152,25 @@ extension SteamWorkshopService {
     func visibleWebPropertyOptions(for definition: SteamWorkshopWebPropertyDefinition, record: SteamWorkshopDownloadRecord) -> [SteamWorkshopWebPropertyOption] {
         let definitions = webPropertyDefinitions(for: record)
         let values = effectiveWebPropertyValues(for: record, definitions: definitions)
-        return visibleWebPropertyOptions(for: definition, values: values)
+        return visibleWebPropertyOptions(
+            for: definition,
+            values: values,
+            definitions: definitions
+        )
     }
 
     func visibleWebPropertyOptions(
         for definition: SteamWorkshopWebPropertyDefinition,
-        values: [String: SteamWorkshopWebPropertyValue]
+        values: [String: SteamWorkshopWebPropertyValue],
+        definitions: [SteamWorkshopWebPropertyDefinition]
     ) -> [SteamWorkshopWebPropertyOption] {
         definition.options.filter { option in
             guard let condition = option.displayCondition else { return true }
-            return Self.evaluateWebDisplayCondition(condition, values: values)
+            return Self.evaluateWebDisplayCondition(
+                condition,
+                values: values,
+                definitions: definitions
+            )
         }
     }
 
@@ -169,14 +178,23 @@ extension SteamWorkshopService {
         guard let condition = definition.displayCondition else { return true }
         let definitions = webPropertyDefinitions(for: record)
         let values = effectiveWebPropertyValues(for: record, definitions: definitions)
-        return Self.evaluateWebDisplayCondition(condition, values: values)
+        return Self.evaluateWebDisplayCondition(
+            condition,
+            values: values,
+            definitions: definitions
+        )
     }
 
     func shouldDisplayWebProperty(
         _ definition: SteamWorkshopWebPropertyDefinition,
-        values: [String: SteamWorkshopWebPropertyValue]
+        values: [String: SteamWorkshopWebPropertyValue],
+        definitions: [SteamWorkshopWebPropertyDefinition]
     ) -> Bool {
         guard let condition = definition.displayCondition else { return true }
-        return Self.evaluateWebDisplayCondition(condition, values: values)
+        return Self.evaluateWebDisplayCondition(
+            condition,
+            values: values,
+            definitions: definitions
+        )
     }
 }
