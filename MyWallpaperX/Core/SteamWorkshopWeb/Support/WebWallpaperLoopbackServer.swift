@@ -24,7 +24,13 @@ final class WebWallpaperLoopbackServer {
         }
 
         let readySemaphore = DispatchSemaphore(value: 0)
-        let listener = try NWListener(using: .tcp, on: .any)
+        let parameters = NWParameters.tcp
+        parameters.acceptLocalOnly = true
+        parameters.requiredLocalEndpoint = .hostPort(
+            host: NWEndpoint.Host("127.0.0.1"),
+            port: .any
+        )
+        let listener = try NWListener(using: parameters, on: .any)
         var startupError: Error?
         listener.stateUpdateHandler = { [weak self] state in
             guard let self else { return }
