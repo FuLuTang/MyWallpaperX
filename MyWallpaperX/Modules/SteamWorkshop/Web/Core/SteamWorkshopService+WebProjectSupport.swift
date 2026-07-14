@@ -234,7 +234,7 @@ extension SteamWorkshopService {
     }
 
     static func extractLocalWebResourceReferences(from content: String, fileExtension _: String) -> [WebResourceReference] {
-        let pattern = #"(?:src|href)\s*=\s*["']([^"']+)["']|url\(\s*['"]?([^'")]+)['"]?\s*\)|import\s+["']([^"']+)["']"#
+        let pattern = #"(?:^|[\s<])(?:src|href)\s*=\s*(?:\"([^\"]+)\"|'([^']+)'|([^\s\"'=<>`]+))|url\(\s*['\"]?([^'\")]+)['\"]?\s*\)|import\s+[\"']([^\"']+)[\"']"#
         guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
             return []
         }
