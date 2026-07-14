@@ -223,6 +223,20 @@ extension SteamWorkshopService {
 
     func resolveHTMLURL(in directory: URL, preferredFileName: String?) -> URL? {
         let supportedExtensions = Set(["html", "htm"])
+        let normalizedDirectory = directory.resolvingSymlinksInPath().standardizedFileURL
+
+        func resolvedContainedHTMLURL(_ candidate: URL) -> URL? {
+            let resolvedCandidate = candidate.resolvingSymlinksInPath().standardizedFileURL
+            let rootPath = normalizedDirectory.path
+            guard resolvedCandidate.path.hasPrefix(rootPath + "/"),
+                  supportedExtensions.contains(resolvedCandidate.pathExtension.localizedLowercase),
+                  FileManager.default.fileExists(atPath: resolvedCandidate.path) else {
+                return nil
+            }
+            let isRegularFile = (try? resolvedCandidate.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile ?? true
+            return isRegularFile ? resolvedCandidate : nil
+        }
+
         let candidateURLs: [URL]
 
         if let preferredFileName {
@@ -230,16 +244,15 @@ extension SteamWorkshopService {
                 .replacingOccurrences(of: "\\", with: "/")
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             if !normalizedPreferredPath.isEmpty {
-                let directCandidate = directory.appendingPathComponent(normalizedPreferredPath)
-                if supportedExtensions.contains(directCandidate.pathExtension.localizedLowercase),
-                   FileManager.default.fileExists(atPath: directCandidate.path) {
+                let directCandidate = normalizedDirectory.appendingPathComponent(normalizedPreferredPath)
+                if let directCandidate = resolvedContainedHTMLURL(directCandidate) {
                     return directCandidate
                 }
             }
         }
 
         guard let enumerator = FileManager.default.enumerator(
-            at: directory,
+            at: normalizedDirectory,
             includingPropertiesForKeys: [.isRegularFileKey],
             options: [.skipsHiddenFiles, .skipsPackageDescendants]
         ) else {
@@ -248,14 +261,12 @@ extension SteamWorkshopService {
 
         candidateURLs = enumerator.compactMap { element in
             guard let url = element as? URL else { return nil }
-            guard supportedExtensions.contains(url.pathExtension.localizedLowercase) else { return nil }
-            let isRegularFile = (try? url.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile ?? true
-            return isRegularFile ? url : nil
+            return resolvedContainedHTMLURL(url)
         }
 
         return candidateURLs.sorted { lhs, rhs in
-            let lhsRelativePath = relativePath(for: lhs, under: directory)
-            let rhsRelativePath = relativePath(for: rhs, under: directory)
+            let lhsRelativePath = relativePath(for: lhs, under: normalizedDirectory)
+            let rhsRelativePath = relativePath(for: rhs, under: normalizedDirectory)
             let lhsLower = lhsRelativePath.localizedLowercase
             let rhsLower = rhsRelativePath.localizedLowercase
 
