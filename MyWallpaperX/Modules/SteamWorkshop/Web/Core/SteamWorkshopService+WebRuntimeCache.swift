@@ -135,7 +135,8 @@ extension SteamWorkshopService {
             recordID: record.id,
             effectiveEntryURL: resolvedEntryURL,
             effectiveRootURL: effectiveRootURL,
-            propertyPayloadJSON: manifest.execution.propertyPayloadJSON
+            propertyPayloadJSON: manifest.execution.propertyPayloadJSON,
+            language: Self.resolvedWebWallpaperLanguage()
         )
     }
 

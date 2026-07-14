@@ -463,6 +463,7 @@ enum MainWindowCoordinator {
 
             let propertiesJSON = notification.userInfo?["propertiesJSON"] as? String
             let recordID = notification.userInfo?["recordID"] as? String
+            let language = notification.userInfo?["language"] as? String ?? "en-us"
             let runtimeProfile = notification.userInfo?["runtimeProfile"] as? WallpaperEngine.WebRuntimeProfile ?? .standard
             DispatchQueue.main.async {
                 wallpaperManager.clearCurrentWallpaperReference()
@@ -474,6 +475,7 @@ enum MainWindowCoordinator {
                     rootURL: rootURL,
                     propertiesJSON: propertiesJSON,
                     recordID: recordID,
+                    language: language,
                     runtimeProfile: runtimeProfile
                 )
             }

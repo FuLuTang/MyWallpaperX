@@ -265,6 +265,7 @@ struct ResolvedWebPlaybackContext: Equatable {
     let effectiveEntryURL: URL
     let effectiveRootURL: URL
     let propertyPayloadJSON: String?
+    let language: String
 }
 
 struct ResolvedWebRuntimePrecondition: Codable, Equatable, Hashable {

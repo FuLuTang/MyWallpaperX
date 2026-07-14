@@ -53,6 +53,49 @@ extension SteamWorkshopService {
         normalizedWebDisplayText(localization[raw] ?? raw)
     }
 
+    static func resolvedWebWallpaperLanguage() -> String {
+        let preferredLanguage = Locale.preferredLanguages.first ?? Locale.current.identifier
+        return wallpaperEngineLanguageCode(for: preferredLanguage)
+    }
+
+    static func wallpaperEngineLanguageCode(for localeIdentifier: String) -> String {
+        let normalized = localeIdentifier
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "_", with: "-")
+            .lowercased()
+
+        if normalized.hasPrefix("zh-hans") || normalized.hasPrefix("zh-cn") || normalized == "zh" {
+            return "zh-chs"
+        }
+        if normalized.hasPrefix("zh-hant") || normalized.hasPrefix("zh-tw")
+            || normalized.hasPrefix("zh-hk") || normalized.hasPrefix("zh-mo") {
+            return "zh-cht"
+        }
+
+        let supportedLanguages: Set<String> = [
+            "ar-sa", "be-by", "bg-bg", "cs-cz", "da-dk", "de-de", "el-gr", "en-us",
+            "es-es", "eu-es", "fa-ir", "fi-fi", "fr-fr", "he-il", "hu-hu", "id-id",
+            "it-it", "ja-jp", "ko-kr", "lt-lt", "nb-no", "nl-nl", "pl-pl", "pt-br",
+            "pt-pt", "ro-ro", "ru-ru", "sk-sk", "sl-si", "sv-se", "th-th", "tr-tr",
+            "uk-ua", "vi-vn"
+        ]
+        if supportedLanguages.contains(normalized) {
+            return normalized
+        }
+
+        let language = normalized.split(separator: "-").first.map(String.init) ?? ""
+        let fallbackLanguages = [
+            "ar": "ar-sa", "be": "be-by", "bg": "bg-bg", "cs": "cs-cz", "da": "da-dk",
+            "de": "de-de", "el": "el-gr", "en": "en-us", "es": "es-es", "eu": "eu-es",
+            "fa": "fa-ir", "fi": "fi-fi", "fr": "fr-fr", "he": "he-il", "hu": "hu-hu",
+            "id": "id-id", "it": "it-it", "ja": "ja-jp", "ko": "ko-kr", "lt": "lt-lt",
+            "nb": "nb-no", "nl": "nl-nl", "no": "nb-no", "pl": "pl-pl", "pt": "pt-pt",
+            "ro": "ro-ro", "ru": "ru-ru", "sk": "sk-sk", "sl": "sl-si", "sv": "sv-se",
+            "th": "th-th", "tr": "tr-tr", "uk": "uk-ua", "vi": "vi-vn"
+        ]
+        return fallbackLanguages[language] ?? "en-us"
+    }
+
     static func normalizedWebPropertyTitleText(_ raw: String) -> String {
         let segments = normalizedWebDisplaySegments(from: raw)
         guard segments.isEmpty == false else {

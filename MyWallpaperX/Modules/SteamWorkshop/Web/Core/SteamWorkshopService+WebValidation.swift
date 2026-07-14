@@ -249,7 +249,7 @@ extension SteamWorkshopService {
             appendIssue(.info, .info, "检测到样本使用 applyGeneralProperties；当前宿主已提供基础 general properties 注入")
         }
         if usesGeneralFPS {
-            appendIssue(.info, .info, "检测到样本读取 properties.fps；当前宿主会按显示器刷新率注入 fps，并保留 properties.fps 与 properties.fps.value 两种读取语义")
+            appendIssue(.info, .info, "检测到样本读取 properties.fps；当前宿主会按显示器刷新率注入数值型 fps")
         }
         if usesPluginBridge {
             scannedRiskFlags.insert(.pluginBridgeApproximation)

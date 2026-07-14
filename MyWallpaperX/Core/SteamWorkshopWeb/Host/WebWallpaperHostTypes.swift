@@ -81,6 +81,7 @@ extension WallpaperEngine {
         let propertiesJSON: String?
         let source: WebWallpaperLaunchSource
         let recordID: String?
+        let language: String
         let runtimeProfile: WebRuntimeProfile
     }
 

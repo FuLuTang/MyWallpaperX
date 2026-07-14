@@ -144,15 +144,16 @@ private final class WebNetworkBridgeRequest: NSObject, URLSessionDataDelegate, U
 extension DedicatedWebWallpaperHostPlaceholderAdapter {
     private static let networkBridgeMaxBodyBytes = 2 * 1024 * 1024
 
-    var currentGeneralProperties: [String: [String: Any]] {
+    var currentGeneralProperties: [String: Any] {
         currentGeneralProperties(for: nil, screenID: nil)
     }
 
-    func currentGeneralProperties(for screen: NSScreen?, screenID: CGDirectDisplayID?) -> [String: [String: Any]] {
+    func currentGeneralProperties(for screen: NSScreen?, screenID: CGDirectDisplayID?) -> [String: Any] {
         let targetScreen = screen ?? NSScreen.main
         let frame = targetScreen?.frame ?? .zero
         return [
-            "fps": ["value": resolvedGeneralFPSValue(for: targetScreen)],
+            "fps": resolvedGeneralFPSValue(for: targetScreen),
+            "language": currentRequest?.language ?? "en-us",
             "paused": ["value": paused],
             "volume": ["value": currentVolume],
             "display": [
@@ -177,7 +178,7 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
         guard JSONSerialization.isValidJSONObject(currentGeneralProperties),
               let data = try? JSONSerialization.data(withJSONObject: currentGeneralProperties),
               let json = String(data: data, encoding: .utf8) else {
-            return #"{"fps":{"value":30}}"#
+            return #"{"fps":30,"language":"en-us"}"#
         }
         return json
     }
@@ -187,7 +188,7 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
         guard JSONSerialization.isValidJSONObject(properties),
               let data = try? JSONSerialization.data(withJSONObject: properties),
               let json = String(data: data, encoding: .utf8) else {
-            return #"{"fps":{"value":60}}"#
+            return #"{"fps":60,"language":"en-us"}"#
         }
         return json
     }

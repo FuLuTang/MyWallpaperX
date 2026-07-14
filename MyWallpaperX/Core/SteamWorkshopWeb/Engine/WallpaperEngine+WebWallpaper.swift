@@ -11,6 +11,7 @@ extension WallpaperEngine {
         rootURL: URL,
         propertiesJSON: String?,
         recordID: String? = nil,
+        language: String,
         runtimeProfile: WebRuntimeProfile = .standard
     ) {
         postWallpaperRuntimeWillSwitch(to: .web)
@@ -23,6 +24,7 @@ extension WallpaperEngine {
                 propertiesJSON: currentWebPropertiesJSON,
                 source: .steamWorkshop,
                 recordID: recordID,
+                language: language,
                 runtimeProfile: runtimeProfile
             )
         )
@@ -90,6 +92,7 @@ extension WallpaperEngine {
                     propertiesJSON: "{}",
                     source: .diagnostic,
                     recordID: nil,
+                    language: "en-us",
                     runtimeProfile: .diagnostic
                 )
             )

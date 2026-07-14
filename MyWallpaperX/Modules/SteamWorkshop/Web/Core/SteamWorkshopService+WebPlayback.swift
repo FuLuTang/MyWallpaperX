@@ -67,6 +67,7 @@ extension SteamWorkshopService {
                     "entryURL": playbackContext.effectiveEntryURL,
                     "rootURL": playbackContext.effectiveRootURL,
                     "propertiesJSON": playbackContext.propertyPayloadJSON as Any,
+                    "language": playbackContext.language,
                     "runtimeProfile": runtimeProfile
                 ]
             )

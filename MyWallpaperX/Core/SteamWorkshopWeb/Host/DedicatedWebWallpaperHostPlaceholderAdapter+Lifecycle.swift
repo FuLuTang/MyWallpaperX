@@ -145,6 +145,7 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
                         propertiesJSON: effectivePropertiesJSON,
                         source: request.source,
                         recordID: request.recordID,
+                        language: request.language,
                         runtimeProfile: request.runtimeProfile
                     )
                 }

@@ -146,7 +146,8 @@ extension SteamWorkshopService {
             recordID: record.id,
             effectiveEntryURL: descriptor.resolvedEntryURL,
             effectiveRootURL: descriptor.effectiveRootURL,
-            propertyPayloadJSON: propertyPayloadJSON
+            propertyPayloadJSON: propertyPayloadJSON,
+            language: Self.resolvedWebWallpaperLanguage()
         )
     }
 
@@ -274,7 +275,7 @@ extension SteamWorkshopService {
         let runtimeModel = ResolvedWebRuntimeModel(
             recordID: record.id,
             descriptor: descriptor,
-            resolvedLanguage: Locale.preferredLanguages.first ?? Locale.current.identifier,
+            resolvedLanguage: Self.resolvedWebWallpaperLanguage(),
             effectiveEntryURL: descriptor.resolvedEntryURL,
             effectiveRootURL: descriptor.effectiveRootURL,
             defaultValues: descriptor.defaultValueMap,
