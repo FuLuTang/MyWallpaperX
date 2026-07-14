@@ -17,6 +17,9 @@ extension SteamWorkshopService {
         if manifest.resolvedEntryModifiedAt != webRuntimeCacheResolvedEntryModifiedAt(for: record) {
             return false
         }
+        if manifest.resourceSignature != webRuntimeResourceSignature(for: record) {
+            return false
+        }
         let currentEntryPath = record.webEntryURL?.resolvingSymlinksInPath().standardizedFileURL.path ?? ""
         let cachedEntryPath = manifest.analysis.resolvedEntryPath
         if currentEntryPath != cachedEntryPath {

@@ -1,7 +1,7 @@
 import Foundation
 
 struct SteamWorkshopWebAnalysisCacheManifest: Codable, Equatable {
-    static let currentVersion = 6
+    static let currentVersion = 7
 
     let version: Int
     let recordID: String
@@ -10,6 +10,7 @@ struct SteamWorkshopWebAnalysisCacheManifest: Codable, Equatable {
     let propertySourceRecordID: String?
     let propertySourceProjectModifiedAt: Date?
     let resolvedEntryModifiedAt: Date?
+    let resourceSignature: SteamWorkshopWebRuntimeResourceSignature?
     let analysis: CachedResolvedWebProjectDescriptor
 }
 
@@ -69,12 +70,31 @@ struct CachedResolvedWebProjectDescriptor: Codable, Equatable {
 }
 
 extension SteamWorkshopService {
+    nonisolated static func webRuntimeCacheDirectoryURL() -> URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library", isDirectory: true)
+            .appendingPathComponent("Caches", isDirectory: true)
+            .appendingPathComponent("MyWallpaperX", isDirectory: true)
+            .appendingPathComponent("SteamWorkshop", isDirectory: true)
+            .appendingPathComponent("WebRuntime", isDirectory: true)
+    }
+
+    nonisolated static func webRuntimeCacheFileStem(for recordID: String) -> String {
+        Data(recordID.utf8)
+            .base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+    }
+
     func webAnalysisCacheFileURL(for record: SteamWorkshopDownloadRecord) -> URL {
-        record.folderURL.appendingPathComponent(".mywallpaperx-web-analysis.json")
+        Self.webRuntimeCacheDirectoryURL()
+            .appendingPathComponent("\(Self.webRuntimeCacheFileStem(for: record.id))-analysis.json")
     }
 
     func webRuntimeCacheFileURL(for record: SteamWorkshopDownloadRecord) -> URL {
-        record.folderURL.appendingPathComponent(".mywallpaperx-web-runtime.json")
+        Self.webRuntimeCacheDirectoryURL()
+            .appendingPathComponent("\(Self.webRuntimeCacheFileStem(for: record.id))-runtime.json")
     }
 
     func preloadWebRuntimeCaches(for records: [SteamWorkshopDownloadRecord]) {
@@ -163,7 +183,8 @@ extension SteamWorkshopService {
 
     func saveWebAnalysisCache(
         descriptor: ResolvedWebProjectDescriptor,
-        for record: SteamWorkshopDownloadRecord
+        for record: SteamWorkshopDownloadRecord,
+        resourceSignature: SteamWorkshopWebRuntimeResourceSignature? = nil
     ) {
         let manifest = SteamWorkshopWebAnalysisCacheManifest(
             version: SteamWorkshopWebAnalysisCacheManifest.currentVersion,
@@ -173,6 +194,7 @@ extension SteamWorkshopService {
             propertySourceRecordID: webPropertyDefinitionSourceRecord(for: record)?.id,
             propertySourceProjectModifiedAt: webRuntimeCachePropertySourceProjectModifiedAt(for: record),
             resolvedEntryModifiedAt: webRuntimeCacheResolvedEntryModifiedAt(for: record),
+            resourceSignature: resourceSignature ?? webRuntimeResourceSignature(for: record),
             analysis: CachedResolvedWebProjectDescriptor(
                 sourceKind: descriptor.sourceKind,
                 declaredEntryRelativePath: descriptor.declaredEntryRelativePath,
@@ -197,7 +219,9 @@ extension SteamWorkshopService {
         )
 
         guard let data = try? JSONEncoder().encode(manifest) else { return }
-        try? data.write(to: webAnalysisCacheFileURL(for: record), options: [.atomic])
+        let fileURL = webAnalysisCacheFileURL(for: record)
+        try? FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? data.write(to: fileURL, options: [.atomic])
     }
 
     func saveWebRuntimeCache(
@@ -205,7 +229,12 @@ extension SteamWorkshopService {
         propertyPayloadJSON: String?,
         for record: SteamWorkshopDownloadRecord
     ) {
-        saveWebAnalysisCache(descriptor: descriptor, for: record)
+        let resourceSignature = webRuntimeResourceSignature(for: record)
+        saveWebAnalysisCache(
+            descriptor: descriptor,
+            for: record,
+            resourceSignature: resourceSignature
+        )
 
         let manifest = SteamWorkshopWebRuntimeCacheManifest(
             version: SteamWorkshopWebRuntimeCacheManifest.currentVersion,
@@ -215,7 +244,7 @@ extension SteamWorkshopService {
             propertySourceRecordID: webPropertyDefinitionSourceRecord(for: record)?.id,
             propertySourceProjectModifiedAt: webRuntimeCachePropertySourceProjectModifiedAt(for: record),
             resolvedEntryModifiedAt: webRuntimeCacheResolvedEntryModifiedAt(for: record),
-            resourceSignature: webRuntimeResourceSignature(for: record),
+            resourceSignature: resourceSignature,
             overridesSignature: webRuntimeCacheOverridesSignature(for: record),
             execution: CachedResolvedWebExecutionManifest(
                 resolvedEntryPath: descriptor.resolvedEntryURL.path,
@@ -225,7 +254,9 @@ extension SteamWorkshopService {
         )
 
         guard let data = try? JSONEncoder().encode(manifest) else { return }
-        try? data.write(to: webRuntimeCacheFileURL(for: record), options: [.atomic])
+        let fileURL = webRuntimeCacheFileURL(for: record)
+        try? FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? data.write(to: fileURL, options: [.atomic])
     }
 
     func webRuntimeResourceSignature(for record: SteamWorkshopDownloadRecord) -> SteamWorkshopWebRuntimeResourceSignature? {
