@@ -12,7 +12,8 @@ extension WallpaperEngine {
         propertiesJSON: String?,
         recordID: String? = nil,
         language: String,
-        runtimeProfile: WebRuntimeProfile = .standard
+        runtimeProfile: WebRuntimeProfile = .standard,
+        multiDisplayEnabled: Bool
     ) {
         postWallpaperRuntimeWillSwitch(to: .web)
         currentWebPropertiesJSON = propertiesJSON ?? "{}"
@@ -25,9 +26,17 @@ extension WallpaperEngine {
                 source: .steamWorkshop,
                 recordID: recordID,
                 language: language,
-                runtimeProfile: runtimeProfile
+                runtimeProfile: runtimeProfile,
+                multiDisplayEnabled: multiDisplayEnabled
             )
         )
+    }
+
+    func updateWebDisplayConfiguration(multiDisplayEnabled: Bool) {
+        guard currentPlaybackContentKind == .web else { return }
+        currentMultiDisplayEnabled = multiDisplayEnabled
+        guard currentWebHostStrategy == .dedicatedHostPlaceholder else { return }
+        dedicatedWebHostAdapter.updateDisplayConfiguration(multiDisplayEnabled: multiDisplayEnabled)
     }
 
     public func updateCurrentWebWallpaperProperties(_ propertiesJSON: String?) {
@@ -93,7 +102,8 @@ extension WallpaperEngine {
                     source: .diagnostic,
                     recordID: nil,
                     language: "en-us",
-                    runtimeProfile: .diagnostic
+                    runtimeProfile: .diagnostic,
+                    multiDisplayEnabled: true
                 )
             )
         } catch {
@@ -118,6 +128,7 @@ extension WallpaperEngine {
 
     func launchWebWallpaper(_ request: WebWallpaperLaunchRequest) {
         let runtimeState = webWallpaperRuntimeState()
+        currentMultiDisplayEnabled = request.multiDisplayEnabled
         if currentPlaybackContentKind == .video {
             for displayID in Array(displaySessions.keys) {
                 terminateSession(for: displayID)

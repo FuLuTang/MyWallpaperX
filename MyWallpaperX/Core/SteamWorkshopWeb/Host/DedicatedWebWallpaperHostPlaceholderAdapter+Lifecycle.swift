@@ -38,6 +38,7 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
             || currentRequest?.rootURL.resolvingSymlinksInPath().standardizedFileURL != request.rootURL.resolvingSymlinksInPath().standardizedFileURL
             || currentRequest?.runtimeProfile != request.runtimeProfile
             || currentRequest?.recordID != request.recordID
+            || currentRequest?.multiDisplayEnabled != request.multiDisplayEnabled
 
         if shouldRebuildSurfaces {
             teardownHostSurfaces()
@@ -61,8 +62,8 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
         stopDirectoryWatchTimer()
         eventHandler?(.accepted)
 
-        let availableScreens = NSScreen.screens
-        guard !availableScreens.isEmpty else {
+        let targetScreens = targetScreens(for: request)
+        guard !targetScreens.isEmpty else {
             failCurrentLaunch(message: "dedicated_web_host_no_screens")
             return
         }
@@ -79,8 +80,6 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
             url: entryURL.absoluteString
         )
 
-        let targetScreens = availableScreens
-
         if !shouldRebuildSurfaces, !surfaces.isEmpty {
             installDefaultInteractiveRegionsIfNeeded()
             for surface in surfaces.values {
@@ -96,20 +95,122 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
 
         var createdSurface = false
         for screen in targetScreens {
-            guard let screenID = Self.screenID(for: screen) else { continue }
-            let surface = makeSurface(for: screen, screenID: screenID)
-            surfaces[screenID] = surface
-            setTransientMouseCaptureEnabled(false, for: surface)
-            surface.window.orderFrontRegardless()
-            surface.window.level = Self.webWindowLevel
-            surface.webView.load(URLRequest(url: runtimeEntryURL(for: request, localEntryURL: entryURL, surface: surface)))
-            createdSurface = true
+            createdSurface = createAndLoadSurface(
+                for: screen,
+                request: request,
+                localEntryURL: entryURL
+            ) || createdSurface
         }
 
         guard createdSurface else {
             failCurrentLaunch(message: "dedicated_web_host_no_surface")
             return
         }
+    }
+
+    func updateDisplayConfiguration(multiDisplayEnabled: Bool) {
+        guard let request = currentRequest,
+              request.multiDisplayEnabled != multiDisplayEnabled else {
+            return
+        }
+        let updatedRequest = WallpaperEngine.WebWallpaperLaunchRequest(
+            entryURL: request.entryURL,
+            rootURL: request.rootURL,
+            propertiesJSON: request.propertiesJSON,
+            source: request.source,
+            recordID: request.recordID,
+            language: request.language,
+            runtimeProfile: request.runtimeProfile,
+            multiDisplayEnabled: multiDisplayEnabled
+        )
+        currentRequest = updatedRequest
+        reconcileDisplaySurfaces(for: updatedRequest)
+    }
+
+    func targetScreens(for request: WallpaperEngine.WebWallpaperLaunchRequest) -> [NSScreen] {
+        let availableScreens = NSScreen.screens
+        return request.multiDisplayEnabled ? availableScreens : Array(availableScreens.prefix(1))
+    }
+
+    @discardableResult
+    func createAndLoadSurface(
+        for screen: NSScreen,
+        request: WallpaperEngine.WebWallpaperLaunchRequest,
+        localEntryURL: URL
+    ) -> Bool {
+        guard let screenID = Self.screenID(for: screen) else { return false }
+        let surface = makeSurface(for: screen, screenID: screenID)
+        surfaces[screenID] = surface
+        setTransientMouseCaptureEnabled(false, for: surface)
+        surface.window.orderFrontRegardless()
+        surface.window.level = Self.webWindowLevel
+        surface.webView.load(URLRequest(url: runtimeEntryURL(for: request, localEntryURL: localEntryURL, surface: surface)))
+        return true
+    }
+
+    func reconcileDisplaySurfaces(for request: WallpaperEngine.WebWallpaperLaunchRequest) {
+        let screens = targetScreens(for: request)
+        guard !screens.isEmpty else {
+            failCurrentLaunch(message: "dedicated_web_host_no_screens")
+            return
+        }
+
+        let screensByID = Dictionary(
+            uniqueKeysWithValues: screens.compactMap { screen in
+                Self.screenID(for: screen).map { ($0, screen) }
+            }
+        )
+        guard !screensByID.isEmpty else {
+            failCurrentLaunch(message: "dedicated_web_host_no_surface")
+            return
+        }
+
+        let targetScreenIDs = Set(screensByID.keys)
+        for screenID in Set(surfaces.keys).subtracting(targetScreenIDs) {
+            removeSurface(for: screenID)
+        }
+
+        let entryURL = WebWallpaperHostSupport.makeLocalSchemeEntryURL(
+            entryURL: request.entryURL,
+            rootURL: request.rootURL
+        )
+        let newScreenIDs = targetScreenIDs.subtracting(Set(surfaces.keys))
+        if !newScreenIDs.isEmpty {
+            phase = .launching
+        }
+
+        for screen in screens {
+            guard let screenID = Self.screenID(for: screen) else { continue }
+            if let surface = surfaces[screenID] {
+                updateSurface(surface, for: screen, request: request)
+            } else {
+                _ = createAndLoadSurface(
+                    for: screen,
+                    request: request,
+                    localEntryURL: entryURL
+                )
+            }
+        }
+
+        guard !surfaces.isEmpty else {
+            failCurrentLaunch(message: "dedicated_web_host_no_surface")
+            return
+        }
+        installDefaultInteractiveRegionsIfNeeded()
+    }
+
+    func updateSurface(
+        _ surface: HostSurface,
+        for screen: NSScreen,
+        request: WallpaperEngine.WebWallpaperLaunchRequest
+    ) {
+        setTransientMouseCaptureEnabled(false, for: surface)
+        surface.schemeHandler.updateAdditionalReadableRoots(accessibleResourceURLs(from: request.propertiesJSON))
+        surface.window.setFrame(screen.frame, display: true)
+        surface.window.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
+        surface.window.level = Self.webWindowLevel
+        surface.window.orderFrontRegardless()
+        applyGeneralProperties(to: surface.webView)
     }
 
     func handle(_ command: WallpaperEngine.WebWallpaperRuntimeCommand) {
@@ -148,7 +249,8 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
                         source: request.source,
                         recordID: request.recordID,
                         language: request.language,
-                        runtimeProfile: request.runtimeProfile
+                        runtimeProfile: request.runtimeProfile,
+                        multiDisplayEnabled: request.multiDisplayEnabled
                     )
                 }
                 refreshReadableResourceRoots(using: effectivePropertiesJSON)

@@ -44,9 +44,15 @@ extension WallpaperManager {
 
     func applyEngineSettings(reloadWallpaper: Bool = false) {
         // 只有引擎真正关心的播放策略才通过这里下发，避免 UI 选项污染播放链路。
-        if reloadWallpaper, let currentWallpaper {
-            setAsWallpaper(currentWallpaper)
-            return
+        if reloadWallpaper {
+            if activeWallpaperRuntime == .web {
+                WallpaperEngine.shared.updateWebDisplayConfiguration(
+                    multiDisplayEnabled: settings.multiDisplayEnabled
+                )
+            } else if let currentWallpaper {
+                setAsWallpaper(currentWallpaper)
+                return
+            }
         }
 
         // 引擎只需要暂停策略和音量这类播放态配置，别把 UI 选择状态塞进这里。

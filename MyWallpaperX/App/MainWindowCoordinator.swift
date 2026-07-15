@@ -476,7 +476,8 @@ enum MainWindowCoordinator {
                     propertiesJSON: propertiesJSON,
                     recordID: recordID,
                     language: language,
-                    runtimeProfile: runtimeProfile
+                    runtimeProfile: runtimeProfile,
+                    multiDisplayEnabled: wallpaperManager.settings.multiDisplayEnabled
                 )
             }
         }

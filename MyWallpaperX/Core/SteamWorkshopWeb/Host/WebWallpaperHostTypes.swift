@@ -83,6 +83,7 @@ extension WallpaperEngine {
         let recordID: String?
         let language: String
         let runtimeProfile: WebRuntimeProfile
+        let multiDisplayEnabled: Bool
     }
 
     struct WebWallpaperRuntimeState {
@@ -113,6 +114,7 @@ extension WallpaperEngine {
         var strategy: WebWallpaperHostStrategy { get }
         var eventHandler: ((WebWallpaperHostEvent) -> Void)? { get set }
         func launch(_ request: WebWallpaperLaunchRequest, runtimeState: WebWallpaperRuntimeState)
+        func updateDisplayConfiguration(multiDisplayEnabled: Bool)
         func handle(_ command: WebWallpaperRuntimeCommand)
     }
 }
@@ -223,6 +225,7 @@ final class DedicatedWebWallpaperHostPlaceholderAdapter: NSObject, WallpaperEngi
     var paused = false
     var hostActivityToken: NSObjectProtocol?
     var lifecycleObservers: [NSObjectProtocol] = []
+    var screenReconciliationWorkItem: DispatchWorkItem?
     var readyScreenIDs = Set<CGDirectDisplayID>()
     var surfaces: [CGDirectDisplayID: HostSurface] = [:]
     var loopbackServers: [CGDirectDisplayID: WebWallpaperLoopbackServer] = [:]

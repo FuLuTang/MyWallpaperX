@@ -263,7 +263,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
  propertiesJSON: playbackContext.propertyPayloadJSON,
  recordID: record.id,
  language: playbackContext.language,
- runtimeProfile: service.recommendedWebRuntimeProfile(for: record)
+ runtimeProfile: service.recommendedWebRuntimeProfile(for: record),
+ multiDisplayEnabled: true
  )
  }
  }

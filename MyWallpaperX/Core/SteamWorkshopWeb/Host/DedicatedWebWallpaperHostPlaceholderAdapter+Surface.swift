@@ -90,7 +90,6 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
     }
 
     func teardownHostSurfaces() {
-        let existingSurfaces = surfaces.values
         resetTransientMouseCaptureState()
         stopGlobalMouseForwarding()
         endHostActivity()
@@ -98,25 +97,36 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
         deferredDirectorySyncWorkItem = nil
         stopAllDirectoryWatchers()
         stopDirectoryWatchTimer()
-        for server in loopbackServers.values {
-            server.stop()
-        }
-        loopbackServers.removeAll()
         directoryAccessErrorsByProperty.removeAll()
-        surfaces.removeAll()
-        readyScreenIDs.removeAll()
-        for surface in existingSurfaces {
-            surface.webView.navigationDelegate = nil
-            surface.webView.stopLoading()
-            surface.webView.configuration.userContentController.removeScriptMessageHandler(forName: "wallpaperHostLog")
-            surface.webView.configuration.userContentController.removeScriptMessageHandler(forName: "wallpaperHostRandomFile")
-            surface.webView.configuration.userContentController.removeScriptMessageHandler(forName: "wallpaperHostInteractiveRegions")
-            surface.webView.configuration.userContentController.removeScriptMessageHandler(forName: "wallpaperHostNetworkRequest")
-            surface.webView.loadHTMLString("", baseURL: nil)
-            surface.webView.removeFromSuperview()
-            surface.window.orderOut(nil)
-            surface.window.close()
+        for screenID in Array(surfaces.keys) {
+            removeSurface(for: screenID)
         }
+    }
+
+    func removeSurface(for screenID: CGDirectDisplayID) {
+        guard let surface = surfaces.removeValue(forKey: screenID) else { return }
+        loopbackServers.removeValue(forKey: screenID)?.stop()
+        readyScreenIDs.remove(screenID)
+        interactiveRegionsByScreen.removeValue(forKey: screenID)
+        interactiveRegionRegistrationByScreen.removeValue(forKey: screenID)
+        lastPreheatedRegionIDByScreen.removeValue(forKey: screenID)
+        transientCaptureReleaseWorkItems.removeValue(forKey: screenID)?.cancel()
+        if transientCaptureActiveScreenID == screenID {
+            transientCaptureActiveScreenID = nil
+        }
+        if lastHoveredScreenID == screenID {
+            lastHoveredScreenID = nil
+        }
+        surface.webView.navigationDelegate = nil
+        surface.webView.stopLoading()
+        surface.webView.configuration.userContentController.removeScriptMessageHandler(forName: "wallpaperHostLog")
+        surface.webView.configuration.userContentController.removeScriptMessageHandler(forName: "wallpaperHostRandomFile")
+        surface.webView.configuration.userContentController.removeScriptMessageHandler(forName: "wallpaperHostInteractiveRegions")
+        surface.webView.configuration.userContentController.removeScriptMessageHandler(forName: "wallpaperHostNetworkRequest")
+        surface.webView.loadHTMLString("", baseURL: nil)
+        surface.webView.removeFromSuperview()
+        surface.window.orderOut(nil)
+        surface.window.close()
     }
 
     func forEachWebView(_ body: (WKWebView) -> Void) {

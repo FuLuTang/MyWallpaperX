@@ -26,13 +26,33 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
                 queue: .main
             ) { [weak self] _ in
                 self?.handleAppActivationChanged()
+            },
+            center.addObserver(
+                forName: NSApplication.didChangeScreenParametersNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                self?.scheduleScreenReconciliation()
             }
         ]
     }
 
     func removeLifecycleObservers() {
+        screenReconciliationWorkItem?.cancel()
+        screenReconciliationWorkItem = nil
         lifecycleObservers.forEach(NotificationCenter.default.removeObserver)
         lifecycleObservers.removeAll()
+    }
+
+    func scheduleScreenReconciliation() {
+        guard currentRequest != nil else { return }
+        screenReconciliationWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self, let request = self.currentRequest else { return }
+            self.reconcileDisplaySurfaces(for: request)
+        }
+        screenReconciliationWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: workItem)
     }
 
     func handleActiveSpaceDidChange() {
