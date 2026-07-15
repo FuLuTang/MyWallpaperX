@@ -149,7 +149,10 @@ let webCompatibilityScriptMediaState = #"""
   };
   const wallpaperDispatchMediaThumbnail = (node) => {
     const payload = wallpaperMediaThumbnailPayload(node);
+    const hadThumbnail = wallpaperHasMediaThumbnail(window.__myWallpaperMediaState.thumbnail);
+    const hasThumbnail = wallpaperHasMediaThumbnail(payload);
     window.__myWallpaperMediaState.thumbnail = payload;
+    if (!hasThumbnail && !hadThumbnail) return;
     try {
       if (window.wallpaperPropertyListener && typeof window.wallpaperPropertyListener.updateMediaThumbnail === 'function') {
         window.wallpaperPropertyListener.updateMediaThumbnail(payload);
