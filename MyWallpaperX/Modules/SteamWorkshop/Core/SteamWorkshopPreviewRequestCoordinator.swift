@@ -6,6 +6,48 @@ enum SteamWorkshopPreviewRequestPriority {
     case prefetch
 }
 
+nonisolated final class SteamWorkshopPreviewLoadCancellation: @unchecked Sendable {
+    private let lock = NSLock()
+    private var isCancelled = false
+    private var cancellationHandler: (@Sendable () -> Void)?
+
+    var cancelled: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return isCancelled
+    }
+
+    func cancel() {
+        lock.lock()
+        guard !isCancelled else {
+            lock.unlock()
+            return
+        }
+        isCancelled = true
+        let handler = cancellationHandler
+        cancellationHandler = nil
+        lock.unlock()
+        handler?()
+    }
+
+    func installCancellationHandler(_ handler: @escaping @Sendable () -> Void) {
+        lock.lock()
+        if isCancelled {
+            lock.unlock()
+            handler()
+            return
+        }
+        cancellationHandler = handler
+        lock.unlock()
+    }
+
+    func clearCancellationHandler() {
+        lock.lock()
+        cancellationHandler = nil
+        lock.unlock()
+    }
+}
+
 final class SteamWorkshopPreviewRequestCoordinator {
     static let shared = SteamWorkshopPreviewRequestCoordinator()
 
@@ -35,16 +77,27 @@ final class SteamWorkshopPreviewRequestCoordinator {
     func loadData(
         from url: URL,
         priority: SteamWorkshopPreviewRequestPriority,
-        ignoringBackoff: Bool = false
+        ignoringBackoff: Bool = false,
+        cancellation: SteamWorkshopPreviewLoadCancellation? = nil
     ) async -> Data? {
+        guard cancellation?.cancelled != true else { return nil }
         if !ignoringBackoff, !shouldAttemptLoad(for: url, priority: priority) {
             return nil
         }
         do {
-            let data = try await fetchData(from: url, priority: priority)
+            let data = try await fetchData(
+                from: url,
+                priority: priority,
+                cancellation: cancellation
+            )
             noteSuccess(for: url)
             return data
         } catch {
+            if error is CancellationError
+                || (error as? URLError)?.code == .cancelled
+                || cancellation?.cancelled == true {
+                return nil
+            }
             noteFailure(for: url, error: error, priority: priority)
             return nil
         }
@@ -99,30 +152,42 @@ final class SteamWorkshopPreviewRequestCoordinator {
 
     private func fetchData(
         from url: URL,
-        priority: SteamWorkshopPreviewRequestPriority
+        priority: SteamWorkshopPreviewRequestPriority,
+        cancellation: SteamWorkshopPreviewLoadCancellation?
     ) async throws -> Data {
-        try await scheduler.run(priority: priority) { [session] in
-            var request = URLRequest(url: url)
-            request.timeoutInterval = timeout(for: priority)
-            request.setValue(
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) MyWallpaperX/1.0",
-                forHTTPHeaderField: "User-Agent"
-            )
-            switch priority {
-            case .userInitiated:
-                request.networkServiceType = .responsiveData
-            case .visible:
-                request.networkServiceType = .responsiveData
-            case .prefetch:
-                request.networkServiceType = .background
-            }
+        let requestTask = Task { [scheduler, session] in
+            try await scheduler.run(priority: priority) {
+                var request = URLRequest(url: url)
+                request.timeoutInterval = self.timeout(for: priority)
+                request.setValue(
+                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) MyWallpaperX/1.0",
+                    forHTTPHeaderField: "User-Agent"
+                )
+                switch priority {
+                case .userInitiated:
+                    request.networkServiceType = .responsiveData
+                case .visible:
+                    request.networkServiceType = .responsiveData
+                case .prefetch:
+                    request.networkServiceType = .background
+                }
 
-            let (data, response) = try await session.data(for: request)
-            guard let http = response as? HTTPURLResponse,
-                  (200..<300).contains(http.statusCode) else {
-                throw URLError(.badServerResponse)
+                let (data, response) = try await session.data(for: request)
+                guard let http = response as? HTTPURLResponse,
+                      (200..<300).contains(http.statusCode) else {
+                    throw URLError(.badServerResponse)
+                }
+                return data
             }
-            return data
+        }
+        cancellation?.installCancellationHandler {
+            requestTask.cancel()
+        }
+        defer { cancellation?.clearCancellationHandler() }
+        return try await withTaskCancellationHandler {
+            try await requestTask.value
+        } onCancel: {
+            requestTask.cancel()
         }
     }
 

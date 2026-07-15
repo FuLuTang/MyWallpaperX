@@ -25,7 +25,7 @@ final class AppKitSteamWorkshopBrowserItem: NSCollectionViewItem {
     private let statusBadgeButton = SteamWorkshopOverlayIconButton()
     private let statusSpinner = NSProgressIndicator()
 
-    private var imageTask: Task<Void, Never>?
+    private var previewLoadCancellation: SteamWorkshopPreviewLoadCancellation?
     private var previewRetryTask: Task<Void, Never>?
     private var currentPreviewURL: URL?
     private var isPreviewLoadInFlight = false
@@ -119,8 +119,8 @@ final class AppKitSteamWorkshopBrowserItem: NSCollectionViewItem {
 
     override func prepareForReuse() {
         super.prepareForReuse()
-        imageTask?.cancel()
-        imageTask = nil
+        previewLoadCancellation?.cancel()
+        previewLoadCancellation = nil
         currentPreviewURL = nil
         isPreviewLoadInFlight = false
         currentDownloadVideoURL = nil
@@ -306,7 +306,8 @@ final class AppKitSteamWorkshopBrowserItem: NSCollectionViewItem {
 
     func forceReloadPreview() {
         previewRetryTask?.cancel()
-        imageTask?.cancel()
+        previewLoadCancellation?.cancel()
+        previewLoadCancellation = nil
 
         if let currentPreviewSourceURL, !currentPreviewSourceURL.isFileURL {
             let cacheKey = steamWorkshopPreviewCacheKey(for: currentPreviewSourceURL)
@@ -873,7 +874,8 @@ final class AppKitSteamWorkshopBrowserItem: NSCollectionViewItem {
         }
         currentPreviewURL = requestURL
         isPreviewLoadInFlight = false
-        imageTask?.cancel()
+        previewLoadCancellation?.cancel()
+        previewLoadCancellation = nil
         previewRetryTask?.cancel()
 
         if let url, url.isFileURL {
@@ -1026,15 +1028,23 @@ final class AppKitSteamWorkshopBrowserItem: NSCollectionViewItem {
         if bypassingCache {
             SteamWorkshopPreviewImageCache.shared.remove(forKey: cacheKey)
         }
+        let cancellation = SteamWorkshopPreviewLoadCancellation()
+        previewLoadCancellation?.cancel()
+        previewLoadCancellation = cancellation
         isPreviewLoadInFlight = true
         SteamWorkshopPreviewImageCache.shared.loadImageDataAsync(forKey: cacheKey, loader: {
-            await SteamWorkshopPreviewRequestCoordinator.shared.loadData(
+            guard !cancellation.cancelled else { return nil }
+            return await SteamWorkshopPreviewRequestCoordinator.shared.loadData(
                 from: url,
                 priority: .visible,
-                ignoringBackoff: bypassingCache
+                ignoringBackoff: bypassingCache,
+                cancellation: cancellation
             )
         }, decoder: steamWorkshopPreviewImage(from:)) { [weak self] image in
-            guard let self, self.currentPreviewURL == url else { return }
+            guard let self,
+                  self.currentPreviewURL == url,
+                  self.previewLoadCancellation === cancellation else { return }
+            self.previewLoadCancellation = nil
             self.isPreviewLoadInFlight = false
             self.applyResolvedPreviewImage(image, url: url, cacheKey: cacheKey)
         }
