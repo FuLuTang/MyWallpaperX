@@ -175,6 +175,8 @@ final class WebWallpaperLocalSchemeHandler: NSObject, WKURLSchemeHandler {
         if decodedPath.hasPrefix("/__absolute__/") {
             let absolutePath = "/" + decodedPath.dropFirst("/__absolute__/".count)
             originalURL = URL(fileURLWithPath: absolutePath).standardizedFileURL
+        } else if let compatibleAbsoluteURL = allowedAbsoluteCompatibilityURL(for: decodedPath) {
+            originalURL = compatibleAbsoluteURL
         } else {
             let relativePath = decodedPath.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
             originalURL = rootURL
@@ -264,6 +266,20 @@ final class WebWallpaperLocalSchemeHandler: NSObject, WKURLSchemeHandler {
 
         guard let candidateURL else { return nil }
         return existingFileURL(for: candidateURL)
+    }
+
+    private func allowedAbsoluteCompatibilityURL(for decodedPath: String) -> URL? {
+        let supportedPrefixes = ["/Users/", "/Volumes/", "/private/", "/tmp/", "/var/"]
+        guard supportedPrefixes.contains(where: { decodedPath.hasPrefix($0) }) else {
+            return nil
+        }
+
+        let candidateURL = URL(fileURLWithPath: decodedPath).standardizedFileURL
+        let resolvedCandidateURL = candidateURL.resolvingSymlinksInPath().standardizedFileURL
+        guard matchedReadableRootPath(for: resolvedCandidateURL) != nil else {
+            return nil
+        }
+        return candidateURL
     }
 
     private func matchedReadableRootPath(for targetURL: URL) -> String? {
