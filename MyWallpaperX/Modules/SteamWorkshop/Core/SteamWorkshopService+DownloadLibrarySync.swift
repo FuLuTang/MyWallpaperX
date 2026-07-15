@@ -41,7 +41,13 @@ extension SteamWorkshopService {
         }
 
         downloads = (records + transient).sorted { $0.updatedAt > $1.updatedAt }
+#if DEBUG
+        if !ProcessInfo.processInfo.arguments.contains("--mwx-debug-run-web-workshop-id") {
+            preloadWebRuntimeCaches(for: records)
+        }
+#else
         preloadWebRuntimeCaches(for: records)
+#endif
         let nextPrimaryID: String? = {
             if let selectedDownloadID,
                downloads.contains(where: { $0.id == selectedDownloadID }) {

@@ -15,6 +15,23 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
  private var shouldSuppressInitialMainWindowForDebugPlayback: Bool {
  ProcessInfo.processInfo.arguments.contains("--mwx-debug-suppress-main-window")
  }
+
+ private var runsIsolatedWebWorkshopSample: Bool {
+ ProcessInfo.processInfo.arguments.contains("--mwx-debug-run-web-workshop-id")
+ }
+
+ private var hasUsableDebugWorkshopRoot: Bool {
+ let arguments = ProcessInfo.processInfo.arguments
+ guard let flagIndex = arguments.firstIndex(of: "--mwx-debug-workshop-root"),
+       arguments.indices.contains(flagIndex + 1) else {
+ return false
+ }
+ let rootPath = arguments[flagIndex + 1].trimmingCharacters(in: .whitespacesAndNewlines)
+ var isDirectory = ObjCBool(false)
+ return !rootPath.isEmpty
+ && FileManager.default.fileExists(atPath: rootPath, isDirectory: &isDirectory)
+ && isDirectory.boolValue
+ }
  #endif
 
  private func normalizedMenuTitle(_ menuItem: NSMenuItem) -> String {
@@ -88,6 +105,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
  }
 
  func applicationDidFinishLaunching(_ notification: Notification) {
+#if DEBUG
+ if runsIsolatedWebWorkshopSample {
+ scheduleDebugWebWorkshopRuntimeIfRequested()
+ return
+ }
+#endif
  // 启动时先隐藏 Dock 图标，再按"先播放链路、后主窗口"的顺序把界面拉起来。
  MainMenuBuilder.installMainMenu()
  MainWindowCoordinator.setDockIconVisible(false)
@@ -97,6 +120,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
  }
  scheduleInitialMainWindowActivation()
  scheduleDebugWorkshopPlaybackIfRequested()
+ scheduleDebugWebWorkshopRuntimeIfRequested()
  // 避开启动期布局敏感窗口，延后创建状态栏项，降低触发 AppKit 布局递归的概率。
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.75) { [weak self] in
  guard let self, self.statusBarController == nil else { return }
@@ -131,6 +155,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
  }
 
  func applicationWillTerminate(_ notification: Notification) {
+#if DEBUG
+ if runsIsolatedWebWorkshopSample {
+ WallpaperEngine.shared.cleanup()
+ return
+ }
+#endif
  //终止时先刷盘再清引擎，避免最近使用、当前壁纸和播放状态丢失。
  pendingInitialWindowOpen?.cancel()
  pendingInitialWindowOpen = nil
@@ -190,9 +220,57 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
  service.setAsWallpaper(record)
  }
  }
- #else
+
+ private func scheduleDebugWebWorkshopRuntimeIfRequested() {
+ let arguments = ProcessInfo.processInfo.arguments
+ guard let flagIndex = arguments.firstIndex(of: "--mwx-debug-run-web-workshop-id"),
+       arguments.indices.contains(flagIndex + 1) else { return }
+ let itemID = arguments[flagIndex + 1]
+
+ DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+ guard self.hasUsableDebugWorkshopRoot else {
+ NSLog("MWX DEBUG PLAY: workshop item %@ precondition=isolated-root-required", itemID)
+ return
+ }
+ let service = SteamWorkshopService.shared
+ NSLog("MWX DEBUG PLAY: using workshop root %@", service.libraryRootURL.path)
+ service.reloadInstalledItems()
+ guard let record = service.latestDownloadRecord(for: itemID) else {
+ NSLog("MWX DEBUG PLAY: workshop item %@ not found", itemID)
+ return
+ }
+ if case let .missing(dependencyItemID) = record.dependencyStatus {
+ NSLog("MWX DEBUG PLAY: workshop item %@ precondition=missing-dependency-%@", itemID, dependencyItemID)
+ return
+ }
+ guard record.contentType == .web else {
+ NSLog("MWX DEBUG PLAY: workshop item %@ type=%@ is not web", itemID, String(describing: record.contentType))
+ return
+ }
+ guard service.canLaunchDownloadRecord(record) else {
+ NSLog("MWX DEBUG PLAY: workshop item %@ precondition=not-launchable", itemID)
+ return
+ }
+ guard let playbackContext = service.resolvedWebPlaybackContext(for: record) else {
+ NSLog("MWX DEBUG PLAY: workshop item %@ precondition=missing-playback-context", itemID)
+ return
+ }
+
+ NSLog("MWX DEBUG PLAY: launching workshop item %@ type=%@ isolatedRoot=%@", itemID, String(describing: record.contentType), service.libraryRootURL.path)
+ WallpaperEngine.shared.setWebWallpaper(
+ entryURL: playbackContext.effectiveEntryURL,
+ rootURL: playbackContext.effectiveRootURL,
+ propertiesJSON: playbackContext.propertyPayloadJSON,
+ recordID: record.id,
+ language: playbackContext.language,
+ runtimeProfile: service.recommendedWebRuntimeProfile(for: record)
+ )
+ }
+ }
+#else
  private func scheduleDebugWorkshopPlaybackIfRequested() {}
- #endif
+ private func scheduleDebugWebWorkshopRuntimeIfRequested() {}
+#endif
 
  @objc func showSettingsMenuAction(_ sender: Any?) {
  SettingsWindowController.shared.showWindow()

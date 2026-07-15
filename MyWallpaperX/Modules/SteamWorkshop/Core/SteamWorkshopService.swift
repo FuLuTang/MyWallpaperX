@@ -198,12 +198,21 @@ final class SteamWorkshopService: ObservableObject {
             categoryFilter: .all,
             page: 1
         )
-        loadAuthenticationState()
-        refreshSteamRuntimeStatus()
-        loadCachedBrowserItemsIfPossible()
+#if DEBUG
+        let isIsolatedWebSampleRun = ProcessInfo.processInfo.arguments.contains("--mwx-debug-run-web-workshop-id")
+#else
+        let isIsolatedWebSampleRun = false
+#endif
+        if !isIsolatedWebSampleRun {
+            loadAuthenticationState()
+            refreshSteamRuntimeStatus()
+            loadCachedBrowserItemsIfPossible()
+        }
         reloadInstalledItems()
         refreshDisplayedDownloads()
-        fetchBrowserItems()
+        if !isIsolatedWebSampleRun {
+            fetchBrowserItems()
+        }
         observeWebPlaybackFailures()
     }
 

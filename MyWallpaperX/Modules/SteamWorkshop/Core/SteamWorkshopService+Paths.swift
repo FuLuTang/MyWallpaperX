@@ -6,6 +6,22 @@
 import Foundation
 
 extension SteamWorkshopService {
+#if DEBUG
+    private var debugWorkshopLibraryRootURL: URL? {
+        let arguments = ProcessInfo.processInfo.arguments
+        guard let flagIndex = arguments.firstIndex(of: "--mwx-debug-workshop-root"),
+              arguments.indices.contains(flagIndex + 1) else {
+            return nil
+        }
+
+        let rawPath = arguments[flagIndex + 1].trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !rawPath.isEmpty else { return nil }
+        return URL(fileURLWithPath: rawPath, isDirectory: true)
+            .resolvingSymlinksInPath()
+            .standardizedFileURL
+    }
+#endif
+
     var bundledSteamBundleURL: URL? {
         Bundle.main.resourceURL?
             .appendingPathComponent(Constants.bundledSteamBundleName, isDirectory: true)
@@ -51,7 +67,12 @@ extension SteamWorkshopService {
     }
 
     var libraryRootURL: URL {
-        FileManager.default.homeDirectoryForCurrentUser
+#if DEBUG
+        if let debugWorkshopLibraryRootURL {
+            return debugWorkshopLibraryRootURL
+        }
+#endif
+        return FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Movies", isDirectory: true)
             .appendingPathComponent("MyWallpaperX", isDirectory: true)
             .appendingPathComponent("创意工坊", isDirectory: true)

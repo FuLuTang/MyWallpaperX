@@ -38,13 +38,29 @@ DIAG_RE = re.compile(
     r"url=(?P<url>\S+) message=(?P<message>.*)$"
 )
 DEBUG_LAUNCH_RE = re.compile(
-    r"MWX DEBUG PLAY: launching workshop item (?P<id>\S+) type=(?P<type>.+)$"
+    r"MWX DEBUG PLAY: launching workshop item (?P<id>\S+) type=(?P<type>\S+)"
+)
+PRECONDITION_RE = re.compile(
+    r"MWX DEBUG PLAY: workshop item (?P<id>\S+) precondition=(?P<precondition>\S+)"
 )
 SNAPSHOT_RE = re.compile(
     r"webSnapshot\[(?P<reason>[^\]]+)\] size=(?P<size>\S+) "
     r"avgLuma=(?P<avg>[0-9.]+) nonBlack=(?P<nonblack>[0-9.]+)"
 )
 TIMESTAMP_RE = re.compile(r"^(?P<stamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?)")
+RAW_RUNTIME_ERROR_TOKENS = (
+    "request to run javascript failed",
+    "run javascript failed",
+    "javascript exception",
+    "uncaught ",
+    "syntaxerror",
+    "referenceerror",
+    "typeerror",
+    "failed to load resource",
+    "not allowed to load local resource",
+    "web process terminated",
+    "webcontent process terminated",
+)
 
 
 @dataclass
@@ -89,6 +105,9 @@ class SampleResult:
     process_exit_code: int | None
     duration_seconds: float
     event_counts: dict[str, int]
+    diagnostic_warnings: list[str]
+    diagnostic_errors: list[str]
+    raw_error_lines: list[str]
 
 
 def run_command(command: list[str], cwd: Path, log_path: Path | None = None) -> None:
@@ -110,6 +129,7 @@ def build_debug_app(derived_data: Path, log_path: Path) -> None:
         "Debug",
         "-derivedDataPath",
         str(derived_data),
+        "CODE_SIGNING_ALLOWED=NO",
         "build",
     ]
     run_command(command, REPO_ROOT, log_path)
@@ -174,11 +194,17 @@ def parse_timestamp(line: str) -> datetime | None:
     return None
 
 
+def is_raw_runtime_error(line: str) -> bool:
+    lowered = line.lower()
+    return any(token in lowered for token in RAW_RUNTIME_ERROR_TOKENS)
+
+
 def parse_log(log_path: Path) -> tuple[list[DiagnosticEvent], dict[str, Any]]:
     events: list[DiagnosticEvent] = []
     metadata: dict[str, Any] = {
         "debug_launch_type": None,
         "item_not_found": False,
+        "precondition": None,
         "snapshots": [],
         "raw_error_lines": [],
     }
@@ -201,6 +227,10 @@ def parse_log(log_path: Path) -> tuple[list[DiagnosticEvent], dict[str, Any]]:
 
         if "MWX DEBUG PLAY: workshop item" in line and "not found" in line:
             metadata["item_not_found"] = True
+
+        precondition_match = PRECONDITION_RE.search(line)
+        if precondition_match:
+            metadata["precondition"] = precondition_match.group("precondition")
 
         snapshot_match = SNAPSHOT_RE.search(line)
         if snapshot_match:
@@ -230,8 +260,7 @@ def parse_log(log_path: Path) -> tuple[list[DiagnosticEvent], dict[str, Any]]:
             )
             continue
 
-        lowered = line.lower()
-        if any(token in lowered for token in ("crash", "exception", "failed", "error")):
+        if is_raw_runtime_error(line):
             metadata["raw_error_lines"].append(line[-500:])
 
     return events, metadata
@@ -285,6 +314,36 @@ def score_sample(
     duration_seconds: float,
 ) -> SampleResult:
     counts = count_by_type(events)
+    diagnostic_warnings = [
+        event.line[-500:]
+        for event in events
+        if event.severity.lower() == "warning"
+    ]
+    diagnostic_errors = [
+        event.line[-500:]
+        for event in events
+        if event.severity.lower() == "error"
+    ]
+    raw_error_lines = list(metadata.get("raw_error_lines") or [])[-80:]
+    precondition = metadata.get("precondition")
+    if precondition:
+        return SampleResult(
+            sample=sample,
+            score=0,
+            grade="N/A",
+            coverage=0,
+            dimensions=[],
+            findings=[f"Not run: required Workshop precondition is {precondition}."],
+            shortfall_categories=["precondition"],
+            log_path=str(log_path),
+            screenshot_path=str(screenshot_path) if screenshot_path else None,
+            process_exit_code=exit_code,
+            duration_seconds=round(duration_seconds, 2),
+            event_counts=counts,
+            diagnostic_warnings=diagnostic_warnings,
+            diagnostic_errors=diagnostic_errors,
+            raw_error_lines=raw_error_lines,
+        )
     findings: list[str] = []
     categories: set[str] = set()
     dimensions: list[DimensionScore] = []
@@ -570,6 +629,9 @@ def score_sample(
         process_exit_code=exit_code,
         duration_seconds=round(duration_seconds, 2),
         event_counts=counts,
+        diagnostic_warnings=diagnostic_warnings,
+        diagnostic_errors=diagnostic_errors,
+        raw_error_lines=raw_error_lines,
     )
 
 
@@ -603,6 +665,24 @@ def capture_screenshot(path: Path) -> None:
     subprocess.run(["/usr/sbin/screencapture", "-x", str(path)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
+def start_unified_log_capture(handle: Any) -> subprocess.Popen[Any]:
+    return subprocess.Popen(
+        [
+            "/usr/bin/log",
+            "stream",
+            "--style",
+            "compact",
+            "--level",
+            "debug",
+            "--predicate",
+            f'process == "{APP_NAME}"',
+        ],
+        stdout=handle,
+        stderr=subprocess.STDOUT,
+        start_new_session=True,
+    )
+
+
 def run_one_sample(
     app_binary: Path,
     sample: Sample,
@@ -610,6 +690,8 @@ def run_one_sample(
     duration: float,
     capture_screen: bool,
     kill_existing: bool,
+    runtime_workshop_root: Path | None,
+    runtime_home: Path | None,
 ) -> SampleResult:
     sample_dir = output_dir / sample.id
     sample_dir.mkdir(parents=True, exist_ok=True)
@@ -623,23 +705,41 @@ def run_one_sample(
         str(app_binary),
         "--mwx-debug-suppress-main-window",
         "--mwx-log-web-diagnostics",
-        "--mwx-debug-play-workshop-id",
+        "--mwx-debug-run-web-workshop-id",
         sample.id,
     ]
+    if runtime_workshop_root:
+        command.extend(["--mwx-debug-workshop-root", str(runtime_workshop_root)])
+
+    environment = os.environ.copy()
+    if runtime_home:
+        sample_home = runtime_home / sample.id
+        sample_home.mkdir(parents=True, exist_ok=True)
+        environment["HOME"] = str(sample_home)
+        environment["CFFIXED_USER_HOME"] = str(sample_home)
 
     started = time.monotonic()
     with log_path.open("w", encoding="utf-8") as handle:
-        process = subprocess.Popen(
-            command,
-            cwd=REPO_ROOT,
-            stdout=handle,
-            stderr=subprocess.STDOUT,
-            start_new_session=True,
-        )
-        time.sleep(duration)
-        if screenshot_path:
-            capture_screenshot(screenshot_path)
-        exit_code = terminate_process(process)
+        log_process = start_unified_log_capture(handle)
+        process: subprocess.Popen[Any] | None = None
+        exit_code: int | None = None
+        try:
+            time.sleep(0.25)
+            process = subprocess.Popen(
+                command,
+                cwd=REPO_ROOT,
+                stdout=handle,
+                stderr=subprocess.STDOUT,
+                env=environment,
+                start_new_session=True,
+            )
+            time.sleep(duration)
+            if screenshot_path:
+                capture_screenshot(screenshot_path)
+        finally:
+            if process is not None:
+                exit_code = terminate_process(process)
+            terminate_process(log_process)
     elapsed = time.monotonic() - started
 
     events, metadata = parse_log(log_path)
@@ -684,6 +784,8 @@ def summarize(results: list[SampleResult], comparison: dict[str, Any] | None) ->
     if not results:
         return {
             "sample_count": 0,
+            "runnable_sample_count": 0,
+            "precondition_count": 0,
             "average_score": 0,
             "average_coverage": 0,
             "grade_counts": {},
@@ -697,10 +799,13 @@ def summarize(results: list[SampleResult], comparison: dict[str, Any] | None) ->
         grade_counts[result.grade] = grade_counts.get(result.grade, 0) + 1
         for category in result.shortfall_categories:
             category_counts[category] = category_counts.get(category, 0) + 1
+    runnable_results = [result for result in results if result.grade != "N/A"]
     return {
         "sample_count": len(results),
-        "average_score": round(sum(result.score for result in results) / len(results), 1),
-        "average_coverage": round(sum(result.coverage for result in results) / len(results), 1),
+        "runnable_sample_count": len(runnable_results),
+        "precondition_count": len(results) - len(runnable_results),
+        "average_score": round(sum(result.score for result in runnable_results) / len(runnable_results), 1) if runnable_results else 0,
+        "average_coverage": round(sum(result.coverage for result in runnable_results) / len(runnable_results), 1) if runnable_results else 0,
         "grade_counts": dict(sorted(grade_counts.items())),
         "category_counts": dict(sorted(category_counts.items())),
         "comparison": comparison,
@@ -709,7 +814,7 @@ def summarize(results: list[SampleResult], comparison: dict[str, Any] | None) ->
 
 def write_json_report(output_dir: Path, args: argparse.Namespace, results: list[SampleResult], summary: dict[str, Any]) -> Path:
     report = {
-        "schema_version": 1,
+        "schema_version": 2,
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "repo_root": str(REPO_ROOT),
         "command": vars(args),
@@ -727,6 +832,8 @@ def write_markdown_report(output_dir: Path, results: list[SampleResult], summary
         "",
         f"- Generated: {datetime.now().isoformat(timespec='seconds')}",
         f"- Samples: {summary['sample_count']}",
+        f"- Runnable samples: {summary['runnable_sample_count']}",
+        f"- Precondition skips: {summary['precondition_count']}",
         f"- Average score: {summary['average_score']}",
         f"- Average evidence coverage: {summary['average_coverage']}%",
         f"- Grades: {summary['grade_counts']}",
@@ -734,25 +841,33 @@ def write_markdown_report(output_dir: Path, results: list[SampleResult], summary
         "",
         "## Samples",
         "",
-        "| ID | Score | Grade | Coverage | Shortfalls | Log |",
-        "| --- | ---: | --- | ---: | --- | --- |",
+        "| ID | Score | Grade | Coverage | Diagnostics | Raw errors | Shortfalls | Log |",
+        "| --- | ---: | --- | ---: | ---: | ---: | --- | --- |",
     ]
     for result in sorted(results, key=lambda item: item.score):
         shortfalls = ", ".join(result.shortfall_categories) if result.shortfall_categories else "-"
         log_name = Path(result.log_path).relative_to(output_dir)
         lines.append(
             f"| `{result.sample.id}` | {result.score:.1f} | {result.grade} | "
-            f"{result.coverage:.1f}% | {shortfalls} | `{log_name}` |"
+            f"{result.coverage:.1f}% | {len(result.diagnostic_warnings) + len(result.diagnostic_errors)} | "
+            f"{len(result.raw_error_lines)} | {shortfalls} | `{log_name}` |"
         )
 
     lines.extend(["", "## Lowest Scoring Findings", ""])
-    for result in sorted(results, key=lambda item: item.score)[:10]:
+    for result in sorted((item for item in results if item.grade != "N/A"), key=lambda item: item.score)[:10]:
         lines.append(f"### {result.sample.id} - {result.score:.1f} ({result.grade})")
         if result.findings:
             for finding in result.findings[:8]:
                 lines.append(f"- {finding}")
         else:
             lines.append("- No notable findings.")
+        lines.append("")
+
+    precondition_results = [result for result in results if result.grade == "N/A"]
+    if precondition_results:
+        lines.extend(["## Precondition Skips", ""])
+        for result in precondition_results:
+            lines.append(f"- `{result.sample.id}`: {result.findings[0]}")
         lines.append("")
 
     comparison = summary.get("comparison")
@@ -813,6 +928,18 @@ def run_benchmark(args: argparse.Namespace) -> int:
     output_dir = make_output_dir(Path(args.output_dir) if args.output_dir else None)
     build_log = output_dir / "build.log"
     app_binary = Path(args.app) if args.app else DEFAULT_APP_BINARY
+    runtime_workshop_root = Path(args.runtime_workshop_root).expanduser().resolve() if args.runtime_workshop_root else None
+    runtime_home = Path(args.runtime_home).expanduser().resolve() if args.runtime_home else None
+
+    if runtime_workshop_root is None:
+        print("--runtime-workshop-root is required so sample runs cannot use the real library.", file=sys.stderr)
+        return 2
+    if not runtime_workshop_root.is_dir():
+        print(f"Runtime workshop root does not exist: {runtime_workshop_root}", file=sys.stderr)
+        return 2
+    if runtime_home is None:
+        print("--runtime-home is required so sample runs cannot use normal user state.", file=sys.stderr)
+        return 2
 
     if args.build:
         build_debug_app(Path(args.derived_data), build_log)
@@ -839,6 +966,8 @@ def run_benchmark(args: argparse.Namespace) -> int:
                 duration=args.duration,
                 capture_screen=args.screenshot,
                 kill_existing=args.kill_existing,
+                runtime_workshop_root=runtime_workshop_root,
+                runtime_home=runtime_home,
             )
         )
 
@@ -905,6 +1034,14 @@ def make_parser() -> argparse.ArgumentParser:
     parser.add_argument("--derived-data", default=str(DEFAULT_DERIVED_DATA), help="DerivedData path for --build.")
     parser.add_argument("--app", help="Path to MyWallpaperX debug binary.")
     parser.add_argument("--workshop-root", default=str(DEFAULT_WORKSHOP_ROOT), help="Workshop library root to discover samples.")
+    parser.add_argument(
+        "--runtime-workshop-root",
+        help="Debug-only library root passed to the app while launching samples; use an isolated copy to protect the real library.",
+    )
+    parser.add_argument(
+        "--runtime-home",
+        help="Temporary HOME/CFFIXED_USER_HOME base; each launched sample receives its own child directory.",
+    )
     parser.add_argument("--ids", help="Comma-separated Workshop IDs to benchmark.")
     parser.add_argument("--id-file", help="File containing one Workshop ID per line.")
     parser.add_argument("--limit", type=int, help="Limit discovered samples.")
