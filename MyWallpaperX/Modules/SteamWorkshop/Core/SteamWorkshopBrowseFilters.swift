@@ -33,9 +33,9 @@ enum SteamWorkshopBrowserContentMode: String, CaseIterable, Identifiable {
 
     nonisolated var searchPlaceholder: String {
         switch self {
-        case .video: return "搜索 Steam 视频"
-        case .web: return "搜索 Steam WEB壁纸"
-        case .scene: return "搜索 Steam 场景壁纸"
+        case .video: return "搜索 Steam 视频或输入工坊 ID"
+        case .web: return "搜索 Steam WEB 壁纸或输入工坊 ID"
+        case .scene: return "搜索 Steam 场景壁纸或输入工坊 ID"
         }
     }
 }

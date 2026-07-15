@@ -207,7 +207,7 @@ extension SteamWorkshopService {
                         self.browserNextPage = 2
                         self.isLoadingMoreBrowserItems = false
                         self.statusMessage = item == nil
-                            ? "没有找到 ID 为 \(itemID) 的创意工坊项目。"
+                            ? "没有找到 ID 为 \(itemID) 的 Wallpaper Engine 创意工坊项目。"
                             : "已按 ID 加载创意工坊项目 \(itemID)"
                     }
                 } catch {
@@ -363,20 +363,13 @@ extension SteamWorkshopService {
             previewImageURL: nil
         )
 
-        if let cached = loadDetailCache(id: id) {
-            let resolved = await applyingCachedAuthorNameIfPossible(to: cached)
-            let enriched = try await maybeEnrichPreviewKind(for: resolved, requestPriority: .userInitiated)
-            if enriched != cached {
-                saveDetailCache(item: enriched)
-            }
-            return enriched
-        }
-
         let detailsByID = try await fetchPublishedFileDetails(
             ids: [id],
             requestPriority: .userInitiated
         )
-        guard let detail = detailsByID[id] else {
+        guard let detail = detailsByID[id],
+              let workshopAppID = Int(Constants.workshopAppID),
+              detail.consumerAppID == workshopAppID else {
             return nil
         }
 
