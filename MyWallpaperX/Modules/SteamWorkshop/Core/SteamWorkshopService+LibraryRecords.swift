@@ -520,8 +520,11 @@ extension SteamWorkshopService {
         let dependencyRecord: SteamWorkshopDownloadRecord? = {
             guard let dependencyItemID,
                   dependencyItemID != identifier else { return nil }
-            return latestDownloadRecord(for: dependencyItemID)
-                ?? buildInstalledRecord(at: webLibraryRootURL.appendingPathComponent(dependencyItemID, isDirectory: true))
+            if let cachedRecord = latestDownloadRecord(for: dependencyItemID),
+               cachedRecord.webEntryURL != nil {
+                return cachedRecord
+            }
+            return buildInstalledRecord(at: webLibraryRootURL.appendingPathComponent(dependencyItemID, isDirectory: true))
                 ?? buildInstalledRecord(at: sceneLibraryRootURL.appendingPathComponent(dependencyItemID, isDirectory: true))
         }()
 
