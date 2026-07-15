@@ -374,14 +374,14 @@ public final class WallpaperEngine: NSObject {
     }
 
     public func setPlaybackRate(_ rate: Float) {
-        // 速率变化只在未暂停时立即下发 resume 命令更新速度；暂停时只更新 targetPlaybackRate，恢复时自动生效。
+        // Web 宿主可独立调整速率，不能为了调速而意外恢复已经暂停的页面。
         let clampedRate = max(0.25, min(2.0, rate))
         targetPlaybackRate = clampedRate
-        guard !playbackPaused else { return }
         if currentPlaybackContentKind == .web {
-            dispatchWebRuntimeCommand(.resume(playbackRate: clampedRate))
+            dispatchWebRuntimeCommand(.setPlaybackRate(clampedRate))
             return
         }
+        guard !playbackPaused else { return }
         for session in displaySessions.values where session.process.isRunning {
             send(DaemonCommand(action: "resume", videoPath: nil, framePath: nil, webRootPath: nil, propertiesJSON: nil, fillMode: nil, shouldLoopCurrentItem: nil, volume: nil, playbackRate: clampedRate, spectrumEnabled: nil, spectrumLevels: nil, spectrumBarCount: nil, spectrumColorHex: nil, spectrumOffsetX: nil, spectrumOffsetY: nil, spectrumPeakCapsEnabled: nil, requestID: nil), to: session)
         }
@@ -429,6 +429,14 @@ public final class WallpaperEngine: NSObject {
         }
         systemAudioSpectrumService.setEnabled(enabled)
         systemAudioSpectrumService.updateConfiguration(style: style, sensitivity: sensitivity)
+
+        if currentPlaybackContentKind == .web {
+            let webLevels = enabled
+                ? (currentWebSpectrumSnapshot() ?? clearedWebSpectrumLevels())
+                : clearedWebSpectrumLevels()
+            lastWebSpectrumLevels = webLevels
+            dispatchWebRuntimeCommand(.pushAudioSpectrum(webLevels))
+        }
 
         for session in displaySessions.values where session.process.isRunning {
             send(

@@ -85,11 +85,19 @@ extension WallpaperEngine {
         let runtimeProfile: WebRuntimeProfile
     }
 
+    struct WebWallpaperRuntimeState {
+        let paused: Bool
+        let volume: Float
+        let playbackRate: Float
+        let spectrumLevels: [Float]?
+    }
+
     enum WebWallpaperRuntimeCommand {
         case pause
         case resume(playbackRate: Float)
         case stop
         case setVolume(Float)
+        case setPlaybackRate(Float)
         case applyProperties(String)
         case pushAudioSpectrum([Float])
     }
@@ -104,7 +112,7 @@ extension WallpaperEngine {
     protocol WebWallpaperHostAdapter: AnyObject {
         var strategy: WebWallpaperHostStrategy { get }
         var eventHandler: ((WebWallpaperHostEvent) -> Void)? { get set }
-        func launch(_ request: WebWallpaperLaunchRequest)
+        func launch(_ request: WebWallpaperLaunchRequest, runtimeState: WebWallpaperRuntimeState)
         func handle(_ command: WebWallpaperRuntimeCommand)
     }
 }
@@ -210,6 +218,7 @@ final class DedicatedWebWallpaperHostPlaceholderAdapter: NSObject, WallpaperEngi
     var phase: Phase = .idle
     var currentRequest: WallpaperEngine.WebWallpaperLaunchRequest?
     var currentVolume: Float = 0.5
+    var currentPlaybackRate: Float = 1.0
     var currentSpectrumLevels: [Float]?
     var paused = false
     var hostActivityToken: NSObjectProtocol?
@@ -242,17 +251,25 @@ final class DedicatedWebWallpaperHostPlaceholderAdapter: NSObject, WallpaperEngi
     static let transientCaptureDuration: TimeInterval = 0.03
     static let dragCaptureDuration: TimeInterval = 0.12
     static let hoverPreheatInset: CGFloat = 0.03
-    static func webCompatibilityScript(for request: WallpaperEngine.WebWallpaperLaunchRequest?, generalPropertiesJSON: String, volume: Float, paused: Bool) -> String {
+    static func webCompatibilityScript(
+        for request: WallpaperEngine.WebWallpaperLaunchRequest?,
+        generalPropertiesJSON: String,
+        volume: Float,
+        playbackRate: Float,
+        paused: Bool
+    ) -> String {
         let propertiesJSON = request?.propertiesJSON ?? "{}"
         let escapedProperties = WebWallpaperHostSupport.javaScriptQuotedString(propertiesJSON)
         let escapedGeneralProperties = WebWallpaperHostSupport.javaScriptQuotedString(generalPropertiesJSON)
         let volumeLiteral = String(format: "%.6f", volume)
+        let playbackRateLiteral = String(format: "%.6f", playbackRate)
         let pausedLiteral = paused ? "true" : "false"
         let seedScript = """
         (() => {
           try { window.__myWallpaperInitialUserProperties = JSON.parse(\(escapedProperties)); } catch (_) { window.__myWallpaperInitialUserProperties = {}; }
           try { window.__myWallpaperInitialGeneralProperties = JSON.parse(\(escapedGeneralProperties)); } catch (_) { window.__myWallpaperInitialGeneralProperties = {}; }
           window.__myWallpaperInitialVolume = \(volumeLiteral);
+          window.__myWallpaperInitialPlaybackRate = \(playbackRateLiteral);
           window.__myWallpaperInitialPaused = \(pausedLiteral);
         })();
         """

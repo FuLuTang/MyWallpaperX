@@ -45,6 +45,7 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
                     for: request,
                     generalPropertiesJSON: currentGeneralPropertiesJSON(for: screen, screenID: screenID),
                     volume: currentVolume,
+                    playbackRate: currentPlaybackRate,
                     paused: paused
                 ),
                 injectionTime: .atDocumentStart,

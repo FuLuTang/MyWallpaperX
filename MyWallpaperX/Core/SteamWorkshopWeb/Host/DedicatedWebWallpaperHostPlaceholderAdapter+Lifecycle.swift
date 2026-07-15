@@ -30,7 +30,10 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
         self.hostActivityToken = nil
     }
 
-    func launch(_ request: WallpaperEngine.WebWallpaperLaunchRequest) {
+    func launch(
+        _ request: WallpaperEngine.WebWallpaperLaunchRequest,
+        runtimeState: WallpaperEngine.WebWallpaperRuntimeState
+    ) {
         let shouldRebuildSurfaces = currentRequest?.entryURL.resolvingSymlinksInPath().standardizedFileURL != request.entryURL.resolvingSymlinksInPath().standardizedFileURL
             || currentRequest?.rootURL.resolvingSymlinksInPath().standardizedFileURL != request.rootURL.resolvingSymlinksInPath().standardizedFileURL
             || currentRequest?.runtimeProfile != request.runtimeProfile
@@ -42,8 +45,11 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
         installLifecycleObservers()
         beginHostActivity()
         currentRequest = request
+        currentVolume = runtimeState.volume
+        currentPlaybackRate = runtimeState.playbackRate
+        currentSpectrumLevels = runtimeState.spectrumLevels
         phase = .launching
-        paused = false
+        paused = runtimeState.paused
         resetInteractiveRegions()
         resetTransientMouseCaptureState()
         readyScreenIDs.removeAll()
@@ -118,21 +124,17 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
                 forEachWebView { self.applyPausedState(true, to: $0) }
             case let .resume(playbackRate):
                 paused = false
+                currentPlaybackRate = playbackRate
                 forEachWebView {
                     self.applyPausedState(false, to: $0)
-                    let playbackRateLiteral = String(format: "%.6f", playbackRate)
-                    $0.evaluateJavaScript(
-                        """
-                        Array.from(document.querySelectorAll('audio,video')).forEach(node => {
-                          try { node.playbackRate = \(playbackRateLiteral); } catch (_) {}
-                        });
-                        """,
-                        completionHandler: nil
-                    )
+                    self.applyPlaybackRate(playbackRate, to: $0)
                 }
             case let .setVolume(volume):
                 currentVolume = volume
                 forEachWebView { self.applyVolume(volume, to: $0) }
+            case let .setPlaybackRate(playbackRate):
+                currentPlaybackRate = playbackRate
+                forEachWebView { self.applyPlaybackRate(playbackRate, to: $0) }
             case let .applyProperties(propertiesJSON):
                 let effectivePropertiesJSON = mergedWebPropertiesJSON(
                     baseJSON: currentRequest?.propertiesJSON,

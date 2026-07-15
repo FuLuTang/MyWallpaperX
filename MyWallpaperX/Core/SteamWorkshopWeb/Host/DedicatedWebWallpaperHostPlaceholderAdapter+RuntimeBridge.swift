@@ -307,6 +307,7 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
         let escapedProperties = WebWallpaperHostSupport.javaScriptQuotedString(propertiesJSON)
         let escapedGeneralProperties = WebWallpaperHostSupport.javaScriptQuotedString(generalPropertiesJSON)
         let volumeLiteral = String(format: "%.6f", currentVolume)
+        let playbackRateLiteral = String(format: "%.6f", currentPlaybackRate)
         let pausedLiteral = paused ? "true" : "false"
         let spectrumLiteral: String
         if let levels = currentSpectrumLevels {
@@ -331,6 +332,7 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
               }
               window.__myWallpaperApplyGeneralProperties(generalProperties);
               window.__myWallpaperSetGlobalVolume(\(volumeLiteral));
+              window.__myWallpaperSetPlaybackRate(\(playbackRateLiteral));
               if (typeof window.__myWallpaperApplyInitialPausedState === 'function') {
                 window.__myWallpaperApplyInitialPausedState(\(pausedLiteral));
               } else {
@@ -401,6 +403,18 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
             completionHandler: nil
         )
         applyGeneralProperties(to: webView)
+    }
+
+    func applyPlaybackRate(_ playbackRate: Float, to webView: WKWebView) {
+        let playbackRateLiteral = String(format: "%.6f", playbackRate)
+        webView.evaluateJavaScript(
+            """
+            if (typeof window.__myWallpaperSetPlaybackRate === 'function') {
+              window.__myWallpaperSetPlaybackRate(\(playbackRateLiteral));
+            }
+            """,
+            completionHandler: nil
+        )
     }
 
     func pushAudioSpectrum(_ levels: [Float], to webView: WKWebView) {

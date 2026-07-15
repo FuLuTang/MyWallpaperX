@@ -33,4 +33,17 @@ extension WallpaperDaemon {
         let volumeLiteral = String(format: "%.6f", volume)
         webView.evaluateJavaScript("window.__myWallpaperSetGlobalVolume(\(volumeLiteral));", completionHandler: nil)
     }
+
+    func setWebPlaybackRate(_ playbackRate: Float) {
+        guard let webView else { return }
+        let playbackRateLiteral = String(format: "%.6f", playbackRate)
+        webView.evaluateJavaScript(
+            """
+            Array.from(document.querySelectorAll('audio,video')).forEach(node => {
+              try { node.playbackRate = \(playbackRateLiteral); } catch (_) {}
+            });
+            """,
+            completionHandler: nil
+        )
+    }
 }

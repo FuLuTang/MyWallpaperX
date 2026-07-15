@@ -69,6 +69,14 @@ extension WallpaperDaemon {
                 }
                 setWebVolume(currentVolume)
             }
+        case "setPlaybackRate":
+            if let playbackRate = command.playbackRate {
+                self.playbackRate = max(playbackRate, 0.1)
+                if !paused {
+                    activePlayer.rate = self.playbackRate
+                }
+                setWebPlaybackRate(self.playbackRate)
+            }
         case "applyWebProperties":
             currentWebPropertiesJSON = command.propertiesJSON
             applyWebCompatibilityState()

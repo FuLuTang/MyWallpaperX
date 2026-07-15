@@ -117,13 +117,13 @@ extension WallpaperEngine {
     }
 
     func launchWebWallpaper(_ request: WebWallpaperLaunchRequest) {
+        let runtimeState = webWallpaperRuntimeState()
         if currentPlaybackContentKind == .video {
             for displayID in Array(displaySessions.keys) {
                 terminateSession(for: displayID)
             }
             currentWallpaper = nil
             currentContentPath = nil
-            playbackPaused = false
         }
 
         switch currentWebHostStrategy {
@@ -135,8 +135,17 @@ extension WallpaperEngine {
             currentPlaybackContentKind = .web
             currentWebPropertiesJSON = request.propertiesJSON ?? "{}"
             currentWebLaunchSource = request.source
-            dedicatedWebHostAdapter.launch(request)
+            dedicatedWebHostAdapter.launch(request, runtimeState: runtimeState)
         }
+    }
+
+    private func webWallpaperRuntimeState() -> WebWallpaperRuntimeState {
+        WebWallpaperRuntimeState(
+            paused: playbackPaused,
+            volume: currentVolumeNormalized,
+            playbackRate: targetPlaybackRate,
+            spectrumLevels: currentWebSpectrumSnapshot()
+        )
     }
 
     func handleWebHostEvent(_ event: WebWallpaperHostEvent) {

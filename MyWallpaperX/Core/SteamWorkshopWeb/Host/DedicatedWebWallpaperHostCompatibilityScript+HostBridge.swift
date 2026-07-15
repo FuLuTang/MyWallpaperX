@@ -492,6 +492,17 @@ let webCompatibilityScriptHostBridge = #"""
       try { listener(volume); } catch (_) {}
     }
   };
+  window.__myWallpaperSetPlaybackRate = function(value) {
+    const playbackRate = Math.max(0.25, Math.min(2, Number(value) || 1));
+    const mediaNodes = Array.from(document.querySelectorAll('audio,video'));
+    for (const node of mediaNodes.concat(audioStreams)) {
+      if (!node) continue;
+      try { node.playbackRate = playbackRate; } catch (_) {}
+    }
+    try {
+      window.dispatchEvent(new CustomEvent('wallpaper-playback-rate-changed', { detail: playbackRate }));
+    } catch (_) {}
+  };
   window.__myWallpaperSetPaused = function(isPaused, options) {
     const paused = !!isPaused;
     const replayOptions = options || {};
@@ -568,6 +579,7 @@ let webCompatibilityScriptHostBridge = #"""
   };
   try {
     window.__myWallpaperSetGlobalVolume(window.__myWallpaperInitialVolume);
+    window.__myWallpaperSetPlaybackRate(window.__myWallpaperInitialPlaybackRate);
     window.__myWallpaperApplyInitialPausedState(!!window.__myWallpaperInitialPaused);
     window.__myWallpaperNotifyPluginLoaded('led');
     window.__myWallpaperNotifyPluginLoaded('rgb');

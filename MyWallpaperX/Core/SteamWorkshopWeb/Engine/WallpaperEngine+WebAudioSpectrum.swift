@@ -26,6 +26,17 @@ extension WallpaperEngine {
         return true
     }
 
+    func currentWebSpectrumSnapshot() -> [Float]? {
+        guard currentSystemAudioSpectrumEnabled else { return nil }
+        let webLevels = legacyWebSpectrumLevels(currentSpectrumLevels, count: Self.legacyWebSpectrumSampleCount)
+        lastWebSpectrumLevels = webLevels
+        return webLevels
+    }
+
+    func clearedWebSpectrumLevels() -> [Float] {
+        Array(repeating: 0, count: Self.legacyWebSpectrumSampleCount)
+    }
+
     private func legacyWebSpectrumLevels(_ levels: [Float], count: Int) -> [Float] {
         interpolatedWebSpectrumLevels(levels, count: count).map { level in
             let clamped = min(max(level, 0), 1)
