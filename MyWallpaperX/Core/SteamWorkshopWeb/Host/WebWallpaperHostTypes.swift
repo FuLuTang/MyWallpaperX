@@ -32,6 +32,7 @@ extension WallpaperEngine {
     struct WebRuntimeProfile: Equatable {
         enum DataStorePolicy: String {
             case sharedPersistent
+            case workshopPersistent
             case scopedPersistent
             case ephemeral
         }
@@ -45,7 +46,7 @@ extension WallpaperEngine {
         static let standard = WebRuntimeProfile(
             id: "standard",
             originMode: .customScheme,
-            dataStorePolicy: .sharedPersistent,
+            dataStorePolicy: .workshopPersistent,
             strictLocalResourcePolicy: false,
             diagnosticsEnabled: true
         )

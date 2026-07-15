@@ -7,6 +7,7 @@ import Foundation
 import AppKit
 import WebKit
 import CoreGraphics
+import CryptoKit
 
 extension DedicatedWebWallpaperHostPlaceholderAdapter {
     func makeSurface(for screen: NSScreen, screenID: CGDirectDisplayID) -> HostSurface {
@@ -195,6 +196,11 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
         switch request?.runtimeProfile.dataStorePolicy ?? .sharedPersistent {
         case .sharedPersistent:
             return .default()
+        case .workshopPersistent:
+            if #available(macOS 14.0, *) {
+                return WKWebsiteDataStore(forIdentifier: workshopDataStoreUUID(for: request))
+            }
+            return .nonPersistent()
         case .ephemeral:
             return .nonPersistent()
         case .scopedPersistent:
@@ -205,6 +211,17 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
             }
             return .nonPersistent()
         }
+    }
+
+    func workshopDataStoreUUID(for request: WallpaperEngine.WebWallpaperLaunchRequest?) -> UUID {
+        let recordID = request?.recordID ?? "workshop"
+        let rootPath = request?.rootURL.resolvingSymlinksInPath().standardizedFileURL.path ?? "root"
+        let profileID = request?.runtimeProfile.id ?? "standard"
+        var bytes = Array(SHA256.hash(data: Data("\(recordID)|\(rootPath)|\(profileID)".utf8)).prefix(16))
+        bytes[6] = (bytes[6] & 0x0F) | 0x40
+        bytes[8] = (bytes[8] & 0x3F) | 0x80
+        let uuid = uuid_t(bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7], bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15])
+        return UUID(uuid: uuid)
     }
 
     func dataStoreIdentity(for request: WallpaperEngine.WebWallpaperLaunchRequest?, screenID: CGDirectDisplayID) -> String {
