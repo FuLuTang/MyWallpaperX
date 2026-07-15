@@ -202,6 +202,8 @@ extension SteamWorkshopService {
         statusMessage = "正在通过内置 SteamCMD 下载 \(title)"
         appendSteamAuthDebugLog("DOWNLOAD BEGIN: id=\(id), title=\(title)")
 
+        try prepareCleanWorkshopStaging()
+
         let username = steamUsername.trimmingCharacters(in: .whitespacesAndNewlines)
         let output = try await runValidatedWorkshopDownload(
             id: id,
@@ -419,6 +421,34 @@ extension SteamWorkshopService {
         if showFeedback {
             statusMessage = "正在取消当前下载…"
         }
+    }
+
+    func prepareCleanWorkshopStaging() throws {
+        let workshopRootURL = runtimeInstallRootURL
+            .appendingPathComponent("steamapps", isDirectory: true)
+            .appendingPathComponent("workshop", isDirectory: true)
+        let appID = Constants.workshopAppID
+        let cleanupTargets = [
+            workshopRootURL.appendingPathComponent("appworkshop_\(appID).acf", isDirectory: false),
+            workshopRootURL
+                .appendingPathComponent("content", isDirectory: true)
+                .appendingPathComponent(appID, isDirectory: true),
+            workshopRootURL
+                .appendingPathComponent("downloads", isDirectory: true)
+                .appendingPathComponent(appID, isDirectory: true),
+            workshopRootURL
+                .appendingPathComponent("temp", isDirectory: true)
+                .appendingPathComponent(appID, isDirectory: true)
+        ]
+
+        for targetURL in cleanupTargets where FileManager.default.fileExists(atPath: targetURL.path) {
+            appendSteamAuthDebugLog("DOWNLOAD PREPARE: removing stale Steam staging state \(targetURL.path)")
+            try FileManager.default.removeItem(at: targetURL)
+        }
+        try FileManager.default.createDirectory(
+            at: stagingWorkshopContentRootURL,
+            withIntermediateDirectories: true
+        )
     }
 
     func cleanupStagedDownload(id: String) {
