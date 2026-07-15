@@ -227,6 +227,10 @@ final class DedicatedWebWallpaperHostPlaceholderAdapter: NSObject, WallpaperEngi
     var hostActivityToken: NSObjectProtocol?
     var lifecycleObservers: [NSObjectProtocol] = []
     var screenReconciliationWorkItem: DispatchWorkItem?
+    var webContentRecoveryAttemptsByScreen: [CGDirectDisplayID: Int] = [:]
+    var recoveringWebContentScreenIDs = Set<CGDirectDisplayID>()
+    var webContentRecoveryReloadStartedScreenIDs = Set<CGDirectDisplayID>()
+    var webContentRecoveryWorkItems: [CGDirectDisplayID: DispatchWorkItem] = [:]
     var readyScreenIDs = Set<CGDirectDisplayID>()
     var surfaces: [CGDirectDisplayID: HostSurface] = [:]
     var loopbackServers: [CGDirectDisplayID: WebWallpaperLoopbackServer] = [:]

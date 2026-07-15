@@ -42,6 +42,8 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
 
         if shouldRebuildSurfaces {
             teardownHostSurfaces()
+        } else {
+            resetWebContentRecoveryState()
         }
         installLifecycleObservers()
         beginHostActivity()

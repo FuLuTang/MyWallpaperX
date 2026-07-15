@@ -91,6 +91,7 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
     }
 
     func teardownHostSurfaces() {
+        resetWebContentRecoveryState()
         resetTransientMouseCaptureState()
         stopGlobalMouseForwarding()
         endHostActivity()
@@ -105,19 +106,12 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
     }
 
     func removeSurface(for screenID: CGDirectDisplayID) {
-        guard let surface = surfaces.removeValue(forKey: screenID) else { return }
+        guard let surface = surfaces[screenID] else { return }
+        resetWebContentRecoveryState(for: screenID)
+        resetInteractionState(for: screenID)
+        surfaces.removeValue(forKey: screenID)
         loopbackServers.removeValue(forKey: screenID)?.stop()
         readyScreenIDs.remove(screenID)
-        interactiveRegionsByScreen.removeValue(forKey: screenID)
-        interactiveRegionRegistrationByScreen.removeValue(forKey: screenID)
-        lastPreheatedRegionIDByScreen.removeValue(forKey: screenID)
-        transientCaptureReleaseWorkItems.removeValue(forKey: screenID)?.cancel()
-        if transientCaptureActiveScreenID == screenID {
-            transientCaptureActiveScreenID = nil
-        }
-        if lastHoveredScreenID == screenID {
-            lastHoveredScreenID = nil
-        }
         surface.webView.navigationDelegate = nil
         surface.webView.stopLoading()
         surface.webView.configuration.userContentController.removeScriptMessageHandler(forName: "wallpaperHostLog")
@@ -128,6 +122,22 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
         surface.webView.removeFromSuperview()
         surface.window.orderOut(nil)
         surface.window.close()
+    }
+
+    func resetInteractionState(for screenID: CGDirectDisplayID) {
+        interactiveRegionsByScreen.removeValue(forKey: screenID)
+        interactiveRegionRegistrationByScreen.removeValue(forKey: screenID)
+        lastPreheatedRegionIDByScreen.removeValue(forKey: screenID)
+        transientCaptureReleaseWorkItems.removeValue(forKey: screenID)?.cancel()
+        if transientCaptureActiveScreenID == screenID {
+            transientCaptureActiveScreenID = nil
+        }
+        if lastHoveredScreenID == screenID {
+            lastHoveredScreenID = nil
+        }
+        if let surface = surfaces[screenID] {
+            setTransientMouseCaptureEnabled(false, for: surface)
+        }
     }
 
     func forEachWebView(_ body: (WKWebView) -> Void) {
