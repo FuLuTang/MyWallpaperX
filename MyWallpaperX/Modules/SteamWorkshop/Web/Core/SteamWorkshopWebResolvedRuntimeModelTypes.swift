@@ -46,6 +46,8 @@ struct ResolvedWebStaticContentSummary: Codable, Equatable {
     let usesIframeCrossFrameAccess: Bool
     let usesWebMResource: Bool
     let usesHoverOnlyInteraction: Bool
+    let referencesSchemeColorUserProperty: Bool
+    let hasUncertainUserPropertyUsage: Bool
     let hasFetchAllDirectoryProperty: Bool
     let hasOnDemandDirectoryProperty: Bool
     let externalDependencyHosts: [String]
@@ -66,6 +68,8 @@ struct ResolvedWebStaticContentSummary: Codable, Equatable {
         case usesIframeCrossFrameAccess
         case usesWebMResource
         case usesHoverOnlyInteraction
+        case referencesSchemeColorUserProperty
+        case hasUncertainUserPropertyUsage
         case hasFetchAllDirectoryProperty
         case hasOnDemandDirectoryProperty
         case externalDependencyHosts
@@ -87,6 +91,8 @@ struct ResolvedWebStaticContentSummary: Codable, Equatable {
         usesIframeCrossFrameAccess: Bool,
         usesWebMResource: Bool,
         usesHoverOnlyInteraction: Bool,
+        referencesSchemeColorUserProperty: Bool,
+        hasUncertainUserPropertyUsage: Bool,
         hasFetchAllDirectoryProperty: Bool,
         hasOnDemandDirectoryProperty: Bool,
         externalDependencyHosts: [String],
@@ -106,6 +112,8 @@ struct ResolvedWebStaticContentSummary: Codable, Equatable {
         self.usesIframeCrossFrameAccess = usesIframeCrossFrameAccess
         self.usesWebMResource = usesWebMResource
         self.usesHoverOnlyInteraction = usesHoverOnlyInteraction
+        self.referencesSchemeColorUserProperty = referencesSchemeColorUserProperty
+        self.hasUncertainUserPropertyUsage = hasUncertainUserPropertyUsage
         self.hasFetchAllDirectoryProperty = hasFetchAllDirectoryProperty
         self.hasOnDemandDirectoryProperty = hasOnDemandDirectoryProperty
         self.externalDependencyHosts = externalDependencyHosts
@@ -129,6 +137,8 @@ struct ResolvedWebStaticContentSummary: Codable, Equatable {
             usesIframeCrossFrameAccess: try container.decodeIfPresent(Bool.self, forKey: .usesIframeCrossFrameAccess) ?? false,
             usesWebMResource: try container.decode(Bool.self, forKey: .usesWebMResource),
             usesHoverOnlyInteraction: try container.decode(Bool.self, forKey: .usesHoverOnlyInteraction),
+            referencesSchemeColorUserProperty: try container.decodeIfPresent(Bool.self, forKey: .referencesSchemeColorUserProperty) ?? false,
+            hasUncertainUserPropertyUsage: try container.decodeIfPresent(Bool.self, forKey: .hasUncertainUserPropertyUsage) ?? true,
             hasFetchAllDirectoryProperty: try container.decode(Bool.self, forKey: .hasFetchAllDirectoryProperty),
             hasOnDemandDirectoryProperty: try container.decode(Bool.self, forKey: .hasOnDemandDirectoryProperty),
             externalDependencyHosts: try container.decode([String].self, forKey: .externalDependencyHosts),

@@ -28,6 +28,46 @@ extension SteamWorkshopService {
         return lowered.contains("properties.fps") || lowered.contains("fps:")
     }
 
+    static func webContentReferencesSchemeColorUserProperty(_ content: String) -> Bool {
+        let lowered = content.lowercased()
+        let patterns = [
+            #"\.\s*schemecolor\b"#,
+            #"\[\s*['"]schemecolor['"]\s*\]"#
+        ]
+        return patterns.contains { pattern in
+            guard let expression = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
+                return true
+            }
+            let range = NSRange(lowered.startIndex..<lowered.endIndex, in: lowered)
+            return expression.firstMatch(in: lowered, options: [], range: range) != nil
+        }
+    }
+
+    static func webContentHasUncertainUserPropertyUsage(_ content: String) -> Bool {
+        let lowered = content.lowercased()
+        guard lowered.contains("applyuserproperties") else {
+            return false
+        }
+        if lowered.contains("object.keys(properties)")
+            || lowered.contains("object.values(properties)")
+            || lowered.contains("object.entries(properties)") {
+            return true
+        }
+
+        let patterns = [
+            #"\bproperties\s*\[\s*(?!['\"])"#,
+            #"\bfor\s*\([^)]*\bin\s*properties\b"#,
+            #"\bfor\s*\([^)]*\bof\s*(?:object\.(?:keys|values|entries)\s*\(\s*)?properties\b"#
+        ]
+        return patterns.contains { pattern in
+            guard let expression = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
+                return true
+            }
+            let range = NSRange(lowered.startIndex..<lowered.endIndex, in: lowered)
+            return expression.firstMatch(in: lowered, options: [], range: range) != nil
+        }
+    }
+
     static func webDisplayConditionRequiresFallback(_ condition: String?) -> Bool {
         guard let condition,
               condition.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false else {

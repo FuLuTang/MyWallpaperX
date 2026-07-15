@@ -47,6 +47,8 @@ extension SteamWorkshopService {
         var usesWASMStreaming = false
         var usesCustomSchemeSensitiveWebGL = false
         var usesIframeCrossFrameAccess = false
+        var referencesSchemeColorUserProperty = false
+        var hasUncertainUserPropertyUsage = false
         let hasFetchAllDirectoryProperty = propertyDefinitions.contains {
             $0.kind == .directory && $0.directoryMode?.lowercased() == "fetchall"
         }
@@ -58,6 +60,7 @@ extension SteamWorkshopService {
             pendingFiles.removeFirst()
             guard scannedFiles.insert(fileURL).inserted else { continue }
             guard let content = try? String(contentsOf: fileURL, encoding: .utf8) else {
+                hasUncertainUserPropertyUsage = true
                 continue
             }
 
@@ -101,11 +104,21 @@ extension SteamWorkshopService {
             if Self.webContentUsesIframeCrossFrameAccess(content) {
                 usesIframeCrossFrameAccess = true
             }
+            if Self.webContentReferencesSchemeColorUserProperty(content) {
+                referencesSchemeColorUserProperty = true
+            }
+            if Self.webContentHasUncertainUserPropertyUsage(content) {
+                hasUncertainUserPropertyUsage = true
+            }
 
             for reference in Self.extractLocalWebResourceReferences(from: content, fileExtension: fileURL.pathExtension) {
                 switch reference {
                 case let .local(path):
                     guard let resolvedURL = Self.resolveWebResourceURL(path, relativeTo: fileURL, rootURL: rootURL) else {
+                        let normalizedPath = path.split(separator: "?", maxSplits: 1).first.map(String.init) ?? path
+                        if Self.shouldScanWebDependencyFile(named: normalizedPath) {
+                            hasUncertainUserPropertyUsage = true
+                        }
                         continue
                     }
                     let ext = resolvedURL.pathExtension.localizedLowercase
@@ -116,9 +129,12 @@ extension SteamWorkshopService {
                         usesWASMResource = true
                     }
                     if ["html", "htm", "css", "js", "json"].contains(ext),
-                       FileManager.default.fileExists(atPath: resolvedURL.path),
                        Self.shouldScanWebDependencyFile(named: resolvedURL.lastPathComponent) {
-                        pendingFiles.append(resolvedURL)
+                        if FileManager.default.fileExists(atPath: resolvedURL.path) {
+                            pendingFiles.append(resolvedURL)
+                        } else {
+                            hasUncertainUserPropertyUsage = true
+                        }
                     }
                 case let .external(urlString):
                     externalDependencyURLs.insert(urlString)
@@ -135,12 +151,15 @@ extension SteamWorkshopService {
                     return nil
                 }
                 let path = url.path.lowercased()
-                if path.hasSuffix(".js") || path.hasSuffix(".mjs") || path.hasSuffix(".css") {
+                if path.hasSuffix(".js") || path.hasSuffix(".mjs") {
                     return host
                 }
                 return nil
             }
         )
+        if usesDynamicImport || remoteScriptHosts.isEmpty == false {
+            hasUncertainUserPropertyUsage = true
+        }
 
         return ResolvedWebStaticContentSummary(
             usesApplyGeneralProperties: usesApplyGeneralProperties,
@@ -156,6 +175,8 @@ extension SteamWorkshopService {
             usesIframeCrossFrameAccess: usesIframeCrossFrameAccess,
             usesWebMResource: usesWebMResource,
             usesHoverOnlyInteraction: usesHoverOnlyInteraction,
+            referencesSchemeColorUserProperty: referencesSchemeColorUserProperty,
+            hasUncertainUserPropertyUsage: hasUncertainUserPropertyUsage,
             hasFetchAllDirectoryProperty: hasFetchAllDirectoryProperty,
             hasOnDemandDirectoryProperty: hasOnDemandDirectoryProperty,
             externalDependencyHosts: hosts.sorted(),

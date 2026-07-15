@@ -457,7 +457,10 @@ final class AppKitSteamWorkshopItemDetailView: NSView {
 
         let values = service.effectiveWebPropertyValues(for: record, descriptor: descriptor)
         let renderableDefinitions = descriptor.propertyDefinitions.filter {
-            service.shouldRenderWebPropertyControl($0)
+            service.shouldRenderWebPropertyControl(
+                $0,
+                staticContentSummary: descriptor.staticContentSummary
+            )
                 && service.shouldDisplayWebProperty(
                     $0,
                     values: values,

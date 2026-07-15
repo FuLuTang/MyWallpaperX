@@ -3,8 +3,19 @@ import Combine
 import Foundation
 
 extension SteamWorkshopService {
-    func shouldRenderWebPropertyControl(_ definition: SteamWorkshopWebPropertyDefinition) -> Bool {
+    func shouldRenderWebPropertyControl(
+        _ definition: SteamWorkshopWebPropertyDefinition,
+        staticContentSummary: ResolvedWebStaticContentSummary? = nil
+    ) -> Bool {
         if shouldSuppressNoisyWebPropertyControl(definition) {
+            return false
+        }
+
+        if definition.key.caseInsensitiveCompare("schemecolor") == .orderedSame,
+           definition.order <= 1,
+           let staticContentSummary,
+           staticContentSummary.referencesSchemeColorUserProperty == false,
+           staticContentSummary.hasUncertainUserPropertyUsage == false {
             return false
         }
 
