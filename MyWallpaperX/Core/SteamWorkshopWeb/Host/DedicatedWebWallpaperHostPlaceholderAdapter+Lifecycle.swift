@@ -19,7 +19,7 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
     func beginHostActivity() {
         guard hostActivityToken == nil else { return }
         hostActivityToken = ProcessInfo.processInfo.beginActivity(
-            options: [.userInitiated, .latencyCritical, .idleDisplaySleepDisabled],
+            options: [.userInitiatedAllowingIdleSystemSleep],
             reason: "MyWallpaperX Web wallpaper active playback"
         )
     }
