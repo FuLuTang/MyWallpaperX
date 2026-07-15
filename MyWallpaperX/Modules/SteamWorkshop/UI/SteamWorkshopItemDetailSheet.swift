@@ -684,23 +684,31 @@ final class AppKitSteamWorkshopItemDetailView: NSView {
         }
 
         let record = latestDownloadRecord ?? downloadRecord
+        if let record,
+           case let .missing(itemID) = record.dependencyStatus {
+            if service.isDownloading(itemID: itemID) || service.isQueuedForDownload(itemID: itemID) {
+                return footerButton(
+                    title: service.isQueuedForDownload(itemID: itemID) ? "依赖等待下载" : "依赖下载中",
+                    symbolName: "hourglass.circle.fill",
+                    kind: .danger,
+                    target: self,
+                    action: #selector(cancelRequiredDependencyDownload)
+                )
+            }
+            return footerButton(
+                title: "下载依赖 #\(itemID)",
+                symbolName: "shippingbox.fill",
+                kind: .primary,
+                target: self,
+                action: #selector(downloadRequiredDependency)
+            )
+        }
+
         if let record {
             return footerButton(
                 title: "设为壁纸",
                 symbolName: record.contentType == .scene ? "play.circle.fill" : "photo.fill",
                 kind: .primary,
-                target: self,
-                action: #selector(setAsWallpaper)
-            )
-        }
-
-        if let latestDownloadRecord,
-           latestDownloadRecord.contentType == .web,
-           case let .missing(itemID) = latestDownloadRecord.dependencyStatus {
-            return footerButton(
-                title: "下载依赖 \(itemID)",
-                symbolName: "shippingbox",
-                kind: .secondary,
                 target: self,
                 action: #selector(setAsWallpaper)
             )
@@ -929,14 +937,20 @@ final class AppKitSteamWorkshopItemDetailView: NSView {
         service.cancelDownload(itemID: currentItem.id)
     }
 
-    @objc private func setAsWallpaper() {
-        if let latestDownloadRecord,
-           latestDownloadRecord.contentType == .web,
-           case .missing = latestDownloadRecord.dependencyStatus,
-           downloadRecord == nil {
-            service.setAsWallpaper(latestDownloadRecord)
+    @objc private func downloadRequiredDependency() {
+        guard let record = latestDownloadRecord ?? downloadRecord else { return }
+        service.requestMissingDependencyDownload(for: record)
+    }
+
+    @objc private func cancelRequiredDependencyDownload() {
+        guard let record = latestDownloadRecord ?? downloadRecord,
+              case let .missing(itemID) = record.dependencyStatus else {
             return
         }
+        service.cancelDownload(itemID: itemID)
+    }
+
+    @objc private func setAsWallpaper() {
         guard let record = latestDownloadRecord ?? downloadRecord else { return }
         service.setAsWallpaper(record)
     }

@@ -23,6 +23,23 @@ extension SteamWorkshopService {
         downloadWorkshopItem(id: item.id, pageTitle: item.title, item: item)
     }
 
+    func requestMissingDependencyDownload(for record: SteamWorkshopDownloadRecord) {
+        guard case let .missing(rawItemID) = record.dependencyStatus else { return }
+
+        let itemID = rawItemID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard isValidWorkshopItemID(itemID), itemID != record.id else {
+            let message = "`\(record.title)` 声明的依赖项 ID 无效，无法下载。"
+            downloadError = message
+            statusMessage = message
+            return
+        }
+
+        downloadWorkshopItem(
+            id: itemID,
+            pageTitle: browserItemForDownload(id: itemID)?.title
+        )
+    }
+
     func downloadWorkshopItem(id: String, pageTitle: String? = nil, item: SteamWorkshopBrowserItem? = nil) {
         let title = pageTitle ?? "Workshop #\(id)"
         let requestItem = item ?? browserItemForDownload(id: id)
@@ -45,6 +62,13 @@ extension SteamWorkshopService {
         activeDownloadItemID != id
             && !isQueuedDownloadRequest(id: id)
             && pendingDownloadRequest?.id != id
+    }
+
+    private func isValidWorkshopItemID(_ itemID: String) -> Bool {
+        itemID.count >= 6
+            && itemID.unicodeScalars.allSatisfy { scalar in
+                scalar.value >= 48 && scalar.value <= 57
+            }
     }
 
     private var isDownloadWorkflowBusy: Bool {
