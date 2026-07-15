@@ -92,6 +92,7 @@ nonisolated final class ThumbnailCache: @unchecked Sendable {
     func loadImageData(
         forKey key: String,
         loader: @escaping () -> Data?,
+        decoder: @escaping (Data) -> NSImage? = { NSImage(data: $0) },
         completion: @escaping (NSImage?) -> Void
     ) {
         if let cached = imageCache.object(forKey: key as NSString) {
@@ -112,14 +113,14 @@ nonisolated final class ThumbnailCache: @unchecked Sendable {
             guard let self else { return }
             let diskURL = Self.diskCacheURL(for: key)
             if let data = try? Data(contentsOf: diskURL),
-               let image = NSImage(data: data) {
+               let image = decoder(data) {
                 self.imageCache.setObject(image, forKey: key as NSString)
                 self.finish(key: key, image: image)
                 return
             }
 
             guard let data = loader(),
-                  let image = NSImage(data: data) else {
+                  let image = decoder(data) else {
                 self.finish(key: key, image: nil)
                 return
             }
@@ -156,7 +157,7 @@ nonisolated final class ThumbnailCache: @unchecked Sendable {
             guard let self else { return }
             let diskURL = Self.diskCacheURL(for: key)
             if let data = try? Data(contentsOf: diskURL),
-               let image = NSImage(data: data) {
+               let image = decoder(data) {
                 self.imageCache.setObject(image, forKey: key as NSString)
                 self.finish(key: key, image: image)
                 return

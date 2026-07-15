@@ -27,6 +27,29 @@ func steamWorkshopPreviewCacheKey(for url: URL) -> String {
     return "steam-preview:\(url.absoluteString)"
 }
 
+func steamWorkshopLocalPreviewCacheKey(for url: URL) -> String {
+    let fileURL = url.standardizedFileURL
+    let resourceValues = try? fileURL.resourceValues(forKeys: [
+        .contentModificationDateKey,
+        .fileSizeKey
+    ])
+    let modificationTime = resourceValues?.contentModificationDate?.timeIntervalSince1970 ?? 0
+    let fileSize = resourceValues?.fileSize ?? 0
+    return "steam-local-preview:\(fileURL.path):\(fileSize):\(modificationTime)"
+}
+
+func steamWorkshopLoadLocalPreviewImage(
+    from url: URL,
+    completion: @escaping (NSImage?) -> Void
+) {
+    SteamWorkshopPreviewImageCache.shared.loadImageData(
+        forKey: steamWorkshopLocalPreviewCacheKey(for: url),
+        loader: { try? Data(contentsOf: url) },
+        decoder: steamWorkshopPreviewImage(from:),
+        completion: completion
+    )
+}
+
 func steamWorkshopPreviewImageLooksSuspicious(_ image: NSImage) -> Bool {
     guard image.size.width > 0, image.size.height > 0 else { return true }
     if image.size.width <= 4 || image.size.height <= 4 {
