@@ -228,6 +228,7 @@ final class AppKitSteamWorkshopBrowserItem: NSCollectionViewItem {
             isMultiSelectMode: isMultiSelectMode,
             isKeyboardFocused: isKeyboardFocused
         )
+        loadPreview(from: item.previewImageURL, fallbackVideoURL: currentDownloadVideoURL)
     }
 
     override func viewDidLayout() {
