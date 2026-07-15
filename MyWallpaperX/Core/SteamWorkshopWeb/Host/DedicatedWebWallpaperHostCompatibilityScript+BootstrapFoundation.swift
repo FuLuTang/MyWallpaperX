@@ -360,7 +360,7 @@ let webCompatibilityScriptBootstrapFoundation = #"""
       },
       set(value) {
         if (!value || typeof value !== 'object') return;
-        Object.assign(wallpaperPropertyListenerValue, value);
+        wallpaperPropertyListenerValue = value;
         scheduleWallpaperPropertyListenerReplay();
       }
     });
