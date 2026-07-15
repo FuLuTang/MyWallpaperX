@@ -127,6 +127,9 @@ extension WallpaperEngine {
     }
 
     func launchWebWallpaper(_ request: WebWallpaperLaunchRequest) {
+        if ProcessInfo.processInfo.isLowPowerModeEnabled {
+            playbackPaused = true
+        }
         let runtimeState = webWallpaperRuntimeState()
         currentMultiDisplayEnabled = request.multiDisplayEnabled
         if currentPlaybackContentKind == .video {

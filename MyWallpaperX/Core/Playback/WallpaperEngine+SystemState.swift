@@ -68,10 +68,25 @@ extension WallpaperEngine {
     }
 
     @objc func powerStatusChanged() {
-        // Battery transitions are treated as immediate policy changes, not normal playback noise.
-        guard let onBattery = readBatteryState() else { return }
-        guard lastObservedOnBattery != onBattery else { return }
-        lastObservedOnBattery = onBattery
+        if Thread.isMainThread {
+            handlePowerStatusChangeOnMain()
+        } else {
+            DispatchQueue.main.async { [weak self] in
+                self?.handlePowerStatusChangeOnMain()
+            }
+        }
+    }
+
+    func handlePowerStatusChangeOnMain() {
+        let onBattery = readBatteryState()
+        let lowPowerMode = ProcessInfo.processInfo.isLowPowerModeEnabled
+        let batteryStateChanged = onBattery.map { lastObservedOnBattery != $0 } ?? false
+        let lowPowerModeChanged = lastObservedLowPowerMode != lowPowerMode
+        if let onBattery {
+            lastObservedOnBattery = onBattery
+        }
+        lastObservedLowPowerMode = lowPowerMode
+        guard batteryStateChanged || lowPowerModeChanged else { return }
         requestPlaybackStateEvaluation(immediate: true)
     }
 
@@ -196,6 +211,12 @@ extension WallpaperEngine {
         }
 
         if !shouldPause && pauseWhenUnplugged && isRunningOnBattery() {
+            shouldPause = true
+        }
+
+        if !shouldPause
+            && currentPlaybackContentKind == .web
+            && ProcessInfo.processInfo.isLowPowerModeEnabled {
             shouldPause = true
         }
 

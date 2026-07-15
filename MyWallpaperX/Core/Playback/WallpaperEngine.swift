@@ -117,6 +117,7 @@ public final class WallpaperEngine: NSObject {
     let playbackStateEvaluationMinInterval: TimeInterval = 0.10
     var powerStateFallbackTimer: DispatchSourceTimer?
     var lastObservedOnBattery: Bool?
+    var lastObservedLowPowerMode: Bool?
     var lastFullscreenSpaceState: Bool?
     var lastFullscreenSpaceStateAt: CFTimeInterval = 0
     let fullscreenSpaceStateCacheTTL: TimeInterval = 0.25
@@ -128,6 +129,7 @@ public final class WallpaperEngine: NSObject {
         currentSpectrumLevels = Array(repeating: 0, count: WallpaperEngine.defaultSpectrumBarCount)
         systemAudioSpectrumService = SystemAudioSpectrumService(barCount: WallpaperEngine.defaultSpectrumBarCount)
         super.init()
+        lastObservedLowPowerMode = ProcessInfo.processInfo.isLowPowerModeEnabled
         dedicatedWebHostAdapter.eventHandler = { [weak self] event in
             DispatchQueue.main.async {
                 self?.handleWebHostEvent(event)
