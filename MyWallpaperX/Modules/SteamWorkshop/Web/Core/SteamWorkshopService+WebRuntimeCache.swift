@@ -1,7 +1,7 @@
 import Foundation
 
 struct SteamWorkshopWebAnalysisCacheManifest: Codable, Equatable {
-    static let currentVersion = 10
+    static let currentVersion = 11
 
     let version: Int
     let recordID: String
@@ -15,7 +15,7 @@ struct SteamWorkshopWebAnalysisCacheManifest: Codable, Equatable {
 }
 
 struct SteamWorkshopWebRuntimeCacheManifest: Codable, Equatable {
-    static let currentVersion = 15
+    static let currentVersion = 16
 
     let version: Int
     let recordID: String

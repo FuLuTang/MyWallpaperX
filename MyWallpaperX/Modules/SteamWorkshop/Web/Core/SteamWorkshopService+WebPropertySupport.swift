@@ -49,18 +49,18 @@ extension SteamWorkshopService {
         for record: SteamWorkshopDownloadRecord,
         descriptor: ResolvedWebProjectDescriptor
     ) -> [String: SteamWorkshopWebPropertyValue] {
-        var values = descriptor.defaultValueMap
-        for (key, value) in webPropertyOverrides(for: record) {
-            values[key] = value
-        }
-        return values
+        effectiveWebPropertyValues(for: record, definitions: descriptor.propertyDefinitions)
     }
 
     func effectiveWebPropertyValues(
         for record: SteamWorkshopDownloadRecord,
         definitions: [SteamWorkshopWebPropertyDefinition]
     ) -> [String: SteamWorkshopWebPropertyValue] {
-        var values = webPropertyBaselineValues(for: record, definitions: definitions)
+        var values = webPropertyBaselineValues(
+            for: record,
+            definitions: definitions,
+            respectingUserOverrides: true
+        )
         for (key, value) in webPropertyOverrides(for: record) {
             values[key] = value
         }
@@ -71,11 +71,124 @@ extension SteamWorkshopService {
         for record: SteamWorkshopDownloadRecord,
         definitions: [SteamWorkshopWebPropertyDefinition]
     ) -> [String: SteamWorkshopWebPropertyValue] {
+        webPropertyBaselineValues(
+            for: record,
+            definitions: definitions,
+            respectingUserOverrides: false
+        )
+    }
+
+    private func webPropertyBaselineValues(
+        for record: SteamWorkshopDownloadRecord,
+        definitions: [SteamWorkshopWebPropertyDefinition],
+        respectingUserOverrides: Bool
+    ) -> [String: SteamWorkshopWebPropertyValue] {
         var values = Dictionary(uniqueKeysWithValues: definitions.map { ($0.key, $0.defaultValue) })
         for (key, value) in webPresetValues(for: record) {
             values[key] = value
         }
+        applyBundledBackgroundVideoFallback(
+            to: &values,
+            definitions: definitions,
+            record: record,
+            respectingUserOverrides: respectingUserOverrides
+        )
         return values
+    }
+
+    private func applyBundledBackgroundVideoFallback(
+        to values: inout [String: SteamWorkshopWebPropertyValue],
+        definitions: [SteamWorkshopWebPropertyDefinition],
+        record: SteamWorkshopDownloadRecord,
+        respectingUserOverrides: Bool
+    ) {
+        // A few WE projects ship a usable built-in video while their declared defaults select
+        // neither that video nor an image. Only repair that exact untouched configuration.
+        guard record.contentType == .web,
+              !record.isDependencyBackedWeb else {
+            return
+        }
+
+        var definitionsByNormalizedKey: [String: SteamWorkshopWebPropertyDefinition] = [:]
+        for definition in definitions {
+            let normalizedKey = definition.key.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            definitionsByNormalizedKey[normalizedKey] = definition
+        }
+        guard let videoToggle = definitionsByNormalizedKey["backgroundvideo"],
+              videoToggle.kind == .toggle,
+              values[videoToggle.key]?.boolValue == false,
+              let videoSource = definitionsByNormalizedKey["backgroundvideonumber"],
+              videoSource.kind == .combo,
+              let backgroundImage = definitionsByNormalizedKey["backgroundimageb"],
+              backgroundImage.kind == .file else {
+            return
+        }
+        let backgroundImagePath = values[backgroundImage.key]?.stringValue?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard backgroundImagePath.isEmpty else { return }
+
+        let backgroundOpacity = definitionsByNormalizedKey["backgroundcoloropacity"]
+        if respectingUserOverrides {
+            var overridesByNormalizedKey: [String: SteamWorkshopWebPropertyValue] = [:]
+            for (key, value) in webPropertyOverrides(for: record) {
+                overridesByNormalizedKey[key.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()] = value
+            }
+            let explicitVideoValue = overridesByNormalizedKey["backgroundvideo"]?.boolValue
+            let explicitImagePath = overridesByNormalizedKey["backgroundimageb"]?.stringValue?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard explicitVideoValue != false,
+                  explicitVideoValue == true || explicitImagePath.isEmpty else {
+                return
+            }
+        }
+
+        var sourceCandidates: [SteamWorkshopWebPropertyValue] = []
+        if let currentSource = values[videoSource.key] {
+            sourceCandidates.append(currentSource)
+        }
+        sourceCandidates.append(contentsOf: videoSource.options.map(\.value))
+
+        guard let availableSource = sourceCandidates.first(where: { source in
+            guard let fileName = bundledWebMFileName(for: source) else { return false }
+            return existingWebResourceURL(
+                for: record.folderURL.appendingPathComponent(fileName, isDirectory: false)
+            ) != nil
+        }) else {
+            return
+        }
+
+        values[videoToggle.key] = .bool(true)
+        values[videoSource.key] = availableSource
+        if let backgroundOpacity,
+           let opacity = values[backgroundOpacity.key]?.numberValue,
+           opacity >= 99 {
+            values[backgroundOpacity.key] = .number(0)
+        }
+    }
+
+    private func bundledWebMFileName(for source: SteamWorkshopWebPropertyValue) -> String? {
+        switch source {
+        case let .number(value):
+            guard value.isFinite,
+                  value > 0,
+                  value.rounded() == value else {
+                return nil
+            }
+            return "\(Int(value)).webm"
+        case let .string(rawValue):
+            let fileName = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !fileName.isEmpty,
+                  !fileName.contains("/"),
+                  !fileName.contains("\\") else {
+                return nil
+            }
+            if URL(fileURLWithPath: fileName).pathExtension.isEmpty {
+                return "\(fileName).webm"
+            }
+            return URL(fileURLWithPath: fileName).pathExtension.lowercased() == "webm" ? fileName : nil
+        case .bool:
+            return nil
+        }
     }
 
     func resolvedWebResourceBinding(
