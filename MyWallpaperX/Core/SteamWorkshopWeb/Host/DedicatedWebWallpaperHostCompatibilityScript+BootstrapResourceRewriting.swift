@@ -121,7 +121,21 @@ let webCompatibilityScriptBootstrapResourceRewriting = #"""
     if (!normalized || normalized.toLowerCase().includes('file:///') === false) {
       return normalized;
     }
-    return normalized.replace(/file:\/\/\/[^"')\s]+/gi, (match) => window.__myWallpaperRewriteLocalFileURL(match));
+    const rewrittenURLFunctions = normalized.replace(
+      /url\(\s*(?:(["'])(.*?)\1|([^)]*))\s*\)/gi,
+      (match, quote, quotedValue, unquotedValue) => {
+        const rawURL = String(quotedValue !== undefined ? quotedValue : unquotedValue || '').trim();
+        if (rawURL.toLowerCase().startsWith('file:///') === false) return match;
+        const rewritten = window.__myWallpaperRewriteLocalFileURL(rawURL);
+        if (!rewritten) return 'none';
+        const outputQuote = quote || '"';
+        return `url(${outputQuote}${rewritten}${outputQuote})`;
+      }
+    );
+    return rewrittenURLFunctions.replace(
+      /file:\/\/\/[^\s"'()]+/gi,
+      (match) => window.__myWallpaperRewriteLocalFileURL(match)
+    );
   };
   const patchURLBackedProperty = (prototype, propertyName) => {
     if (!prototype) return;
@@ -151,14 +165,35 @@ let webCompatibilityScriptBootstrapResourceRewriting = #"""
     try {
       const prototype = window.CSSStyleDeclaration && window.CSSStyleDeclaration.prototype;
       if (!prototype) return;
-      const descriptor = Object.getOwnPropertyDescriptor(prototype, propertyName);
-      if (!descriptor || typeof descriptor.set !== 'function' || prototype[`__mwxPatched_${propertyName}`]) return;
+      if (prototype[`__mwxPatched_${propertyName}`]) return;
+      let descriptorOwner = prototype;
+      let descriptor = null;
+      while (descriptorOwner && !descriptor) {
+        descriptor = Object.getOwnPropertyDescriptor(descriptorOwner, propertyName);
+        descriptorOwner = Object.getPrototypeOf(descriptorOwner);
+      }
+      const cssPropertyName = propertyName.replace(/[A-Z]/g, (match) => `-${match.toLowerCase()}`);
+      const originalGetPropertyValue = prototype.getPropertyValue;
+      const originalSetProperty = prototype.setProperty;
       Object.defineProperty(prototype, propertyName, {
         configurable: true,
-        enumerable: descriptor.enumerable === true,
-        get: descriptor.get ? function() { return descriptor.get.call(this); } : undefined,
+        enumerable: descriptor ? descriptor.enumerable === true : true,
+        get: descriptor && typeof descriptor.get === 'function'
+          ? function() { return descriptor.get.call(this); }
+          : function() {
+              return typeof originalGetPropertyValue === 'function'
+                ? originalGetPropertyValue.call(this, cssPropertyName)
+                : '';
+            },
         set: function(value) {
-          descriptor.set.call(this, rewriteStyleValue(value));
+          const rewritten = rewriteStyleValue(value);
+          if (descriptor && typeof descriptor.set === 'function') {
+            descriptor.set.call(this, rewritten);
+            return;
+          }
+          if (typeof originalSetProperty === 'function') {
+            originalSetProperty.call(this, cssPropertyName, rewritten, '');
+          }
         }
       });
       prototype[`__mwxPatched_${propertyName}`] = true;
@@ -194,6 +229,26 @@ let webCompatibilityScriptBootstrapResourceRewriting = #"""
         return originalSetAttribute.call(this, name, value);
       };
       Element.prototype.__mwxSetAttributePatched = true;
+    }
+    if (typeof MutationObserver === 'function' && window.__mwxInlineStyleURLObserverInstalled !== true) {
+      const rewriteInlineStyleURLs = (node) => {
+        if (!node || typeof node.getAttribute !== 'function') return;
+        const currentStyle = node.getAttribute('style');
+        if (!currentStyle || currentStyle.toLowerCase().includes('file:///') === false) return;
+        const rewrittenStyle = rewriteStyleValue(currentStyle);
+        if (rewrittenStyle !== currentStyle) {
+          originalSetAttribute.call(node, 'style', rewrittenStyle);
+        }
+      };
+      const styleObserver = new MutationObserver((records) => {
+        records.forEach((record) => rewriteInlineStyleURLs(record.target));
+      });
+      styleObserver.observe(document, {
+        attributes: true,
+        attributeFilter: ['style'],
+        subtree: true
+      });
+      window.__mwxInlineStyleURLObserverInstalled = true;
     }
   } catch (_) {}
   try {
