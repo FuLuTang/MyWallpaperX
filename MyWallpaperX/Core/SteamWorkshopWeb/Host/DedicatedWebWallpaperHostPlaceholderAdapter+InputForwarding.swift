@@ -13,27 +13,28 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
         guard !surfaces.isEmpty else { return }
 
         let screenLocation = NSEvent.mouseLocation
+        let buttonMask = Int(NSEvent.pressedMouseButtons)
+        // Buttoned motion belongs to the admitted down/drag/up path below. Polling it would
+        // let a drag that started in another app leak into the wallpaper after crossing desktop.
+        guard buttonMask == 0 else {
+            lastPolledMouseLocation = nil
+            return
+        }
+
+        guard shouldForwardMouseEventToWallpaper(at: screenLocation),
+              let destinationSurface = targetSurface(at: screenLocation) else {
+            lastPolledMouseLocation = nil
+            clearSyntheticHoverState()
+            return
+        }
+
         if let lastPolledMouseLocation,
            hypot(screenLocation.x - lastPolledMouseLocation.x, screenLocation.y - lastPolledMouseLocation.y) < 0.5 {
             return
         }
         lastPolledMouseLocation = screenLocation
 
-        guard surfaces.values.contains(where: { surface in
-            let screenFrame = surface.window.screen?.frame ?? surface.window.frame
-            return screenFrame.contains(screenLocation)
-        }) else {
-            clearSyntheticHoverState()
-            return
-        }
-
-        guard let destinationSurface = targetSurface(at: screenLocation) else {
-            clearSyntheticHoverState()
-            return
-        }
-
         let normalizedPoint = normalizedPoint(for: screenLocation, in: destinationSurface)
-        let buttonMask = Int(NSEvent.pressedMouseButtons)
         let script = String(
             format: "window.__myWallpaperSetPassiveMouseState(true, %.6f, %.6f, %d); window.__myWallpaperDispatchMouseEvent('pointermove', %.6f, %.6f, 0, %d, 1);",
             normalizedPoint.x,
@@ -76,20 +77,12 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
             screenLocation = event.locationInWindow
         }
 
-        let destinationSurface: HostSurface
-        if let capturedSurface = activeTransientCaptureSurface(for: event) {
-            destinationSurface = capturedSurface
-        } else {
-            guard shouldForwardMouseEventToWallpaper(event, screenLocation: screenLocation) else {
-                clearSyntheticHoverState()
-                return
-            }
-
-            guard let resolvedSurface = targetSurface(at: screenLocation) else {
-                lastHoveredScreenID = nil
-                return
-            }
-            destinationSurface = resolvedSurface
+        guard let destinationSurface = destinationSurfaceForMouseEvent(
+            event,
+            screenLocation: screenLocation
+        ) else {
+            clearSyntheticHoverState()
+            return
         }
 
         if let lastHoveredScreenID,
@@ -136,6 +129,105 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
         }
 
         lastHoveredScreenID = destinationSurface.screenID
+
+        if isDesktopGestureEnd(event),
+           let buttonNumber = desktopGestureButtonNumber(for: event) {
+            admittedDesktopGestureScreenByButton.removeValue(forKey: buttonNumber)
+        }
+    }
+
+    func destinationSurfaceForMouseEvent(_ event: NSEvent, screenLocation: NSPoint) -> HostSurface? {
+        if let buttonNumber = desktopGestureButtonNumber(for: event) {
+            if isDesktopGestureStart(event) {
+                admittedDesktopGestureScreenByButton.removeValue(forKey: buttonNumber)
+                // Gesture ownership is decided only at mouse-down. A drag that began in another
+                // app is never admitted later merely because the pointer reaches bare desktop.
+                guard shouldForwardMouseEventToWallpaper(at: screenLocation),
+                      let surface = targetSurface(at: screenLocation) else {
+                    return nil
+                }
+                admittedDesktopGestureScreenByButton[buttonNumber] = surface.screenID
+                return surface
+            }
+
+            if isDesktopGestureContinuation(event) {
+                guard let screenID = admittedDesktopGestureScreenByButton[buttonNumber],
+                      let surface = surfaces[screenID] else {
+                    admittedDesktopGestureScreenByButton.removeValue(forKey: buttonNumber)
+                    return nil
+                }
+                return surface
+            }
+        }
+
+        guard shouldForwardMouseEventToWallpaper(at: screenLocation) else { return nil }
+        return targetSurface(at: screenLocation)
+    }
+
+    func desktopGestureButtonNumber(for event: NSEvent) -> Int? {
+        switch event.type {
+        case .leftMouseDown, .leftMouseDragged, .leftMouseUp:
+            return 0
+        case .rightMouseDown, .rightMouseDragged, .rightMouseUp:
+            return 1
+        case .otherMouseDown, .otherMouseDragged, .otherMouseUp:
+            return max(2, Int(event.buttonNumber))
+        default:
+            return nil
+        }
+    }
+
+    func isDesktopGestureStart(_ event: NSEvent) -> Bool {
+        switch event.type {
+        case .leftMouseDown, .rightMouseDown, .otherMouseDown:
+            return true
+        default:
+            return false
+        }
+    }
+
+    func isDesktopGestureContinuation(_ event: NSEvent) -> Bool {
+        switch event.type {
+        case .leftMouseDragged, .rightMouseDragged, .otherMouseDragged,
+             .leftMouseUp, .rightMouseUp, .otherMouseUp:
+            return true
+        default:
+            return false
+        }
+    }
+
+    func isDesktopGestureEnd(_ event: NSEvent) -> Bool {
+        switch event.type {
+        case .leftMouseUp, .rightMouseUp, .otherMouseUp:
+            return true
+        default:
+            return false
+        }
+    }
+
+    func cancelAdmittedDesktopGestures(for screenID: CGDirectDisplayID? = nil) {
+        let gestures = admittedDesktopGestureScreenByButton.filter { _, gestureScreenID in
+            screenID == nil || gestureScreenID == screenID
+        }
+        guard !gestures.isEmpty else { return }
+
+        for buttonNumber in gestures.keys {
+            admittedDesktopGestureScreenByButton.removeValue(forKey: buttonNumber)
+        }
+        for (buttonNumber, gestureScreenID) in gestures {
+            guard let surface = surfaces[gestureScreenID] else { continue }
+            let normalizedPoint = normalizedPoint(for: NSEvent.mouseLocation, in: surface)
+            let pointerID = buttonNumber == 0 ? 1 : buttonNumber + 1
+            let domButton = buttonNumber == 1 ? 2 : buttonNumber
+            let script = String(
+                format: "window.__myWallpaperDispatchMouseEvent('pointercancel', %.6f, %.6f, %d, 0, %d);",
+                normalizedPoint.x,
+                normalizedPoint.y,
+                domButton,
+                pointerID
+            )
+            surface.webView.evaluateJavaScript(script, completionHandler: nil)
+        }
     }
 
     func shouldHandleViaTransientCapture(_ event: NSEvent, interactionRegion: InteractiveRegion?) -> Bool {
@@ -147,16 +239,6 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
             return interactionRegion.allowsDrag || transientCaptureActiveScreenID != nil
         default:
             return false
-        }
-    }
-
-    func activeTransientCaptureSurface(for event: NSEvent) -> HostSurface? {
-        guard let transientCaptureActiveScreenID else { return nil }
-        switch event.type {
-        case .leftMouseDragged, .rightMouseDragged, .otherMouseDragged, .leftMouseUp, .rightMouseUp, .otherMouseUp:
-            return surfaces[transientCaptureActiveScreenID]
-        default:
-            return nil
         }
     }
 

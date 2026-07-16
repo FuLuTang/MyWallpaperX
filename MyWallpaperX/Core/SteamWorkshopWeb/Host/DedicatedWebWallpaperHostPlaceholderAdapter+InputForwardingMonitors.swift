@@ -26,6 +26,9 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
     }
 
     func stopGlobalMouseForwarding() {
+        cancelAdmittedDesktopGestures()
+        clearSyntheticHoverState()
+        resetDesktopInputEligibilityCache()
         if let localMouseMonitor {
             NSEvent.removeMonitor(localMouseMonitor)
             self.localMouseMonitor = nil
@@ -37,7 +40,6 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
         pointerPollingTimer?.invalidate()
         pointerPollingTimer = nil
         lastPolledMouseLocation = nil
-        lastHoveredScreenID = nil
         lastPointerMoveForwardedAt = 0
         activeInputForwardingStartedAt = nil
     }

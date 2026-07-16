@@ -248,6 +248,9 @@ final class DedicatedWebWallpaperHostPlaceholderAdapter: NSObject, WallpaperEngi
     var lastHoveredScreenID: CGDirectDisplayID?
     var lastPointerMoveForwardedAt: TimeInterval = 0
     var activeInputForwardingStartedAt: TimeInterval?
+    var cachedDesktopInputWindowNumber: Int?
+    var cachedDesktopInputWindowAllowsForwarding = false
+    var admittedDesktopGestureScreenByButton: [Int: CGDirectDisplayID] = [:]
     var interactiveRegionsByScreen: [CGDirectDisplayID: [InteractiveRegion]] = [:]
     var interactiveRegionRegistrationByScreen: [CGDirectDisplayID: InteractiveRegionRegistration] = [:]
     var transientCaptureReleaseWorkItems: [CGDirectDisplayID: DispatchWorkItem] = [:]

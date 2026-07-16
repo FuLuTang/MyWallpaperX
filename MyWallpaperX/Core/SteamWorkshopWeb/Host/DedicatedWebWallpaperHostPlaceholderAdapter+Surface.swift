@@ -125,6 +125,7 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
     }
 
     func resetInteractionState(for screenID: CGDirectDisplayID) {
+        cancelAdmittedDesktopGestures(for: screenID)
         interactiveRegionsByScreen.removeValue(forKey: screenID)
         interactiveRegionRegistrationByScreen.removeValue(forKey: screenID)
         lastPreheatedRegionIDByScreen.removeValue(forKey: screenID)

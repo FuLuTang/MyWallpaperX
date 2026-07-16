@@ -3,181 +3,66 @@ import CoreGraphics
 import Foundation
 
 extension DedicatedWebWallpaperHostPlaceholderAdapter {
-    private enum SystemWindowOwner {
-        case finder
-        case dock
-        case other
-    }
-
-    private func systemWindowOwner(pid: pid_t, ownerName: String) -> SystemWindowOwner {
+    private func isFinderWindow(pid: pid_t, ownerName: String) -> Bool {
         if let app = NSRunningApplication(processIdentifier: pid),
-           let bundleIdentifier = app.bundleIdentifier {
-            switch bundleIdentifier {
-            case "com.apple.finder":
-                return .finder
-            case "com.apple.dock":
-                return .dock
-            default:
-                break
-            }
+           app.bundleIdentifier == "com.apple.finder" {
+            return true
         }
-
-        switch ownerName {
-        case "Finder", "访达":
-            return .finder
-        case "Dock", "程序坞":
-            return .dock
-        default:
-            return .other
-        }
+        return ownerName == "Finder" || ownerName == "访达"
     }
 
-    private func isDockDesktopCoverWindow(
-        bounds: CGRect,
-        screenLocation: NSPoint,
-        systemOwner: SystemWindowOwner
-    ) -> Bool {
-        guard systemOwner == .dock else { return false }
-        let screenFrame = NSScreen.screens.first(where: { $0.frame.contains(screenLocation) })?.frame
-            ?? NSScreen.main?.frame
-            ?? .zero
-        guard !screenFrame.isEmpty else { return false }
-        return bounds.intersection(screenFrame).width >= screenFrame.width - 1
-            && bounds.intersection(screenFrame).height >= screenFrame.height - 1
+    func resetDesktopInputEligibilityCache() {
+        cachedDesktopInputWindowNumber = nil
+        cachedDesktopInputWindowAllowsForwarding = false
     }
 
-    func shouldForwardMouseEventToWallpaper(_ event: NSEvent, screenLocation: NSPoint) -> Bool {
-        if let sourceWindow = event.window {
-            if sourceWindow.ignoresMouseEvents {
-                return true
-            }
+    func shouldForwardMouseEventToWallpaper(at screenLocation: NSPoint) -> Bool {
+        guard targetSurface(at: screenLocation) != nil else { return false }
+
+        // Ask AppKit which window would really receive a mouse-down here. This keeps every
+        // synthetic input path aligned with the WindowServer instead of guessing from bounds.
+        let targetWindowNumber = NSWindow.windowNumber(
+            at: screenLocation,
+            belowWindowWithWindowNumber: 0
+        )
+        guard targetWindowNumber > 0 else {
+            resetDesktopInputEligibilityCache()
             return false
         }
 
-        let screenMatchesSurface = surfaces.values.contains { surface in
-            let screenFrame = surface.window.screen?.frame ?? surface.window.frame
-            return screenFrame.contains(screenLocation)
-        }
-        guard screenMatchesSurface else {
-            return false
-        }
-
-        if isDesktopInteraction(at: screenLocation) {
+        if surfaces.values.contains(where: { $0.window.windowNumber == targetWindowNumber }) {
             return true
         }
 
-        return hasForegroundBlockingWindow(at: screenLocation) == false
+        if cachedDesktopInputWindowNumber == targetWindowNumber {
+            return cachedDesktopInputWindowAllowsForwarding
+        }
+
+        // Unknown and non-desktop targets fail closed. In particular, window sharing state
+        // describes content capture permissions and must never be used as an input hit test.
+        let allowsForwarding = isFinderDesktopWindow(windowNumber: targetWindowNumber)
+        cachedDesktopInputWindowNumber = targetWindowNumber
+        cachedDesktopInputWindowAllowsForwarding = allowsForwarding
+        return allowsForwarding
     }
 
-    func isDesktopInteraction(at screenLocation: NSPoint) -> Bool {
+    private func isFinderDesktopWindow(windowNumber: Int) -> Bool {
         guard let windowInfoList = CGWindowListCopyWindowInfo(
-            [.optionOnScreenOnly],
-            kCGNullWindowID
-        ) as? [[String: Any]] else {
+            [.optionIncludingWindow],
+            CGWindowID(windowNumber)
+        ) as? [[String: Any]],
+              let windowInfo = windowInfoList.first(where: { info in
+                  (info[kCGWindowNumber as String] as? NSNumber)?.intValue == windowNumber
+              }) else {
             return false
         }
 
-        for windowInfo in windowInfoList {
-            guard let boundsDictionary = windowInfo[kCGWindowBounds as String] as? [String: Any],
-                  let bounds = CGRect(dictionaryRepresentation: boundsDictionary as CFDictionary),
-                  bounds.contains(screenLocation) else {
-                continue
-            }
-
-            let ownerPID = (windowInfo[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value ?? 0
-            let layer = (windowInfo[kCGWindowLayer as String] as? Int) ?? 0
-            let ownerName = (windowInfo[kCGWindowOwnerName as String] as? String) ?? ""
-            let windowName = (windowInfo[kCGWindowName as String] as? String) ?? ""
-            let alpha = (windowInfo[kCGWindowAlpha as String] as? Double) ?? 1
-            let sharingState = (windowInfo[kCGWindowSharingState as String] as? Int) ?? 0
-            let systemOwner = systemWindowOwner(pid: ownerPID, ownerName: ownerName)
-
-            if ownerPID == getpid() {
-                continue
-            }
-
-            if alpha <= 0 || sharingState == 0 {
-                continue
-            }
-
-            if systemOwner == .finder {
-                if layer <= Int(CGWindowLevelForKey(.desktopIconWindow)) || windowName == "" {
-                    return true
-                }
-                return false
-            }
-
-            if systemOwner == .dock && layer <= Int(CGWindowLevelForKey(.desktopWindow)) + 1 {
-                return true
-            }
-
-            if isDockDesktopCoverWindow(bounds: bounds, screenLocation: screenLocation, systemOwner: systemOwner) {
-                return true
-            }
-
-            return false
-        }
-
-        return false
-    }
-
-    func hasForegroundBlockingWindow(at screenLocation: NSPoint) -> Bool {
-        guard let windowInfoList = CGWindowListCopyWindowInfo(
-            [.optionOnScreenOnly],
-            kCGNullWindowID
-        ) as? [[String: Any]] else {
-            return false
-        }
-
-        let desktopWindowLevel = Int(CGWindowLevelForKey(.desktopWindow))
         let desktopIconWindowLevel = Int(CGWindowLevelForKey(.desktopIconWindow))
-
-        for windowInfo in windowInfoList {
-            guard let boundsDictionary = windowInfo[kCGWindowBounds as String] as? [String: Any],
-                  let bounds = CGRect(dictionaryRepresentation: boundsDictionary as CFDictionary),
-                  bounds.contains(screenLocation) else {
-                continue
-            }
-
-            let ownerPID = (windowInfo[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value ?? 0
-            let layer = (windowInfo[kCGWindowLayer as String] as? Int) ?? 0
-            let ownerName = (windowInfo[kCGWindowOwnerName as String] as? String) ?? ""
-            let windowName = (windowInfo[kCGWindowName as String] as? String) ?? ""
-            let alpha = (windowInfo[kCGWindowAlpha as String] as? Double) ?? 1
-            let sharingState = (windowInfo[kCGWindowSharingState as String] as? Int) ?? 0
-            let systemOwner = systemWindowOwner(pid: ownerPID, ownerName: ownerName)
-
-            if ownerPID == getpid() {
-                continue
-            }
-
-            if alpha <= 0 || sharingState == 0 {
-                continue
-            }
-
-            if systemOwner == .finder,
-               layer <= desktopIconWindowLevel,
-               windowName.isEmpty {
-                continue
-            }
-
-            if systemOwner == .dock,
-               layer <= desktopWindowLevel + 1 {
-                continue
-            }
-
-            if isDockDesktopCoverWindow(bounds: bounds, screenLocation: screenLocation, systemOwner: systemOwner) {
-                continue
-            }
-
-            if layer <= desktopIconWindowLevel {
-                continue
-            }
-
-            return true
-        }
-
-        return false
+        let ownerPID = (windowInfo[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value ?? 0
+        let ownerName = (windowInfo[kCGWindowOwnerName as String] as? String) ?? ""
+        let layer = (windowInfo[kCGWindowLayer as String] as? NSNumber)?.intValue ?? Int.max
+        guard ownerPID != getpid(), layer <= desktopIconWindowLevel else { return false }
+        return isFinderWindow(pid: ownerPID, ownerName: ownerName)
     }
 
     func targetSurface(at screenLocation: NSPoint) -> HostSurface? {
