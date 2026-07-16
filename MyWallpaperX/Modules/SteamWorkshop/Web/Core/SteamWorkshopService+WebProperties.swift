@@ -70,18 +70,9 @@ extension SteamWorkshopService {
     }
 
     func updateWebPropertyValue(_ value: SteamWorkshopWebPropertyValue, for definition: SteamWorkshopWebPropertyDefinition, record: SteamWorkshopDownloadRecord) {
-        let propertyDefinitions = webPropertyDefinitions(for: record)
-        let baselineValue = webPropertyBaselineValues(
-            for: record,
-            definitions: propertyDefinitions
-        )[definition.key] ?? definition.defaultValue
+        let baselineValue = webPropertyBaselineValues(for: record, definitions: [definition])[definition.key] ?? definition.defaultValue
         var overrides = webPropertyOverrides(for: record)
-        let normalizedKey = definition.key.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        let explicitlyEnablesDerivedBackgroundVideo = normalizedKey == "backgroundvideo"
-            && definition.defaultValue.boolValue == false
-            && baselineValue.boolValue == true
-            && value.boolValue == true
-        if value == baselineValue, !explicitlyEnablesDerivedBackgroundVideo {
+        if value == baselineValue {
             overrides.removeValue(forKey: definition.key)
         } else {
             overrides[definition.key] = value
@@ -92,6 +83,7 @@ extension SteamWorkshopService {
         invalidateCachedWebRuntime(for: record.id)
 
         guard isActiveWebRecord(record) else { return }
+        let propertyDefinitions = webPropertyDefinitions(for: record)
         let committedValue = currentWebPropertyValue(for: definition, record: record)
         if shouldRefreshFullWebPropertyPayload(
             afterUpdating: definition.key,
@@ -123,10 +115,7 @@ extension SteamWorkshopService {
     }
 
     func currentWebPropertyValue(for definition: SteamWorkshopWebPropertyDefinition, record: SteamWorkshopDownloadRecord) -> SteamWorkshopWebPropertyValue {
-        effectiveWebPropertyValues(
-            for: record,
-            definitions: webPropertyDefinitions(for: record)
-        )[definition.key] ?? definition.defaultValue
+        effectiveWebPropertyValues(for: record, definitions: [definition])[definition.key] ?? definition.defaultValue
     }
 
     func resolveAccessibleWebPropertyURL(for definition: SteamWorkshopWebPropertyDefinition, record: SteamWorkshopDownloadRecord) -> URL? {
