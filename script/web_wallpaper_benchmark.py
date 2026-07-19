@@ -70,6 +70,11 @@ class Sample:
     path: str | None = None
     title: str | None = None
     reason: str = "manual"
+    capabilities: list[str] = field(default_factory=list)
+    dependencies: list[str] = field(default_factory=list)
+    property_overrides: dict[str, Any] = field(default_factory=dict)
+    minimum_grade: str | None = None
+    minimum_coverage: float | None = None
 
 
 @dataclass
@@ -786,6 +791,24 @@ def run_one_sample(
         "--mwx-debug-web-evidence-dir",
         str(sample_dir),
     ]
+    if sample.property_overrides:
+        sample_root = runtime_workshop_root / "Web" / sample.id if runtime_workshop_root else None
+
+        def resolve_fixture_value(value: Any) -> Any:
+            if isinstance(value, str) and sample_root:
+                return value.replace("{sample_root}", str(sample_root))
+            if isinstance(value, dict):
+                return {key: resolve_fixture_value(item) for key, item in value.items()}
+            if isinstance(value, list):
+                return [resolve_fixture_value(item) for item in value]
+            return value
+
+        override_path = sample_dir / "property-overrides.json"
+        override_path.write_text(
+            json.dumps(resolve_fixture_value(sample.property_overrides), ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        command.extend(["--mwx-debug-web-properties-file", str(override_path)])
     if runtime_workshop_root:
         command.extend(["--mwx-debug-workshop-root", str(runtime_workshop_root)])
 
@@ -868,9 +891,59 @@ def compare_with_baseline(results: list[SampleResult], baseline_path: Path | Non
     return {"baseline": str(baseline_path), "deltas": deltas}
 
 
-def summarize(results: list[SampleResult], comparison: dict[str, Any] | None) -> dict[str, Any]:
+def evaluate_matrix_gate(
+    results: list[SampleResult],
+    summary: dict[str, Any],
+    matrix_config: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    if matrix_config is None:
+        return None
+    grade_rank = {"A": 4, "B": 3, "C": 2, "D": 1, "F": 0, "N/A": -1}
+    failures: list[str] = []
+    for result in results:
+        minimum_grade = result.sample.minimum_grade
+        if minimum_grade and grade_rank.get(result.grade, -1) < grade_rank.get(minimum_grade, -1):
+            failures.append(f"{result.sample.id}: grade {result.grade} below {minimum_grade}")
+        minimum_coverage = result.sample.minimum_coverage
+        if minimum_coverage is not None and result.coverage < minimum_coverage:
+            failures.append(
+                f"{result.sample.id}: coverage {result.coverage:.1f}% below {minimum_coverage:.1f}%"
+            )
+
+    gates = matrix_config.get("gates") if isinstance(matrix_config.get("gates"), dict) else {}
+    minimum_average_score = float(gates.get("minimum_average_score", 0))
+    minimum_average_coverage = float(gates.get("minimum_average_coverage", 0))
+    if float(summary.get("average_score", 0)) < minimum_average_score:
+        failures.append(
+            f"average score {summary.get('average_score', 0)} below {minimum_average_score:.1f}"
+        )
+    if float(summary.get("average_coverage", 0)) < minimum_average_coverage:
+        failures.append(
+            f"average coverage {summary.get('average_coverage', 0)}% below {minimum_average_coverage:.1f}%"
+        )
+    forbidden = {
+        str(category)
+        for category in gates.get("forbidden_shortfalls", [])
+        if str(category).strip()
+    }
+    for result in results:
+        blocked = sorted(forbidden.intersection(result.shortfall_categories))
+        if blocked:
+            failures.append(f"{result.sample.id}: forbidden shortfalls {', '.join(blocked)}")
+    return {
+        "matrix": matrix_config.get("name") or "unnamed",
+        "passed": not failures,
+        "failures": failures,
+    }
+
+
+def summarize(
+    results: list[SampleResult],
+    comparison: dict[str, Any] | None,
+    matrix_config: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     if not results:
-        return {
+        summary = {
             "sample_count": 0,
             "runnable_sample_count": 0,
             "precondition_count": 0,
@@ -880,6 +953,8 @@ def summarize(results: list[SampleResult], comparison: dict[str, Any] | None) ->
             "category_counts": {},
             "comparison": comparison,
         }
+        summary["matrix_gate"] = evaluate_matrix_gate(results, summary, matrix_config)
+        return summary
 
     grade_counts: dict[str, int] = {}
     category_counts: dict[str, int] = {}
@@ -888,7 +963,7 @@ def summarize(results: list[SampleResult], comparison: dict[str, Any] | None) ->
         for category in result.shortfall_categories:
             category_counts[category] = category_counts.get(category, 0) + 1
     runnable_results = [result for result in results if result.grade != "N/A"]
-    return {
+    summary = {
         "sample_count": len(results),
         "runnable_sample_count": len(runnable_results),
         "precondition_count": len(results) - len(runnable_results),
@@ -898,11 +973,13 @@ def summarize(results: list[SampleResult], comparison: dict[str, Any] | None) ->
         "category_counts": dict(sorted(category_counts.items())),
         "comparison": comparison,
     }
+    summary["matrix_gate"] = evaluate_matrix_gate(results, summary, matrix_config)
+    return summary
 
 
 def write_json_report(output_dir: Path, args: argparse.Namespace, results: list[SampleResult], summary: dict[str, Any]) -> Path:
     report = {
-        "schema_version": 3,
+        "schema_version": 4,
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "repo_root": str(REPO_ROOT),
         "command": vars(args),
@@ -929,14 +1006,15 @@ def write_markdown_report(output_dir: Path, results: list[SampleResult], summary
         "",
         "## Samples",
         "",
-        "| ID | Score | Grade | Coverage | Web snapshots | Diagnostics | Raw errors | Shortfalls | Log |",
-        "| --- | ---: | --- | ---: | ---: | ---: | ---: | --- | --- |",
+        "| ID | Capabilities | Score | Grade | Coverage | Web snapshots | Diagnostics | Raw errors | Shortfalls | Log |",
+        "| --- | --- | ---: | --- | ---: | ---: | ---: | ---: | --- | --- |",
     ]
     for result in sorted(results, key=lambda item: item.score):
         shortfalls = ", ".join(result.shortfall_categories) if result.shortfall_categories else "-"
         log_name = Path(result.log_path).relative_to(output_dir)
         lines.append(
-            f"| `{result.sample.id}` | {result.score:.1f} | {result.grade} | "
+            f"| `{result.sample.id}` | {', '.join(result.sample.capabilities) or '-'} | "
+            f"{result.score:.1f} | {result.grade} | "
             f"{result.coverage:.1f}% | {len(result.web_snapshot_paths)} | "
             f"{len(result.diagnostic_warnings) + len(result.diagnostic_errors)} | "
             f"{len(result.raw_error_lines)} | {shortfalls} | `{log_name}` |"
@@ -950,6 +1028,15 @@ def write_markdown_report(output_dir: Path, results: list[SampleResult], summary
                 lines.append(f"- {finding}")
         else:
             lines.append("- No notable findings.")
+        lines.append("")
+
+    matrix_gate = summary.get("matrix_gate")
+    if matrix_gate:
+        lines.extend(["## Matrix Gate", ""])
+        lines.append(f"- Matrix: {matrix_gate['matrix']}")
+        lines.append(f"- Result: {'PASS' if matrix_gate['passed'] else 'FAIL'}")
+        for failure in matrix_gate.get("failures", []):
+            lines.append(f"- {failure}")
         lines.append("")
 
     precondition_results = [result for result in results if result.grade == "N/A"]
@@ -987,9 +1074,48 @@ def make_output_dir(base: Path | None) -> Path:
     return output_dir
 
 
-def load_samples_from_args(args: argparse.Namespace) -> list[Sample]:
+def load_sample_matrix(path: Path) -> tuple[list[Sample], dict[str, Any]]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict) or not isinstance(payload.get("samples"), list):
+        raise ValueError("matrix must be a JSON object with a samples array")
+    minimum_duration = payload.get("minimum_sample_duration_seconds")
+    if minimum_duration is not None and float(minimum_duration) <= 0:
+        raise ValueError("matrix minimum_sample_duration_seconds must be positive")
     samples: list[Sample] = []
-    if args.ids:
+    for entry in payload["samples"]:
+        if not isinstance(entry, dict) or not str(entry.get("id", "")).strip():
+            raise ValueError("every matrix sample must have an id")
+        samples.append(
+            Sample(
+                id=str(entry["id"]).strip(),
+                title=str(entry["title"]).strip() if entry.get("title") else None,
+                reason="matrix",
+                capabilities=[str(value) for value in entry.get("capabilities", [])],
+                dependencies=[str(value) for value in entry.get("dependencies", [])],
+                property_overrides=(
+                    entry.get("property_overrides", {})
+                    if isinstance(entry.get("property_overrides", {}), dict)
+                    else {}
+                ),
+                minimum_grade=str(entry["minimum_grade"]) if entry.get("minimum_grade") else None,
+                minimum_coverage=(
+                    float(entry["minimum_coverage"])
+                    if entry.get("minimum_coverage") is not None
+                    else None
+                ),
+            )
+        )
+    return samples, payload
+
+
+def load_samples_from_args(args: argparse.Namespace) -> tuple[list[Sample], dict[str, Any] | None]:
+    samples: list[Sample] = []
+    matrix_config: dict[str, Any] | None = None
+    if args.matrix:
+        if args.ids or args.id_file:
+            raise ValueError("--matrix cannot be combined with --ids or --id-file")
+        samples, matrix_config = load_sample_matrix(Path(args.matrix))
+    elif args.ids:
         for raw in args.ids.split(","):
             sample_id = raw.strip()
             if sample_id:
@@ -1010,7 +1136,7 @@ def load_samples_from_args(args: argparse.Namespace) -> list[Sample]:
         unique_samples.append(sample)
     if args.limit:
         unique_samples = unique_samples[: args.limit]
-    return unique_samples
+    return unique_samples, matrix_config
 
 
 def run_benchmark(args: argparse.Namespace) -> int:
@@ -1038,12 +1164,19 @@ def run_benchmark(args: argparse.Namespace) -> int:
         print("Run with --build, or pass --app /path/to/MyWallpaperX.", file=sys.stderr)
         return 2
 
-    samples = load_samples_from_args(args)
+    try:
+        samples, matrix_config = load_samples_from_args(args)
+    except (OSError, ValueError, json.JSONDecodeError) as error:
+        print(f"Failed to load sample selection: {error}", file=sys.stderr)
+        return 2
     if not samples:
         print(f"No Web samples found under {args.workshop_root}.", file=sys.stderr)
         print("Pass --ids 3700131876,2997985023 to run explicit Workshop IDs.", file=sys.stderr)
         return 2
 
+    matrix_minimum_duration = 0.0
+    if matrix_config and matrix_config.get("minimum_sample_duration_seconds") is not None:
+        matrix_minimum_duration = float(matrix_config["minimum_sample_duration_seconds"])
     results: list[SampleResult] = []
     for index, sample in enumerate(samples, start=1):
         print(f"[{index}/{len(samples)}] benchmarking {sample.id}")
@@ -1052,7 +1185,7 @@ def run_benchmark(args: argparse.Namespace) -> int:
                 app_binary=app_binary,
                 sample=sample,
                 output_dir=output_dir,
-                duration=args.duration,
+                duration=max(args.duration, matrix_minimum_duration),
                 capture_screen=args.screenshot,
                 kill_existing=args.kill_existing,
                 runtime_workshop_root=runtime_workshop_root,
@@ -1061,13 +1194,17 @@ def run_benchmark(args: argparse.Namespace) -> int:
         )
 
     comparison = compare_with_baseline(results, Path(args.baseline) if args.baseline else None)
-    summary = summarize(results, comparison)
+    summary = summarize(results, comparison, matrix_config=matrix_config)
     json_path = write_json_report(output_dir, args, results, summary)
     md_path = write_markdown_report(output_dir, results, summary)
 
     print(f"Report JSON: {json_path}")
     print(f"Report Markdown: {md_path}")
     print(f"Average score: {summary['average_score']} coverage={summary['average_coverage']}%")
+    matrix_gate = summary.get("matrix_gate")
+    if matrix_gate and not matrix_gate.get("passed"):
+        print(f"Matrix gate failed: {len(matrix_gate.get('failures', []))} failure(s)", file=sys.stderr)
+        return 1
     return 0
 
 
@@ -1143,6 +1280,22 @@ def run_self_test(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return 1
+    gate_config = {
+        "name": "self-test-gate",
+        "gates": {
+            "minimum_average_score": 90,
+            "minimum_average_coverage": 90,
+            "forbidden_shortfalls": ["visual_output"],
+        },
+    }
+    passing_gate = summarize([result], comparison=None, matrix_config=gate_config).get("matrix_gate")
+    failing_gate = summarize([blank_result], comparison=None, matrix_config=gate_config).get("matrix_gate")
+    if not passing_gate or passing_gate.get("passed") is not True:
+        print(f"Self-test failed: passing matrix gate={passing_gate}", file=sys.stderr)
+        return 1
+    if not failing_gate or failing_gate.get("passed") is not False:
+        print(f"Self-test failed: failing matrix gate={failing_gate}", file=sys.stderr)
+        return 1
     print(f"Self-test passed: score={result.score} coverage={result.coverage}%")
     print(f"Report JSON: {json_path}")
     print(f"Report Markdown: {md_path}")
@@ -1168,6 +1321,7 @@ def make_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--ids", help="Comma-separated Workshop IDs to benchmark.")
     parser.add_argument("--id-file", help="File containing one Workshop ID per line.")
+    parser.add_argument("--matrix", help="JSON sample matrix with per-sample and batch regression gates.")
     parser.add_argument("--limit", type=int, help="Limit discovered samples.")
     parser.add_argument("--duration", type=float, default=10.0, help="Seconds to run each sample.")
     parser.add_argument("--screenshot", action="store_true", help="Capture a desktop screenshot near the end of each run.")

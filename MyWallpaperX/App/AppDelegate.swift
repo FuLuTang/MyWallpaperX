@@ -216,9 +216,46 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
  NSLog("MWX DEBUG PLAY: workshop item %@ not found", itemID)
  return
  }
+
  NSLog("MWX DEBUG PLAY: launching workshop item %@ type=%@", itemID, String(describing: record.contentType))
  service.setAsWallpaper(record)
  }
+ }
+
+ private func debugWebPropertiesJSON(overriding baseJSON: String?) -> String? {
+ let arguments = ProcessInfo.processInfo.arguments
+ guard let flagIndex = arguments.firstIndex(of: "--mwx-debug-web-properties-file"),
+       arguments.indices.contains(flagIndex + 1),
+       let overrideData = try? Data(contentsOf: URL(fileURLWithPath: arguments[flagIndex + 1])),
+       let overrides = try? JSONSerialization.jsonObject(with: overrideData) as? [String: Any] else {
+ return baseJSON
+ }
+ var merged: [String: Any] = [:]
+ if let baseJSON,
+    let baseData = baseJSON.data(using: .utf8),
+    let base = try? JSONSerialization.jsonObject(with: baseData) as? [String: Any] {
+ merged = base
+ }
+ for (key, rawOverride) in overrides {
+ if let overridePayload = rawOverride as? [String: Any] {
+ var propertyPayload = merged[key] as? [String: Any] ?? [:]
+ for (field, value) in overridePayload {
+ propertyPayload[field] = value
+ }
+ merged[key] = propertyPayload
+ } else {
+ var propertyPayload = merged[key] as? [String: Any] ?? [:]
+ propertyPayload["value"] = rawOverride
+ merged[key] = propertyPayload
+ }
+ }
+ guard JSONSerialization.isValidJSONObject(merged),
+       let data = try? JSONSerialization.data(withJSONObject: merged),
+       let json = String(data: data, encoding: .utf8) else {
+ return baseJSON
+ }
+ NSLog("MWX DEBUG PLAY: applied %ld Web property override(s)", overrides.count)
+ return json
  }
 
  private func scheduleDebugWebWorkshopRuntimeIfRequested() {
@@ -260,7 +297,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
  WallpaperEngine.shared.setWebWallpaper(
  entryURL: playbackContext.effectiveEntryURL,
  rootURL: playbackContext.effectiveRootURL,
- propertiesJSON: playbackContext.propertyPayloadJSON,
+ propertiesJSON: self.debugWebPropertiesJSON(overriding: playbackContext.propertyPayloadJSON),
  recordID: record.id,
  language: playbackContext.language,
  runtimeProfile: service.recommendedWebRuntimeProfile(for: record),
