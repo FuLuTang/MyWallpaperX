@@ -155,6 +155,20 @@ let webCompatibilityScriptHostBridge = #"""
       message.includes('gl.canvas') ||
       message.includes('this.model.x');
   };
+  const myWallpaperColorArrayCompatibleProperty = function(value) {
+    try {
+      if (!value || typeof value !== 'object' || typeof value.value !== 'string') return null;
+      const components = value.value.trim().split(/\s+/).map((component) => Number(component));
+      if ((components.length !== 3 && components.length !== 4) || !components.every(Number.isFinite)) return null;
+      return Object.assign({}, value, { value: components });
+    } catch (_) {
+      return null;
+    }
+  };
+  const myWallpaperIsColorArrayCompatibilityError = function(error) {
+    const message = myWallpaperPropertyErrorMessage(error).toLowerCase();
+    return message.includes('.push') || message.includes('push is not a function');
+  };
   const myWallpaperInvokeUserPropertyCallback = function(listener, callback, properties) {
     let scheduledAsyncWork = false;
     const originalSetTimeout = window.setTimeout;
@@ -249,6 +263,19 @@ let webCompatibilityScriptHostBridge = #"""
         callback.call(listener, singleProperty);
         appliedCount += 1;
       } catch (error) {
+        const compatibleValue = myWallpaperIsColorArrayCompatibilityError(error)
+          ? myWallpaperColorArrayCompatibleProperty(value)
+          : null;
+        if (compatibleValue) {
+          try {
+            callback.call(listener, { [key]: compatibleValue });
+            appliedCount += 1;
+            hostLogger.post('properties.compat.color-array', key);
+            continue;
+          } catch (compatibleError) {
+            error = compatibleError;
+          }
+        }
         skippedCount += 1;
         myWallpaperReportSkippedProperty(signature, key, error);
       }
@@ -324,6 +351,29 @@ let webCompatibilityScriptHostBridge = #"""
         return;
       }
       if (!isInitializationError) {
+        if (myWallpaperIsColorArrayCompatibilityError(error)) {
+          const isolatedResult = myWallpaperApplyPropertiesIndividually(
+            safeProperties,
+            listener,
+            userPropertyCallback,
+            signature
+          );
+          window.__myWallpaperLastAppliedUserPropertySignature = signature;
+          window.__myWallpaperLastAppliedUserPropertyCallback = userPropertyCallback;
+          state.pendingProperties = null;
+          state.pendingSignature = '';
+          state.attempt = 0;
+          try {
+            window.dispatchEvent(new CustomEvent('wallpaper-properties-applied', {
+              detail: safeProperties
+            }));
+          } catch (_) {}
+          hostLogger.post(
+            isolatedResult.skippedCount > 0 ? 'properties.applied.partial' : 'properties.applied.compatible',
+            `applied=${isolatedResult.appliedCount} skipped=${isolatedResult.skippedCount}`
+          );
+          return;
+        }
         window.__myWallpaperLastAppliedUserPropertySignature = signature;
         window.__myWallpaperLastAppliedUserPropertyCallback = userPropertyCallback;
         state.pendingProperties = null;
