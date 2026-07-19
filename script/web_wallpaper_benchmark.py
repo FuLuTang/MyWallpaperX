@@ -46,7 +46,8 @@ PRECONDITION_RE = re.compile(
 SNAPSHOT_RE = re.compile(
     r"webSnapshot\[(?P<reason>[^\]]+)\] size=(?P<size>\S+) "
     r"avgLuma=(?P<avg>[0-9.]+) nonBlack=(?P<nonblack>[0-9.]+)"
-    r"(?: lumaStdDev=(?P<stddev>[0-9.]+) colored=(?P<colored>[0-9.]+) white=(?P<white>[0-9.]+))?"
+    r"(?: lumaStdDev=(?P<stddev>[0-9.]+) colored=(?P<colored>[0-9.]+) white=(?P<white>[0-9.]+)"
+    r"(?: peakLuma=(?P<peak>[0-9.]+))?)?"
 )
 TIMESTAMP_RE = re.compile(r"^(?P<stamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?)")
 RAW_RUNTIME_ERROR_TOKENS = (
@@ -260,6 +261,11 @@ def parse_log(log_path: Path) -> tuple[list[DiagnosticEvent], dict[str, Any]]:
                     "white": (
                         float(snapshot_match.group("white"))
                         if snapshot_match.group("white") is not None
+                        else None
+                    ),
+                    "peakLuma": (
+                        float(snapshot_match.group("peak"))
+                        if snapshot_match.group("peak") is not None
                         else None
                     ),
                 }
@@ -619,13 +625,22 @@ def score_sample(
     complete_snapshots = [snapshot for snapshot in snapshots if snapshot.get("lumaStdDev") is not None]
     if complete_snapshots and web_snapshot_paths and dom_evidence and not dom_errors:
         visual_evidence = "strong"
-        meaningful_snapshots = [
-            snapshot
-            for snapshot in complete_snapshots
-            if float(snapshot["nonBlack"]) >= 0.02
-            and float(snapshot["white"]) < 0.98
-            and (float(snapshot["lumaStdDev"]) >= 0.01 or float(snapshot["colored"]) >= 0.02)
-        ]
+        meaningful_snapshots = []
+        for snapshot in complete_snapshots:
+            non_black = float(snapshot["nonBlack"])
+            stddev = float(snapshot["lumaStdDev"])
+            colored = float(snapshot["colored"])
+            white = float(snapshot["white"])
+            peak_luma = snapshot.get("peakLuma")
+            normal_content = non_black >= 0.02 and (stddev >= 0.01 or colored >= 0.02)
+            sparse_dark_content = (
+                peak_luma is not None
+                and non_black >= 0.0002
+                and stddev >= 0.002
+                and float(peak_luma) >= 0.15
+            )
+            if white < 0.98 and (normal_content or sparse_dark_content):
+                meaningful_snapshots.append(snapshot)
         if meaningful_snapshots:
             visual_score = 5.0
         else:
@@ -635,7 +650,8 @@ def score_sample(
                 "Snapshot looked uniform/empty: "
                 f"nonBlack={float(best['nonBlack']):.3f}, "
                 f"lumaStdDev={float(best['lumaStdDev']):.3f}, "
-                f"colored={float(best['colored']):.3f}, white={float(best['white']):.3f}."
+                f"colored={float(best['colored']):.3f}, white={float(best['white']):.3f}, "
+                f"peakLuma={float(best.get('peakLuma') or 0):.3f}."
             )
             categories.add("visual_output")
     elif snapshots and web_snapshot_paths:
@@ -1377,7 +1393,7 @@ def run_self_test(args: argparse.Namespace) -> int:
                 "2026-06-26 10:00:02.350 MyWallpaperX[1:1] MWX WEB DIAG record=fixture screen=1 severity=info type=pointer.up url=- message=x=20 y=20",
                 "2026-06-26 10:00:02.375 MyWallpaperX[1:1] MWX WEB DIAG record=fixture screen=1 severity=info type=evidence.interaction url=- message={events:[pointer,click,drag,wheel]}",
                 "2026-06-26 10:00:02.390 MyWallpaperX[1:1] MWX WEB DIAG record=fixture screen=1 severity=info type=evidence.dom url=- message={visibleElementCount:4}",
-                "2026-06-26 10:00:02.400 MyWallpaperX[1:1] webSnapshot[ready] size=1920x1080 avgLuma=0.230 nonBlack=0.800 lumaStdDev=0.180 colored=0.400 white=0.010",
+                "2026-06-26 10:00:02.400 MyWallpaperX[1:1] webSnapshot[ready] size=1920x1080 avgLuma=0.230 nonBlack=0.8000 lumaStdDev=0.180 colored=0.400 white=0.010 peakLuma=0.920",
             ]
         ),
         encoding="utf-8",
@@ -1410,6 +1426,7 @@ def run_self_test(args: argparse.Namespace) -> int:
             "lumaStdDev": 0.0,
             "colored": 0.0,
             "white": 1.0,
+            "peakLuma": 1.0,
         }
     ]
     blank_result = score_sample(
@@ -1426,6 +1443,99 @@ def run_self_test(args: argparse.Namespace) -> int:
         print(
             f"Self-test failed: blank frame grade={blank_result.grade} "
             f"shortfalls={blank_result.shortfall_categories}",
+            file=sys.stderr,
+        )
+        return 1
+    black_metadata = dict(metadata)
+    black_metadata["snapshots"] = [
+        {
+            "reason": "ready",
+            "size": "1920x1080",
+            "avgLuma": 0.0,
+            "nonBlack": 0.0,
+            "lumaStdDev": 0.0,
+            "colored": 0.0,
+            "white": 0.0,
+            "peakLuma": 0.0,
+        }
+    ]
+    black_result = score_sample(
+        Sample(id="black-fixture"),
+        events,
+        black_metadata,
+        log_path,
+        screenshot_path=None,
+        web_snapshot_paths=[web_snapshot_path],
+        exit_code=-15,
+        duration_seconds=3.0,
+    )
+    if black_result.grade != "C" or "visual_output" not in black_result.shortfall_categories:
+        print(
+            f"Self-test failed: black frame grade={black_result.grade} "
+            f"shortfalls={black_result.shortfall_categories}",
+            file=sys.stderr,
+        )
+        return 1
+    single_pixel_noise_metadata = dict(metadata)
+    single_pixel_noise_metadata["snapshots"] = [
+        {
+            "reason": "ready",
+            "size": "1920x1080",
+            "avgLuma": 0.0,
+            "nonBlack": 0.0001,
+            "lumaStdDev": 0.002,
+            "colored": 0.0,
+            "white": 0.0,
+            "peakLuma": 0.3,
+        }
+    ]
+    single_pixel_noise_result = score_sample(
+        Sample(id="single-pixel-noise-fixture"),
+        events,
+        single_pixel_noise_metadata,
+        log_path,
+        screenshot_path=None,
+        web_snapshot_paths=[web_snapshot_path],
+        exit_code=-15,
+        duration_seconds=3.0,
+    )
+    if (
+        single_pixel_noise_result.grade != "C"
+        or "visual_output" not in single_pixel_noise_result.shortfall_categories
+    ):
+        print(
+            f"Self-test failed: single-pixel noise grade={single_pixel_noise_result.grade} "
+            f"shortfalls={single_pixel_noise_result.shortfall_categories}",
+            file=sys.stderr,
+        )
+        return 1
+    sparse_dark_metadata = dict(metadata)
+    sparse_dark_metadata["snapshots"] = [
+        {
+            "reason": "ready",
+            "size": "1920x1080",
+            "avgLuma": 0.0004,
+            "nonBlack": 0.001,
+            "lumaStdDev": 0.004,
+            "colored": 0.0,
+            "white": 0.0,
+            "peakLuma": 0.6,
+        }
+    ]
+    sparse_dark_result = score_sample(
+        Sample(id="sparse-dark-fixture"),
+        events,
+        sparse_dark_metadata,
+        log_path,
+        screenshot_path=None,
+        web_snapshot_paths=[web_snapshot_path],
+        exit_code=-15,
+        duration_seconds=3.0,
+    )
+    if sparse_dark_result.grade != "A" or "visual_output" in sparse_dark_result.shortfall_categories:
+        print(
+            f"Self-test failed: sparse dark frame grade={sparse_dark_result.grade} "
+            f"shortfalls={sparse_dark_result.shortfall_categories}",
             file=sys.stderr,
         )
         return 1

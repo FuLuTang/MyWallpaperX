@@ -225,7 +225,7 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
 
             let metrics = Self.snapshotMetrics(bitmap)
             let message = String(
-                format: "size=%dx%d avgLuma=%.3f nonBlack=%.3f lumaStdDev=%.3f colored=%.3f white=%.3f path=%@",
+                format: "size=%dx%d avgLuma=%.3f nonBlack=%.4f lumaStdDev=%.3f colored=%.3f white=%.3f peakLuma=%.3f path=%@",
                 bitmap.pixelsWide,
                 bitmap.pixelsHigh,
                 metrics.averageLuma,
@@ -233,10 +233,11 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
                 metrics.lumaStdDev,
                 metrics.coloredRatio,
                 metrics.whiteRatio,
+                metrics.peakLuma,
                 fileURL.path
             )
             NSLog(
-                "webSnapshot[%@] size=%dx%d avgLuma=%.3f nonBlack=%.3f lumaStdDev=%.3f colored=%.3f white=%.3f path=%@",
+                "webSnapshot[%@] size=%dx%d avgLuma=%.3f nonBlack=%.4f lumaStdDev=%.3f colored=%.3f white=%.3f peakLuma=%.3f path=%@",
                 reason,
                 bitmap.pixelsWide,
                 bitmap.pixelsHigh,
@@ -245,6 +246,7 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
                 metrics.lumaStdDev,
                 metrics.coloredRatio,
                 metrics.whiteRatio,
+                metrics.peakLuma,
                 fileURL.path
             )
             self.recordDiagnostic(
@@ -259,15 +261,16 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
 
     private static func snapshotMetrics(
         _ bitmap: NSBitmapImageRep
-    ) -> (averageLuma: Double, nonBlackRatio: Double, lumaStdDev: Double, coloredRatio: Double, whiteRatio: Double) {
-        guard bitmap.pixelsWide > 0, bitmap.pixelsHigh > 0 else { return (0, 0, 0, 0, 0) }
-        let xStep = max(1, bitmap.pixelsWide / 80)
-        let yStep = max(1, bitmap.pixelsHigh / 80)
+    ) -> (averageLuma: Double, nonBlackRatio: Double, lumaStdDev: Double, coloredRatio: Double, whiteRatio: Double, peakLuma: Double) {
+        guard bitmap.pixelsWide > 0, bitmap.pixelsHigh > 0 else { return (0, 0, 0, 0, 0, 0) }
+        let xStep = max(1, bitmap.pixelsWide / 160)
+        let yStep = max(1, bitmap.pixelsHigh / 160)
         var lumaTotal = 0.0
         var lumaSquareTotal = 0.0
         var nonBlackCount = 0
         var coloredCount = 0
         var whiteCount = 0
+        var peakLuma = 0.0
         var sampleCount = 0
         for y in stride(from: 0, to: bitmap.pixelsHigh, by: yStep) {
             for x in stride(from: 0, to: bitmap.pixelsWide, by: xStep) {
@@ -278,6 +281,7 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
                 let luma = 0.2126 * red + 0.7152 * green + 0.0722 * blue
                 lumaTotal += luma
                 lumaSquareTotal += luma * luma
+                peakLuma = max(peakLuma, luma)
                 if color.alphaComponent > 0.01 && luma > 0.02 {
                     nonBlackCount += 1
                 }
@@ -290,7 +294,7 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
                 sampleCount += 1
             }
         }
-        guard sampleCount > 0 else { return (0, 0, 0, 0, 0) }
+        guard sampleCount > 0 else { return (0, 0, 0, 0, 0, 0) }
         let divisor = Double(sampleCount)
         let averageLuma = lumaTotal / divisor
         let variance = max(0, lumaSquareTotal / divisor - averageLuma * averageLuma)
@@ -299,7 +303,8 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
             Double(nonBlackCount) / divisor,
             variance.squareRoot(),
             Double(coloredCount) / divisor,
-            Double(whiteCount) / divisor
+            Double(whiteCount) / divisor,
+            peakLuma
         )
     }
     #endif
