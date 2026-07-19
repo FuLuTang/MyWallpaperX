@@ -1248,6 +1248,7 @@ final class AppKitSteamWorkshopItemDetailView: NSView {
         case "image": return [.image]
         case "video": return [.movie, .video, .mpeg4Movie, .quickTimeMovie]
         case "audio", "music": return [.audio, .mp3, .mpeg4Audio]
+        case "font": return [.font]
         default: return []
         }
     }

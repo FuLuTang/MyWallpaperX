@@ -28,7 +28,22 @@ extension SteamWorkshopService {
                 )
             }
 
-            if resolveAccessibleWebPropertyURL(for: definition, rawValue: rawValue, record: record) != nil {
+            if let binding = resolvedWebResourceBinding(
+                forKey: definition.key,
+                definition: definition,
+                rawValue: rawValue,
+                record: record
+            ), let resolvedURL = binding.resolvedURL {
+                if definition.kind == .file,
+                   Self.webFileURL(resolvedURL, matches: definition.fileType) == false {
+                    let expectedType = definition.fileType ?? "指定类型"
+                    return ResolvedWebRuntimePrecondition(
+                        key: definition.key,
+                        kind: kind,
+                        status: .unmet,
+                        message: "属性 `\(definition.title)` 需要 \(expectedType) 文件，当前选择的文件类型不匹配"
+                    )
+                }
                 return ResolvedWebRuntimePrecondition(
                     key: definition.key,
                     kind: kind,

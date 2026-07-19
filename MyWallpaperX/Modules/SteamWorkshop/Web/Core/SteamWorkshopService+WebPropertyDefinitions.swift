@@ -57,7 +57,13 @@ extension SteamWorkshopService {
                     fractionalPrecision: Self.webPropertyPrecision(from: propertyObject["precision"]),
                     displayCondition: Self.trimmedNonEmptyString(propertyObject["condition"] as? String),
                     directoryMode: Self.normalizedWebDirectoryMode(from: propertyObject),
-                    fileType: Self.normalizedWebPropertyFileType(from: propertyObject),
+                    fileType: kind == .file
+                        ? Self.normalizedWebPropertyFileType(
+                            from: propertyObject,
+                            key: key,
+                            rawTitle: rawTitle
+                        )
+                        : nil,
                     defaultValue: value,
                     options: Self.webPropertyOptions(
                         from: propertyObject["options"] ?? propertyObject["values"],

@@ -1,4 +1,5 @@
 import Foundation
+import UniformTypeIdentifiers
 
 extension SteamWorkshopService {
     static func normalizedWebDirectoryMode(from propertyObject: [String: Any]) -> String? {
@@ -8,11 +9,83 @@ extension SteamWorkshopService {
         )?.lowercased()
     }
 
-    static func normalizedWebPropertyFileType(from propertyObject: [String: Any]) -> String? {
-        trimmedNonEmptyString(
+    static func normalizedWebPropertyFileType(
+        from propertyObject: [String: Any],
+        key: String,
+        rawTitle: String?
+    ) -> String? {
+        if let explicitType = trimmedNonEmptyString(
             (propertyObject["filetype"] as? String)
             ?? (propertyObject["fileType"] as? String)
-        )?.lowercased()
+        )?.lowercased() {
+            return explicitType
+        }
+
+        let rawValue = trimmedNonEmptyString(propertyObject["value"] as? String) ?? ""
+        let pathExtension = URL(fileURLWithPath: rawValue).pathExtension.lowercased()
+        if ["jpg", "jpeg", "png", "pnga", "bmp", "gif", "svg", "webp", "heic", "heif", "tif", "tiff"].contains(pathExtension) {
+            return "image"
+        }
+        if ["webm", "ogv", "mp4", "mov", "m4v", "avi", "mkv"].contains(pathExtension) {
+            return "video"
+        }
+        if ["mp3", "wav", "flac", "m4a", "aac", "ogg"].contains(pathExtension) {
+            return "audio"
+        }
+        if ["ttf", "otf", "ttc", "woff", "woff2"].contains(pathExtension) {
+            return "font"
+        }
+
+        let semanticText = "\(key) \(rawTitle ?? "")".lowercased()
+        if semanticText.contains("video") || semanticText.contains("movie") {
+            return "video"
+        }
+        if semanticText.contains("audio") || semanticText.contains("music") || semanticText.contains("sound") {
+            return "audio"
+        }
+        if semanticText.contains("font") {
+            return "font"
+        }
+        if semanticText.contains("image")
+            || semanticText.contains("img")
+            || semanticText.contains("picture")
+            || semanticText.contains("photo")
+            || semanticText.contains("wallpaper")
+            || semanticText.contains("background")
+            || semanticText.contains("foreground")
+            || semanticText.contains("texture")
+            || semanticText.contains("particle")
+            || semanticText.contains("custom_bg") {
+            return "image"
+        }
+        return nil
+    }
+
+    static func webFileURL(_ url: URL, matches fileType: String?) -> Bool {
+        guard let expectedTypes = webAllowedContentTypes(for: fileType) else {
+            return true
+        }
+
+        if let contentType = try? url.resourceValues(forKeys: [.contentTypeKey]).contentType {
+            return expectedTypes.contains(where: { contentType.conforms(to: $0) })
+        }
+        guard let extensionType = UTType(filenameExtension: url.pathExtension) else {
+            return false
+        }
+        return expectedTypes.contains(where: { extensionType.conforms(to: $0) })
+    }
+
+    static func webAllowedContentTypes(for fileType: String?) -> [UTType]? {
+        guard let normalized = trimmedNonEmptyString(fileType)?.lowercased() else {
+            return nil
+        }
+        switch normalized {
+        case "image": return [.image]
+        case "video": return [.movie, .video]
+        case "audio", "music": return [.audio]
+        case "font": return [.font]
+        default: return nil
+        }
     }
 
     static func webProjectLocalization(from root: [String: Any]) -> [String: String] {

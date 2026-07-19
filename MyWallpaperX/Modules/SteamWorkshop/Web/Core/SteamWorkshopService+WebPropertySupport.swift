@@ -201,7 +201,18 @@ extension SteamWorkshopService {
         rawValue: SteamWorkshopWebPropertyValue,
         record: SteamWorkshopDownloadRecord
     ) -> URL? {
-        resolvedWebResourceBinding(forKey: key, definition: definition, rawValue: rawValue, record: record)?.resolvedURL
+        guard let resolvedURL = resolvedWebResourceBinding(
+            forKey: key,
+            definition: definition,
+            rawValue: rawValue,
+            record: record
+        )?.resolvedURL else {
+            return nil
+        }
+        guard definition.kind != .file || Self.webFileURL(resolvedURL, matches: definition.fileType) else {
+            return nil
+        }
+        return resolvedURL
     }
 
     func resolvedWebRuntimeValue(
@@ -221,8 +232,11 @@ extension SteamWorkshopService {
             definition: definition,
             rawValue: rawValue,
             record: record
-        ), let resolvedPath = binding.resolvedPath {
-            return .string(resolvedPath)
+        ), let resolvedURL = binding.resolvedURL {
+            guard definition.kind != .file || Self.webFileURL(resolvedURL, matches: definition.fileType) else {
+                return .string("")
+            }
+            return .string(resolvedURL.path)
         }
 
         guard definition.kind == .file || definition.kind == .directory else {
