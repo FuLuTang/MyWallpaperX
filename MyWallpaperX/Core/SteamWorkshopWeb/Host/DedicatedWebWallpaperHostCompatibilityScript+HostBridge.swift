@@ -165,6 +165,18 @@ let webCompatibilityScriptHostBridge = #"""
       return null;
     }
   };
+  const myWallpaperColorArrayCompatibleBag = function(properties) {
+    const compatibleProperties = {};
+    const convertedKeys = [];
+    for (const [key, value] of Object.entries(properties || {})) {
+      const compatibleValue = value && value.type === 'color'
+        ? myWallpaperColorArrayCompatibleProperty(value)
+        : null;
+      compatibleProperties[key] = compatibleValue || value;
+      if (compatibleValue) convertedKeys.push(key);
+    }
+    return { properties: compatibleProperties, convertedKeys };
+  };
   const myWallpaperIsColorArrayCompatibilityError = function(error) {
     const message = myWallpaperPropertyErrorMessage(error).toLowerCase();
     return message.includes('.push') || message.includes('push is not a function');
@@ -352,12 +364,15 @@ let webCompatibilityScriptHostBridge = #"""
       }
       if (!isInitializationError) {
         if (myWallpaperIsColorArrayCompatibilityError(error)) {
-          const isolatedResult = myWallpaperApplyPropertiesIndividually(
-            safeProperties,
+          const compatibleBag = myWallpaperColorArrayCompatibleBag(safeProperties);
+          const compatibleResult = myWallpaperInvokeUserPropertyCallback(
             listener,
             userPropertyCallback,
-            signature
+            compatibleBag.properties
           );
+          for (const key of compatibleBag.convertedKeys) {
+            hostLogger.post('properties.compat.color-array', key);
+          }
           window.__myWallpaperLastAppliedUserPropertySignature = signature;
           window.__myWallpaperLastAppliedUserPropertyCallback = userPropertyCallback;
           state.pendingProperties = null;
@@ -368,10 +383,14 @@ let webCompatibilityScriptHostBridge = #"""
               detail: safeProperties
             }));
           } catch (_) {}
-          hostLogger.post(
-            isolatedResult.skippedCount > 0 ? 'properties.applied.partial' : 'properties.applied.compatible',
-            `applied=${isolatedResult.appliedCount} skipped=${isolatedResult.skippedCount}`
-          );
+          if (compatibleResult.completed === true) {
+            hostLogger.post('properties.applied.compatible', `colors=${compatibleBag.convertedKeys.length}`);
+          } else {
+            const compatibleError = compatibleResult.error;
+            const message = myWallpaperPropertyErrorMessage(compatibleError) || compatibleError;
+            hostLogger.post('properties.error', message);
+            myWallpaperDispatchResizeAfterPropertyError(message);
+          }
           return;
         }
         window.__myWallpaperLastAppliedUserPropertySignature = signature;
