@@ -126,7 +126,14 @@ extension SteamWorkshopService {
 
     static func webContentUsesCustomSchemeSensitiveWebGL(_ content: String) -> Bool {
         let lowered = content.lowercased()
-        return lowered.contains("pixi.")
+        let usesWebGLContext = lowered.contains("getcontext(\"webgl")
+            || lowered.contains("getcontext('webgl")
+            || lowered.contains("webgl2renderingcontext")
+        let uploadsExternalTexture = lowered.contains("teximage2d")
+            || lowered.contains("createimagebitmap")
+            || lowered.contains("texture.from(")
+        return (usesWebGLContext && uploadsExternalTexture)
+            || lowered.contains("pixi.")
             || lowered.contains("pixi.min.js")
             || lowered.contains("pixi-live2d")
             || lowered.contains("live2d")
