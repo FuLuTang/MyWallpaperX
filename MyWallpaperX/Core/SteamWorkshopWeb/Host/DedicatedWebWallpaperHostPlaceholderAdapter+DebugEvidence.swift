@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import ScreenCaptureKit
 import WebKit
 
 extension DedicatedWebWallpaperHostPlaceholderAdapter {
@@ -215,6 +216,71 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
                 source: "webview",
                 outputDirectory: outputDirectory
             )
+            self.captureDebugWindowSnapshot(
+                from: webView,
+                screenID: screenID,
+                reason: reason,
+                outputDirectory: outputDirectory
+            )
+        }
+    }
+
+    private func captureDebugWindowSnapshot(
+        from webView: WKWebView,
+        screenID: CGDirectDisplayID,
+        reason: String,
+        outputDirectory: URL
+    ) {
+        guard let windowID = webView.window.map({ CGWindowID($0.windowNumber) }) else { return }
+        SCShareableContent.getCurrentProcessShareableContent { [weak self, weak webView] content, error in
+            guard let self, let webView else { return }
+            guard let window = content?.windows.first(where: { $0.windowID == windowID }) else {
+                if let error {
+                    DispatchQueue.main.async {
+                        self.recordDiagnostic(
+                            type: "evidence.visual.window.error",
+                            severity: .warning,
+                            message: error.localizedDescription,
+                            screenID: screenID,
+                            url: webView.url?.absoluteString
+                        )
+                    }
+                }
+                return
+            }
+            let maximumDimension = 1024.0
+            let scale = min(1, maximumDimension / max(window.frame.width, window.frame.height))
+            let configuration = SCStreamConfiguration()
+            configuration.width = max(1, Int(window.frame.width * scale))
+            configuration.height = max(1, Int(window.frame.height * scale))
+            configuration.showsCursor = false
+            let filter = SCContentFilter(desktopIndependentWindow: window)
+            SCScreenshotManager.captureImage(
+                contentFilter: filter,
+                configuration: configuration
+            ) { [weak self, weak webView] image, error in
+                DispatchQueue.main.async {
+                    guard let self, let webView else { return }
+                    if let image {
+                        self.persistDebugSnapshot(
+                            NSBitmapImageRep(cgImage: image),
+                            from: webView,
+                            screenID: screenID,
+                            reason: reason,
+                            source: "window",
+                            outputDirectory: outputDirectory
+                        )
+                    } else if let error {
+                        self.recordDiagnostic(
+                            type: "evidence.visual.window.error",
+                            severity: .warning,
+                            message: error.localizedDescription,
+                            screenID: screenID,
+                            url: webView.url?.absoluteString
+                        )
+                    }
+                }
+            }
         }
     }
 
@@ -225,21 +291,56 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
         outputDirectory: URL
     ) {
         let script = #"""
-        const canvases = Array.from(document.querySelectorAll('canvas'))
-          .filter((canvas) => canvas.width > 1 && canvas.height > 1)
-          .sort((left, right) => (right.width * right.height) - (left.width * left.height));
-        const source = canvases[0];
-        if (!source) return null;
-        await new Promise((resolve) => requestAnimationFrame(() => resolve()));
+        const visibleCanvases = () => Array.from(document.querySelectorAll('canvas'))
+          .filter((canvas) => {
+            const style = getComputedStyle(canvas);
+            const rect = canvas.getBoundingClientRect();
+            return canvas.width > 1 && canvas.height > 1
+              && rect.width > 1 && rect.height > 1
+              && style.display !== 'none' && style.visibility !== 'hidden'
+              && Number(style.opacity || 1) > 0;
+          })
+          .sort((left, right) => {
+            const leftRect = left.getBoundingClientRect();
+            const rightRect = right.getBoundingClientRect();
+            return (rightRect.width * rightRect.height) - (leftRect.width * leftRect.height);
+          });
         const maximumDimension = 1024;
-        const scale = Math.min(1, maximumDimension / Math.max(source.width, source.height));
-        const capture = document.createElement('canvas');
-        capture.width = Math.max(1, Math.round(source.width * scale));
-        capture.height = Math.max(1, Math.round(source.height * scale));
-        const context = capture.getContext('2d', { alpha: false });
-        if (!context) return null;
-        context.drawImage(source, 0, 0, capture.width, capture.height);
-        return capture.toDataURL('image/png');
+        let bestScore = 0;
+        let bestDataURL = null;
+        for (let frame = 0; frame < 4; frame += 1) {
+          await new Promise((resolve) => requestAnimationFrame(() => resolve()));
+          for (const source of visibleCanvases()) {
+            const scale = Math.min(1, maximumDimension / Math.max(source.width, source.height));
+            const capture = document.createElement('canvas');
+            capture.width = Math.max(1, Math.round(source.width * scale));
+            capture.height = Math.max(1, Math.round(source.height * scale));
+            const context = capture.getContext('2d', { alpha: false, willReadFrequently: true });
+            if (!context) continue;
+            context.drawImage(source, 0, 0, capture.width, capture.height);
+            const pixels = context.getImageData(0, 0, capture.width, capture.height).data;
+            const pixelStride = Math.max(4, Math.floor((pixels.length / 4) / 4096) * 4);
+            let count = 0;
+            let nonBlack = 0;
+            let sum = 0;
+            let squareSum = 0;
+            for (let index = 0; index < pixels.length; index += pixelStride) {
+              const luma = (pixels[index] * 0.2126 + pixels[index + 1] * 0.7152 + pixels[index + 2] * 0.0722) / 255;
+              count += 1;
+              sum += luma;
+              squareSum += luma * luma;
+              if (luma >= 0.01) nonBlack += 1;
+            }
+            const average = count ? sum / count : 0;
+            const variance = count ? Math.max(0, squareSum / count - average * average) : 0;
+            const score = (count ? nonBlack / count : 0) + Math.sqrt(variance) * 4;
+            if (score > bestScore) {
+              bestScore = score;
+              bestDataURL = capture.toDataURL('image/png');
+            }
+          }
+        }
+        return bestDataURL;
         """#
         webView.callAsyncJavaScript(script, arguments: [:], in: nil, in: .page) { [weak self, weak webView] result in
             guard let self, let webView else { return }
@@ -342,9 +443,12 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
                 outputDirectory: outputDirectory
             )
         }
-        if reason == "ready" {
-            debugSnapshotLumaSamplesByScreen[screenID] = lumaSamples
-        } else if let readySamples = debugSnapshotLumaSamplesByScreen[screenID],
+        let hasVisibleContent = metrics.nonBlackRatio >= 0.00005 || metrics.lumaStdDev >= 0.0005
+        if reason == "ready", hasVisibleContent {
+            debugSnapshotLumaSamplesByScreen[screenID, default: [:]][source] = lumaSamples
+        } else if reason != "ready",
+                  hasVisibleContent,
+                  let readySamples = debugSnapshotLumaSamplesByScreen[screenID]?[source],
                   let motion = Self.snapshotMotionMetrics(from: readySamples, to: lumaSamples) {
             recordDiagnostic(
                 type: "evidence.motion",
