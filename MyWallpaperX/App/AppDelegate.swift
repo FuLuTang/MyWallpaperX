@@ -17,7 +17,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
  }
 
  private var runsIsolatedWebWorkshopSample: Bool {
- ProcessInfo.processInfo.arguments.contains("--mwx-debug-run-web-workshop-id")
+ let arguments = ProcessInfo.processInfo.arguments
+ return arguments.contains("--mwx-debug-run-web-workshop-id")
+ || arguments.contains("--mwx-debug-web-lifecycle-sequence")
  }
 
  private var hasUsableDebugWorkshopRoot: Bool {
@@ -260,6 +262,39 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
  private func scheduleDebugWebWorkshopRuntimeIfRequested() {
  let arguments = ProcessInfo.processInfo.arguments
+ if let sequenceIndex = arguments.firstIndex(of: "--mwx-debug-web-lifecycle-sequence"),
+    arguments.indices.contains(sequenceIndex + 1) {
+ let itemIDs = arguments[sequenceIndex + 1]
+ .split(separator: ",")
+ .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+ .filter { !$0.isEmpty }
+ guard itemIDs.count >= 2 else {
+ NSLog("MWX DEBUG LIFECYCLE: precondition=at-least-two-items-required")
+ return
+ }
+ DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+ guard self.hasUsableDebugWorkshopRoot else {
+ NSLog("MWX DEBUG LIFECYCLE: precondition=isolated-root-required")
+ return
+ }
+ let service = SteamWorkshopService.shared
+ NSLog("MWX DEBUG PLAY: using workshop root %@", service.libraryRootURL.path)
+ service.reloadInstalledItems()
+ for (index, itemID) in itemIDs.enumerated() {
+ DispatchQueue.main.asyncAfter(deadline: .now() + Double(index) * 4.0) {
+ self.launchDebugWebWorkshopItem(itemID, using: service)
+ }
+ }
+ DispatchQueue.main.asyncAfter(deadline: .now() + Double(itemIDs.count) * 4.0) {
+ WallpaperEngine.shared.stopPlayback()
+ NSLog("MWX DEBUG LIFECYCLE: stop requested")
+ DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+ NSLog("MWX DEBUG LIFECYCLE: completed")
+ }
+ }
+ }
+ return
+ }
  guard let flagIndex = arguments.firstIndex(of: "--mwx-debug-run-web-workshop-id"),
        arguments.indices.contains(flagIndex + 1) else { return }
  let itemID = arguments[flagIndex + 1]
@@ -272,6 +307,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
  let service = SteamWorkshopService.shared
  NSLog("MWX DEBUG PLAY: using workshop root %@", service.libraryRootURL.path)
  service.reloadInstalledItems()
+ self.launchDebugWebWorkshopItem(itemID, using: service)
+ }
+ }
+
+ private func launchDebugWebWorkshopItem(_ itemID: String, using service: SteamWorkshopService) {
  guard let record = service.latestDownloadRecord(for: itemID) else {
  NSLog("MWX DEBUG PLAY: workshop item %@ not found", itemID)
  return
@@ -303,7 +343,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
  runtimeProfile: service.recommendedWebRuntimeProfile(for: record),
  multiDisplayEnabled: true
  )
- }
  }
 #else
  private func scheduleDebugWorkshopPlaybackIfRequested() {}

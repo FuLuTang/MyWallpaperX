@@ -103,6 +103,18 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
         for screenID in Array(surfaces.keys) {
             removeSurface(for: screenID)
         }
+        for server in loopbackServers.values {
+            server.stop()
+        }
+        loopbackServers.removeAll()
+        let activeMonitorCount = (localMouseMonitor == nil ? 0 : 1) + (globalMouseMonitor == nil ? 0 : 1)
+        recordDiagnostic(
+            type: "lifecycle.teardown",
+            severity: .info,
+            message: "surfaces=\(surfaces.count) loopbacks=\(loopbackServers.count) watchers=\(directoryWatchersByProperty.count) monitors=\(activeMonitorCount) pointerTimer=\(pointerPollingTimer == nil ? 0 : 1)",
+            screenID: nil,
+            url: nil
+        )
     }
 
     func removeSurface(for screenID: CGDirectDisplayID) {
@@ -110,7 +122,16 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
         resetWebContentRecoveryState(for: screenID)
         resetInteractionState(for: screenID)
         surfaces.removeValue(forKey: screenID)
-        loopbackServers.removeValue(forKey: screenID)?.stop()
+        if let loopbackServer = loopbackServers.removeValue(forKey: screenID) {
+            recordDiagnostic(
+                type: "loopback.stopped",
+                severity: .info,
+                message: "screen=\(screenID)",
+                screenID: screenID,
+                url: nil
+            )
+            loopbackServer.stop()
+        }
         readyScreenIDs.remove(screenID)
         surface.webView.navigationDelegate = nil
         surface.webView.stopLoading()
@@ -122,6 +143,16 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
         surface.webView.removeFromSuperview()
         surface.window.orderOut(nil)
         surface.window.close()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self, weak webView = surface.webView] in
+            guard let self else { return }
+            self.recordDiagnostic(
+                type: webView == nil ? "lifecycle.surface.released" : "lifecycle.surface.retained",
+                severity: webView == nil ? .info : .warning,
+                message: "screen=\(screenID)",
+                screenID: screenID,
+                url: nil
+            )
+        }
     }
 
     func resetInteractionState(for screenID: CGDirectDisplayID) {

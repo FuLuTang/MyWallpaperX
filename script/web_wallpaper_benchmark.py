@@ -1139,6 +1139,146 @@ def load_samples_from_args(args: argparse.Namespace) -> tuple[list[Sample], dict
     return unique_samples, matrix_config
 
 
+def run_lifecycle_sequence(
+    args: argparse.Namespace,
+    app_binary: Path,
+    runtime_workshop_root: Path,
+    runtime_home: Path,
+    output_dir: Path,
+) -> int:
+    if args.ids or args.id_file or args.matrix:
+        print("--lifecycle-sequence cannot be combined with --ids, --id-file, or --matrix", file=sys.stderr)
+        return 2
+    item_ids = [value.strip() for value in args.lifecycle_sequence.split(",") if value.strip()]
+    if len(item_ids) < 2:
+        print("--lifecycle-sequence requires at least two Workshop IDs", file=sys.stderr)
+        return 2
+
+    log_path = output_dir / "lifecycle.log"
+    environment = os.environ.copy()
+    lifecycle_home = runtime_home / "lifecycle"
+    lifecycle_home.mkdir(parents=True, exist_ok=True)
+    environment["HOME"] = str(lifecycle_home)
+    environment["CFFIXED_USER_HOME"] = str(lifecycle_home)
+    command = [
+        str(app_binary),
+        "--mwx-debug-suppress-main-window",
+        "--mwx-log-web-diagnostics",
+        "--mwx-debug-web-lifecycle-sequence",
+        ",".join(item_ids),
+        "--mwx-debug-workshop-root",
+        str(runtime_workshop_root),
+    ]
+    duration = max(args.duration, len(item_ids) * 4.0 + 4.0)
+    started = time.monotonic()
+    with log_path.open("w", encoding="utf-8") as handle:
+        log_process = start_unified_log_capture(handle)
+        process: subprocess.Popen[Any] | None = None
+        exit_code: int | None = None
+        try:
+            time.sleep(0.25)
+            process = subprocess.Popen(
+                command,
+                cwd=REPO_ROOT,
+                stdout=handle,
+                stderr=subprocess.STDOUT,
+                env=environment,
+                start_new_session=True,
+            )
+            time.sleep(duration)
+        finally:
+            if process is not None:
+                exit_code = terminate_process(process)
+            terminate_process(log_process)
+
+    events, _ = parse_log(log_path)
+    log_text = log_path.read_text(encoding="utf-8", errors="replace")
+    launched_ids = DEBUG_LAUNCH_RE.findall(log_text)
+    launched_ids = [match[0] for match in launched_ids]
+    ready_ids = re.findall(r"MWX WEB DIAG record=(\S+).*?type=host\.ready\b", log_text)
+    teardown_events = [event for event in events if event.type == "lifecycle.teardown"]
+    zero_teardown_events = [
+        event
+        for event in teardown_events
+        if all(
+            token in event.message
+            for token in ("surfaces=0", "loopbacks=0", "watchers=0", "monitors=0", "pointerTimer=0")
+        )
+    ]
+    released_count = sum(event.type == "lifecycle.surface.released" for event in events)
+    retained_count = sum(event.type == "lifecycle.surface.retained" for event in events)
+    loopback_start_count = sum(
+        event.type == "runtime.origin" and "httpLoopback" in event.message for event in events
+    )
+    loopback_stop_count = sum(event.type == "loopback.stopped" for event in events)
+    stop_events = [event for event in events if event.type == "lifecycle.stop"]
+    valid_stop = any(
+        all(token in event.message for token in ("phase=idle", "surfaces=0", "loopbacks=0", "observers=0"))
+        for event in stop_events
+    )
+
+    failures: list[str] = []
+    if launched_ids != item_ids:
+        failures.append(f"launch order {launched_ids} did not match {item_ids}")
+    missing_ready = [item_id for item_id in item_ids if item_id not in ready_ids]
+    if missing_ready:
+        failures.append(f"missing host.ready for {', '.join(missing_ready)}")
+    if len(zero_teardown_events) != len(teardown_events) or not teardown_events:
+        failures.append("one or more teardown events did not report zero runtime state")
+    if released_count < len(item_ids):
+        failures.append(f"released {released_count} Web surfaces, expected at least {len(item_ids)}")
+    if retained_count:
+        failures.append(f"{retained_count} Web surface(s) remained retained")
+    if loopback_stop_count < loopback_start_count:
+        failures.append(
+            f"stopped {loopback_stop_count} loopback server(s), expected {loopback_start_count}"
+        )
+    if not valid_stop:
+        failures.append("final lifecycle.stop did not report an idle zero state")
+    if "MWX DEBUG LIFECYCLE: completed" not in log_text:
+        failures.append("debug lifecycle sequence did not complete")
+
+    report = {
+        "schema_version": 1,
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "passed": not failures,
+        "sequence": item_ids,
+        "launched": launched_ids,
+        "ready": ready_ids,
+        "duration_seconds": round(time.monotonic() - started, 2),
+        "process_exit_code": exit_code,
+        "teardown_count": len(teardown_events),
+        "released_surface_count": released_count,
+        "retained_surface_count": retained_count,
+        "loopback_start_count": loopback_start_count,
+        "loopback_stop_count": loopback_stop_count,
+        "event_counts": count_by_type(events),
+        "failures": failures,
+        "log_path": str(log_path),
+    }
+    json_path = output_dir / "lifecycle-report.json"
+    json_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    markdown_lines = [
+        "# MyWallpaperX Web Lifecycle Benchmark",
+        "",
+        f"- Result: {'PASS' if report['passed'] else 'FAIL'}",
+        f"- Sequence: {' -> '.join(item_ids)} -> stop",
+        f"- Ready: {', '.join(ready_ids) or '-'}",
+        f"- Teardowns: {len(teardown_events)}",
+        f"- Released surfaces: {released_count}",
+        f"- Retained surfaces: {retained_count}",
+        f"- Loopback start/stop: {loopback_start_count}/{loopback_stop_count}",
+    ]
+    if failures:
+        markdown_lines.extend(["", "## Failures", ""] + [f"- {failure}" for failure in failures])
+    markdown_path = output_dir / "lifecycle-report.md"
+    markdown_path.write_text("\n".join(markdown_lines) + "\n", encoding="utf-8")
+    print(f"Lifecycle report JSON: {json_path}")
+    print(f"Lifecycle report Markdown: {markdown_path}")
+    print(f"Lifecycle result: {'PASS' if report['passed'] else 'FAIL'}")
+    return 0 if report["passed"] else 1
+
+
 def run_benchmark(args: argparse.Namespace) -> int:
     output_dir = make_output_dir(Path(args.output_dir) if args.output_dir else None)
     build_log = output_dir / "build.log"
@@ -1163,6 +1303,15 @@ def run_benchmark(args: argparse.Namespace) -> int:
         print(f"App binary not found: {app_binary}", file=sys.stderr)
         print("Run with --build, or pass --app /path/to/MyWallpaperX.", file=sys.stderr)
         return 2
+
+    if args.lifecycle_sequence:
+        return run_lifecycle_sequence(
+            args,
+            app_binary=app_binary,
+            runtime_workshop_root=runtime_workshop_root,
+            runtime_home=runtime_home,
+            output_dir=output_dir,
+        )
 
     try:
         samples, matrix_config = load_samples_from_args(args)
@@ -1322,6 +1471,7 @@ def make_parser() -> argparse.ArgumentParser:
     parser.add_argument("--ids", help="Comma-separated Workshop IDs to benchmark.")
     parser.add_argument("--id-file", help="File containing one Workshop ID per line.")
     parser.add_argument("--matrix", help="JSON sample matrix with per-sample and batch regression gates.")
+    parser.add_argument("--lifecycle-sequence", help="Comma-separated Workshop IDs to launch in order, then stop and verify release.")
     parser.add_argument("--limit", type=int, help="Limit discovered samples.")
     parser.add_argument("--duration", type=float, default=10.0, help="Seconds to run each sample.")
     parser.add_argument("--screenshot", action="store_true", help="Capture a desktop screenshot near the end of each run.")

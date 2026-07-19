@@ -261,9 +261,16 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
             case .stop:
                 teardownHostSurfaces()
                 removeLifecycleObservers()
-                currentRequest = nil
                 phase = .idle
                 endHostActivity()
+                recordDiagnostic(
+                    type: "lifecycle.stop",
+                    severity: .info,
+                    message: "phase=\(phase.rawValue) surfaces=\(surfaces.count) loopbacks=\(loopbackServers.count) observers=\(lifecycleObservers.count)",
+                    screenID: nil,
+                    url: nil
+                )
+                currentRequest = nil
                 eventHandler?(.stopped)
             case .pushAudioSpectrum:
                 break
