@@ -12,7 +12,8 @@ let webCompatibilityScriptBootstrapResourceRewriting = #"""
       normalizedValue === 'null' ||
       normalizedValue === 'undefined' ||
       normalizedValue === '(null)' ||
-      normalizedValue === 'about:blank'
+      normalizedValue === 'about:blank' ||
+      normalizedValue === 'file:///'
     ) {
       return '';
     }
@@ -64,6 +65,7 @@ let webCompatibilityScriptBootstrapResourceRewriting = #"""
       normalizedValue === 'undefined' ||
       normalizedValue === '(null)' ||
       normalizedValue === 'about:blank' ||
+      normalizedValue === 'file:///' ||
       normalizedValue === 'index.html'
     ) {
       return true;
