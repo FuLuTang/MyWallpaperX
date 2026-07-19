@@ -10,9 +10,9 @@
 
 Web 已经具备可持续回归的正式运行主链。文件属性类型推断、强 DOM/视觉/交互证据、纹理 WebGL 的 loopback 路由、旧式颜色数组兼容、空 `file:///` 占位符处理、固定样本矩阵和切换/停止释放门禁均已落地。
 
-当前固定矩阵包含 10 个真实 Workshop 样本，覆盖 file/directory、dependency、媒体、Canvas、WebGL/WebGL2、Live2D、WASM、iframe、持久化存储和指针输入。最新隔离运行结果为 **9 个 A、1 个 B，平均 97.0，证据覆盖 92.8%，矩阵门禁通过**。三段生命周期序列 `loopback -> loopback -> custom scheme -> stop` 也已通过：3/3 `host.ready`、3/3 旧 `WKWebView` 释放、2/2 loopback 停止、最终宿主状态为 0。
+当前固定矩阵包含 10 个真实 Workshop 样本，覆盖 file/directory、dependency、媒体、Canvas、WebGL/WebGL2、Live2D、WASM、iframe、持久化存储和指针输入。最新隔离运行结果为 **9 个 A、1 个 B，平均 97.0，证据覆盖 92.8%，矩阵门禁通过**。当前本机 34 个 Web 样本也已完成一次全量隔离扫描：**34/34 可运行，32 个 A、2 个 B，按当前归因规则重评分平均 97.3、证据覆盖 91.8%**，没有 `host_runtime`、`resource_mapping`、`interaction` 或 `visual_output` 短板。两个 B 是同系列样本脚本访问 6 个未定义变量，宿主已逐属性隔离失败并继续渲染。三段生命周期序列 `loopback -> loopback -> custom scheme -> stop` 也已通过：3/3 `host.ready`、3/3 旧 `WKWebView` 释放、2/2 loopback 停止、最终宿主状态为 0。
 
-Web 目前没有已确认的宿主 P0 阻断，但仍不能称为发布级“最终完全闭环”。尚缺系统生命周期矩阵、性能和长期运行预算、全样本分层回归，以及发布流程接入。按本文八项能力门重算，当前工程成熟度约为 **85/100**。这个分数不是 Workshop 成功率，也不是剩余工时百分比；剩余工作集中在 4 个验证和产品化工作包，而不是继续堆兼容脚本。
+Web 目前没有已确认的宿主 P0 阻断，当前样本集的运行兼容主链可以视为闭环，但仍不能称为发布级“最终完全闭环”。尚缺系统生命周期矩阵、性能和长期运行预算、持续维护的全样本基线、真实文件授权 UI 回归，以及发布流程接入。按本文八项能力门重算，当前工程成熟度约为 **86/100**。剩余 14 分不是 14% 兼容代码或剩余工时；工作主要集中在 4 个验证和产品化工作包，而不是继续堆兼容脚本。
 
 ### Scene
 
@@ -28,7 +28,7 @@ Scene 已建立清晰的独立模块、PKGV 读取、受控缓存、typed interp
 2. [Web 壁纸运行能力评测标准](../web/web-wallpaper-benchmark-standard.md)。
 3. [Web 样本 handoff](../web/regression/WEB_SAMPLE_HANDOFF_2026-06-19.md) 中尚未关闭的问题。
 4. [Scene Runtime 技术设计](../scene/scene-runtime-design-2026-05-15.md) 中声明的当前实现边界。
-5. 2026-07-20 对当前 Debug App 的 10 项固定矩阵和三段生命周期隔离运行结果。
+5. 2026-07-20 对当前 Debug App 的 10 项固定矩阵、34 项全量扫描和三段生命周期隔离运行结果。
 
 本次 Web 固定矩阵结果：
 
@@ -45,12 +45,22 @@ Scene 已建立清晰的独立模块、PKGV 读取、受控缓存、typed interp
 | `3757331413` | WebGL、file、颜色、指针 | 98 / A | 90.3% | 通过 |
 | `3762337744` | WebGL、Canvas、指针 | 98 / A | 90.3% | 通过 |
 
+当前 34 样本全量扫描的例外项：
+
+| 类别 | 样本 | 当前结论 |
+| --- | --- | --- |
+| 样本脚本属性错误 | `3700131876`、`3700928191` | 各有 6 个属性访问未定义变量；宿主记录 `properties.applied.partial`，其余 35 个属性、画面和交互继续工作 |
+| 样本缺媒体 | `2731942107`、`2997985023`、`884307090` | 包内声明的音频文件不存在；归为 `sample_resource` / `media_audio`，不是宿主映射失败 |
+| 样本缺图片或可选资源 | `3746833443`、`3759146455` | 请求文件不在样本包内；当前归因规则按 `reason=missing` 归为 `sample_resource` |
+| 稀疏暗色 WebGL | `3765286189` | OLED 黑底星空已用更密集抽样、峰值亮度和对比度确认有效，98 / A；纯黑、纯白和单点噪声反例仍失败 |
+
 本次没有得到以下证据：
 
-- 固定矩阵不是当前 34 个 Web 样本的全量成功率；未入矩阵样本仍需按改动影响面抽样或全量运行。
+- 34 样本结果只代表 2026-07-20 当前本机样本快照，不代表所有公开 Workshop Web 壁纸，也不是未来新增样本的自动成功率。
+- 全量扫描已有首次基线，但还没有固定清单、能力标签、允许例外和发布阻断规则；目前不能把一次扫描等同于持续发布门。
 - 当前 `~/Movies/MyWallpaperX/创意工坊/Scene` 为空，没有 Scene 真实样本渲染对照。
 - 没有 30 分钟以上交互运行、2 小时 soak、休眠唤醒、屏幕热插拔、内存压力或发布包回归。
-- 因而本文不能给出真实 Workshop Web/Scene 成功率。
+- 因而本文能说明当前 34 个 Web 样本的结果，但不能给出整个 Workshop Web 或 Scene 的总体成功率。
 
 ## 3. Web 当前实现状况
 
@@ -109,13 +119,13 @@ Scene 已建立清晰的独立模块、PKGV 读取、受控缓存、typed interp
 
 #### 已关闭：视觉与交互强证据
 
-benchmark 现在要求原生 `WKWebView.takeSnapshot`、像素统计、DOM 状态和 pointer/click/drag/wheel 注入。纯黑或纯白均会形成 `visual_output` 短板并把等级上限压到 C；固定矩阵禁止 `interaction` 和 `visual_output` 短板。
+benchmark 现在要求原生 `WKWebView.takeSnapshot`、像素统计、DOM 状态和 pointer/click/drag/wheel 注入。普通画面按覆盖、方差和色彩判断；OLED 星空等稀疏暗色画面还要求多个亮点、对比度和峰值亮度。纯黑、纯白和单点噪声均形成 `visual_output` 短板并把等级上限压到 C；固定矩阵禁止 `interaction` 和 `visual_output` 短板。
 
 #### 已关闭：代表样本矩阵与单样本门禁
 
 固定矩阵由 [web_wallpaper_sample_matrix.json](../../script/web_wallpaper_sample_matrix.json) 定义。每个样本有能力标签、最低等级和最低 coverage，批次还限制平均分、平均 coverage 和关键短板。矩阵自带 12 秒最低观察窗，避免 Live2D 等延迟首帧样本被过早终止。
 
-当前剩余风险是代表集仍不等于全量集，且 Service Worker、Shadow DOM、多屏 scale factor、外部网络变化等能力没有形成独立样本门。
+当前 34 样本已完成一次全量扫描，但固定矩阵仍是公共 runtime 改动的快速门。剩余风险是全量清单尚未固化为持续基线，且 Service Worker、Shadow DOM、多屏 scale factor、外部网络变化等能力没有形成独立样本门。
 
 #### 部分关闭：切换、停止和资源释放
 
@@ -135,9 +145,9 @@ benchmark 现在要求原生 `WKWebView.takeSnapshot`、像素统计、DOM 状�
 
 验收标准：建立单屏和双屏基线；暂停后 CPU/GPU 明显下降；30 分钟和 2 小时曲线无单调增长；运行中 WebContent 恢复次数受控；超预算报告必须包含样本、profile 和进程级数据。
 
-#### P1：全样本分层回归尚未形成发布门
+#### P1：全样本首次基线已建立，尚未形成持续发布门
 
-代表矩阵用于每次公共 runtime 改动。涉及 parser、origin、资源、属性或缓存签名的改动，还应对当前全部 Web 样本执行分层扫描，至少保留启动/导航/资源错误和视觉结果。不能用 97.0 的平均分替代全量风险判断。
+2026-07-20 已对当前 34 个 Web 样本执行分层扫描，并保留启动、导航、资源、属性、交互和视觉证据。下一步不是重复手工全量运行，而是固化样本清单、能力标签、已知样本例外、baseline 对比和失败退出条件。固定矩阵用于每次公共 runtime 改动；涉及 parser、origin、资源、属性或缓存签名的改动，以及发布候选版本，再运行全量门。不能用 97.0 或 97.3 的平均分替代关键短板判断。
 
 #### P2：正式宿主契约和发布流程尚未收口
 
@@ -151,34 +161,34 @@ benchmark 现在要求原生 `WKWebView.takeSnapshot`、像素统计、DOM 状�
 
 | 能力门 | 权重 | 当前得分 | 说明 |
 | --- | ---: | ---: | --- |
-| 启动、分类与资源主链 | 20 | 19 | 10 样本通过；双 origin、资源隔离和纹理 WebGL 路由已验证 |
+| 启动、分类与资源主链 | 20 | 19 | 当前 34 样本可运行；双 origin、资源隔离和纹理 WebGL 路由已验证 |
 | 属性与持久化 | 15 | 14 | file/directory、颜色和错误隔离已闭环；真实选择器跨重启仍是人工回归 |
 | 媒体与音频 | 10 | 8 | API 和系统音频路径已实现；设备切换和缺失媒体降级验证不足 |
 | 输入与交互 | 10 | 9 | 原生指针转发和自动 pointer/click/drag/wheel 证据已进入门禁 |
 | 多屏与生命周期 | 15 | 13 | 切换/stop/释放门禁通过；系统状态和屏幕热插拔矩阵未闭环 |
 | 稳定性与性能 | 10 | 6 | 有恢复和释放证据；无正式 CPU/GPU/内存/功耗与 soak 预算 |
-| 诊断与自动化验证 | 15 | 14 | 强视觉、DOM、交互、矩阵和生命周期报告已具备 |
+| 诊断与自动化验证 | 15 | 15 | 强视觉、DOM、交互、矩阵、全量扫描、归因自测和生命周期报告已具备 |
 | 发布支持与故障降级 | 5 | 2 | 尚未形成固定发布门、支持矩阵和失败降级标准 |
-| **合计** | **100** | **85** | **运行主链已闭环，发布级稳定性与流程仍未闭环** |
+| **合计** | **100** | **86** | **当前样本运行主链已闭环，发布级稳定性与流程仍未闭环** |
 
 ### 4.2 剩余工作量的正确理解
 
-剩余不是“再补 15% 兼容代码”，而是完成以下 4 个工作包：
+剩余不是“再补 14% 兼容代码”，而是完成以下 4 个工作包：
 
 1. **系统生命周期与异常恢复**：睡眠、锁屏、Space、屏幕热插拔、runtime 互切、网络/音频设备变化和连续崩溃。
 2. **性能与长期运行门禁**：首帧、CPU/GPU、内存、功耗、缓存增长、30 分钟交互与 2 小时 soak。
-3. **全样本与产品 UI 回归**：当前全部 Web 样本分层扫描，以及真实文件授权的选择、切换、重启和清除。
+3. **持续全样本基线与产品 UI 回归**：首次 34 样本扫描已完成；还需固化清单、能力标签、允许例外和发布 gate，并完成真实文件授权的选择、切换、重启和清除。
 4. **正式宿主与发布门**：收口 placeholder/harness 边界，把矩阵、生命周期、性能和 UI 回归纳入发布验收。
 
-工作包 1、2 完成前，不能称为系统稳定性闭环；工作包 3 完成前，不能把固定代表集成绩解释为全量兼容率；工作包 4 完成前，不能称为发布流程闭环。
+工作包 1、2 完成前，不能称为系统稳定性闭环；工作包 3 完成前，当前 34 样本结果仍只是一次可信快照，不是持续兼容承诺；工作包 4 完成前，不能称为发布流程闭环。
 
 ### 4.3 推荐完成顺序
 
 ```text
-已完成：文件属性 -> 强证据 -> 固定矩阵 -> Web 切换/stop 释放
+已完成：文件属性 -> 强证据 -> 固定矩阵 -> Web 切换/stop 释放 -> 当前 34 样本首次全量扫描
 下一步：系统生命周期/异常恢复
   -> 性能、泄漏和功耗预算
-  -> 全样本与真实文件授权回归
+  -> 持续全样本基线与真实文件授权回归
   -> 正式宿主命名与发布门禁
 ```
 
@@ -191,7 +201,7 @@ benchmark 现在要求原生 `WKWebView.takeSnapshot`、像素统计、DOM 状�
 ```bash
 python3 script/web_wallpaper_benchmark.py \
   --app .codex/DerivedData/Build/Products/Debug/MyWallpaperX.app/Contents/MacOS/MyWallpaperX \
-  --workshop-root <isolated-workshop-root> \
+  --workshop-root <isolated-workshop-root>/Web \
   --runtime-workshop-root <isolated-workshop-root> \
   --runtime-home <temporary-home> \
   --matrix script/web_wallpaper_sample_matrix.json \
@@ -203,10 +213,22 @@ python3 script/web_wallpaper_benchmark.py \
 ```bash
 python3 script/web_wallpaper_benchmark.py \
   --app .codex/DerivedData/Build/Products/Debug/MyWallpaperX.app/Contents/MacOS/MyWallpaperX \
-  --workshop-root <isolated-workshop-root> \
+  --workshop-root <isolated-workshop-root>/Web \
   --runtime-workshop-root <isolated-workshop-root> \
   --runtime-home <temporary-home> \
   --lifecycle-sequence 3700131876,3726135866,2675660496
+```
+
+当前全部样本扫描：
+
+```bash
+python3 script/web_wallpaper_benchmark.py \
+  --app .codex/DerivedData/Build/Products/Debug/MyWallpaperX.app/Contents/MacOS/MyWallpaperX \
+  --workshop-root <isolated-workshop-root>/Web \
+  --runtime-workshop-root <isolated-workshop-root> \
+  --runtime-home <temporary-home> \
+  --duration 12 \
+  --screenshot
 ```
 
 `<isolated-workshop-root>` 必须是只用于测试的副本，包含 `Web/<id>` 和依赖目录；不得把真实 `~/Movies/MyWallpaperX/创意工坊` 直接作为 runtime root。
