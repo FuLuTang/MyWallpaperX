@@ -197,8 +197,7 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
             }
             guard let image,
                   let tiffData = image.tiffRepresentation,
-                  let bitmap = NSBitmapImageRep(data: tiffData),
-                  let pngData = bitmap.representation(using: .png, properties: [:]) else {
+                  let bitmap = NSBitmapImageRep(data: tiffData) else {
                 self.recordDiagnostic(
                     type: "evidence.visual.error",
                     severity: .error,
@@ -208,72 +207,158 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
                 )
                 return
             }
-
-            let fileURL = outputDirectory.appendingPathComponent("web-snapshot-\(screenID)-\(reason).png")
-            do {
-                try pngData.write(to: fileURL, options: .atomic)
-            } catch {
-                self.recordDiagnostic(
-                    type: "evidence.visual.error",
-                    severity: .error,
-                    message: error.localizedDescription,
-                    screenID: screenID,
-                    url: fileURL.path
-                )
-                return
-            }
-
-            let metrics = Self.snapshotMetrics(bitmap)
-            let lumaSamples = Self.snapshotLumaSamples(bitmap)
-            let message = String(
-                format: "size=%dx%d avgLuma=%.3f nonBlack=%.4f lumaStdDev=%.3f colored=%.3f white=%.3f peakLuma=%.3f path=%@",
-                bitmap.pixelsWide,
-                bitmap.pixelsHigh,
-                metrics.averageLuma,
-                metrics.nonBlackRatio,
-                metrics.lumaStdDev,
-                metrics.coloredRatio,
-                metrics.whiteRatio,
-                metrics.peakLuma,
-                fileURL.path
-            )
-            NSLog(
-                "webSnapshot[%@] size=%dx%d avgLuma=%.3f nonBlack=%.4f lumaStdDev=%.3f colored=%.3f white=%.3f peakLuma=%.3f path=%@",
-                reason,
-                bitmap.pixelsWide,
-                bitmap.pixelsHigh,
-                metrics.averageLuma,
-                metrics.nonBlackRatio,
-                metrics.lumaStdDev,
-                metrics.coloredRatio,
-                metrics.whiteRatio,
-                metrics.peakLuma,
-                fileURL.path
-            )
-            self.recordDiagnostic(
-                type: "evidence.visual",
-                severity: .info,
-                message: message,
+            self.persistDebugSnapshot(
+                bitmap,
+                from: webView,
                 screenID: screenID,
-                url: webView.url?.absoluteString
+                reason: reason,
+                source: "webview",
+                outputDirectory: outputDirectory
             )
-            if reason == "ready" {
-                self.debugSnapshotLumaSamplesByScreen[screenID] = lumaSamples
-            } else if let readySamples = self.debugSnapshotLumaSamplesByScreen[screenID],
-                      let motion = Self.snapshotMotionMetrics(from: readySamples, to: lumaSamples) {
+        }
+    }
+
+    private func captureDebugCanvasSnapshot(
+        from webView: WKWebView,
+        screenID: CGDirectDisplayID,
+        reason: String,
+        outputDirectory: URL
+    ) {
+        let script = #"""
+        const canvases = Array.from(document.querySelectorAll('canvas'))
+          .filter((canvas) => canvas.width > 1 && canvas.height > 1)
+          .sort((left, right) => (right.width * right.height) - (left.width * left.height));
+        const source = canvases[0];
+        if (!source) return null;
+        await new Promise((resolve) => requestAnimationFrame(() => resolve()));
+        const maximumDimension = 1024;
+        const scale = Math.min(1, maximumDimension / Math.max(source.width, source.height));
+        const capture = document.createElement('canvas');
+        capture.width = Math.max(1, Math.round(source.width * scale));
+        capture.height = Math.max(1, Math.round(source.height * scale));
+        const context = capture.getContext('2d', { alpha: false });
+        if (!context) return null;
+        context.drawImage(source, 0, 0, capture.width, capture.height);
+        return capture.toDataURL('image/png');
+        """#
+        webView.callAsyncJavaScript(script, arguments: [:], in: nil, in: .page) { [weak self, weak webView] result in
+            guard let self, let webView else { return }
+            switch result {
+            case let .success(value):
+                guard let dataURL = value as? String,
+                      let commaIndex = dataURL.firstIndex(of: ","),
+                      let data = Data(base64Encoded: String(dataURL[dataURL.index(after: commaIndex)...])),
+                      let bitmap = NSBitmapImageRep(data: data) else {
+                    return
+                }
+                self.persistDebugSnapshot(
+                    bitmap,
+                    from: webView,
+                    screenID: screenID,
+                    reason: reason,
+                    source: "canvas",
+                    outputDirectory: outputDirectory
+                )
+            case let .failure(error):
                 self.recordDiagnostic(
-                    type: "evidence.motion",
-                    severity: .info,
-                    message: String(
-                        format: "meanDelta=%.4f changedRatio=%.4f samples=%d",
-                        motion.meanDelta,
-                        motion.changedRatio,
-                        lumaSamples.count
-                    ),
+                    type: "evidence.visual.fallback.error",
+                    severity: .warning,
+                    message: error.localizedDescription,
                     screenID: screenID,
                     url: webView.url?.absoluteString
                 )
             }
+        }
+    }
+
+    private func persistDebugSnapshot(
+        _ bitmap: NSBitmapImageRep,
+        from webView: WKWebView,
+        screenID: CGDirectDisplayID,
+        reason: String,
+        source: String,
+        outputDirectory: URL
+    ) {
+        guard let pngData = bitmap.representation(using: .png, properties: [:]) else { return }
+        let sourceSuffix = source == "webview" ? "" : "-\(source)"
+        let evidenceReason = "\(reason)\(sourceSuffix)"
+        let fileURL = outputDirectory.appendingPathComponent(
+            "web-snapshot-\(screenID)-\(evidenceReason).png"
+        )
+        do {
+            try pngData.write(to: fileURL, options: .atomic)
+        } catch {
+            recordDiagnostic(
+                type: "evidence.visual.error",
+                severity: .error,
+                message: error.localizedDescription,
+                screenID: screenID,
+                url: fileURL.path
+            )
+            return
+        }
+
+        let metrics = Self.snapshotMetrics(bitmap)
+        let lumaSamples = Self.snapshotLumaSamples(bitmap)
+        let message = String(
+            format: "source=%@ size=%dx%d avgLuma=%.3f nonBlack=%.4f lumaStdDev=%.3f colored=%.3f white=%.3f peakLuma=%.3f path=%@",
+            source,
+            bitmap.pixelsWide,
+            bitmap.pixelsHigh,
+            metrics.averageLuma,
+            metrics.nonBlackRatio,
+            metrics.lumaStdDev,
+            metrics.coloredRatio,
+            metrics.whiteRatio,
+            metrics.peakLuma,
+            fileURL.path
+        )
+        NSLog(
+            "webSnapshot[%@] size=%dx%d avgLuma=%.3f nonBlack=%.4f lumaStdDev=%.3f colored=%.3f white=%.3f peakLuma=%.3f path=%@",
+            evidenceReason,
+            bitmap.pixelsWide,
+            bitmap.pixelsHigh,
+            metrics.averageLuma,
+            metrics.nonBlackRatio,
+            metrics.lumaStdDev,
+            metrics.coloredRatio,
+            metrics.whiteRatio,
+            metrics.peakLuma,
+            fileURL.path
+        )
+        recordDiagnostic(
+            type: "evidence.visual",
+            severity: .info,
+            message: message,
+            screenID: screenID,
+            url: webView.url?.absoluteString
+        )
+
+        if source == "webview" {
+            captureDebugCanvasSnapshot(
+                from: webView,
+                screenID: screenID,
+                reason: reason,
+                outputDirectory: outputDirectory
+            )
+        }
+        if reason == "ready" {
+            debugSnapshotLumaSamplesByScreen[screenID] = lumaSamples
+        } else if let readySamples = debugSnapshotLumaSamplesByScreen[screenID],
+                  let motion = Self.snapshotMotionMetrics(from: readySamples, to: lumaSamples) {
+            recordDiagnostic(
+                type: "evidence.motion",
+                severity: .info,
+                message: String(
+                    format: "source=%@ meanDelta=%.4f changedRatio=%.4f samples=%d",
+                    source,
+                    motion.meanDelta,
+                    motion.changedRatio,
+                    lumaSamples.count
+                ),
+                screenID: screenID,
+                url: webView.url?.absoluteString
+            )
         }
     }
 
