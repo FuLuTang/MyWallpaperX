@@ -540,6 +540,14 @@ let webCompatibilityScriptHostBridge = #"""
           return Number.isFinite(numeric) ? Math.max(0, Math.min(1, numeric)) : 0;
         })
       : [];
+    if (!hasLoggedAudioSpectrumDelivery && audioListeners.length > 0) {
+      const peak = safeLevels.reduce((maximum, value) => Math.max(maximum, value), 0);
+      hostLogger.post(
+        'audio.spectrum.dispatched',
+        `listeners=${audioListeners.length} bins=${safeLevels.length} peak=${peak.toFixed(4)}`
+      );
+      hasLoggedAudioSpectrumDelivery = true;
+    }
     try {
       window.dispatchEvent(new CustomEvent('wallpaper-audio-spectrum', { detail: safeLevels }));
     } catch (_) {}

@@ -573,9 +573,21 @@ def score_sample(
     media_score = 8.0
     media_findings: list[str] = []
     media_evidence = "strong" if media_events else "weak"
+    audio_listener_registered = has_event(events, "audio.listener.registered")
+    audio_spectrum_dispatched = has_event(events, "audio.spectrum.dispatched")
+    requires_audio_spectrum = "audio-spectrum" in sample.capabilities
     if media_errors:
         media_score -= min(8, 3 * len(media_errors))
         media_findings.append(f"{len(media_errors)} media/audio error event(s).")
+        categories.add("media_audio")
+    elif requires_audio_spectrum and not (audio_listener_registered and audio_spectrum_dispatched):
+        media_score = 2.0
+        missing = []
+        if not audio_listener_registered:
+            missing.append("listener registration")
+        if not audio_spectrum_dispatched:
+            missing.append("spectrum dispatch")
+        media_findings.append(f"Required audio-spectrum evidence missing: {', '.join(missing)}.")
         categories.add("media_audio")
     elif not media_events:
         media_score = 6.0
@@ -840,6 +852,8 @@ def run_one_sample(
         "--mwx-debug-web-evidence-dir",
         str(sample_dir),
     ]
+    if "audio-spectrum" in sample.capabilities:
+        command.append("--mwx-debug-web-audio-spectrum-fixture")
     if sample.property_overrides:
         sample_root = runtime_workshop_root / "Web" / sample.id if runtime_workshop_root else None
 
@@ -1425,6 +1439,8 @@ def run_self_test(args: argparse.Namespace) -> int:
                 "2026-06-26 10:00:02.000 MyWallpaperX[1:1] MWX WEB DIAG record=fixture screen=1 severity=info type=host.ready url=- message=ready",
                 "2026-06-26 10:00:02.100 MyWallpaperX[1:1] MWX WEB DIAG record=fixture screen=1 severity=info type=navigation.finish url=mwx-local://wallpaper/index.html message=ready",
                 "2026-06-26 10:00:02.200 MyWallpaperX[1:1] MWX WEB DIAG record=fixture screen=1 severity=info type=media.initial url=- message=mwx-local://wallpaper/a.mp4 tag=video readyState=4",
+                "2026-06-26 10:00:02.220 MyWallpaperX[1:1] MWX WEB DIAG record=fixture screen=1 severity=info type=audio.listener.registered url=- message=count=1",
+                "2026-06-26 10:00:02.225 MyWallpaperX[1:1] MWX WEB DIAG record=fixture screen=1 severity=info type=audio.spectrum.dispatched url=- message=listeners=1 bins=128 peak=0.8400",
                 "2026-06-26 10:00:02.300 MyWallpaperX[1:1] MWX WEB DIAG record=fixture screen=1 severity=info type=pointer.down url=- message=x=10 y=10",
                 "2026-06-26 10:00:02.350 MyWallpaperX[1:1] MWX WEB DIAG record=fixture screen=1 severity=info type=pointer.up url=- message=x=20 y=20",
                 "2026-06-26 10:00:02.375 MyWallpaperX[1:1] MWX WEB DIAG record=fixture screen=1 severity=info type=evidence.interaction url=- message={events:[pointer,click,drag,wheel]}",
@@ -1482,6 +1498,33 @@ def run_self_test(args: argparse.Namespace) -> int:
     md_path = write_markdown_report(output_dir, [result], summary)
     if result.score < 90:
         print(f"Self-test failed: score={result.score}", file=sys.stderr)
+        return 1
+    audio_result = score_sample(
+        Sample(id="audio-fixture", capabilities=["audio-spectrum"]),
+        events,
+        metadata,
+        log_path,
+        screenshot_path=None,
+        web_snapshot_paths=[web_snapshot_path],
+        exit_code=-15,
+        duration_seconds=3.0,
+    )
+    no_audio_events = [event for event in events if not event.type.startswith("audio.")]
+    missing_audio_result = score_sample(
+        Sample(id="missing-audio-fixture", capabilities=["audio-spectrum"]),
+        no_audio_events,
+        metadata,
+        log_path,
+        screenshot_path=None,
+        web_snapshot_paths=[web_snapshot_path],
+        exit_code=-15,
+        duration_seconds=3.0,
+    )
+    if (
+        "media_audio" in audio_result.shortfall_categories
+        or "media_audio" not in missing_audio_result.shortfall_categories
+    ):
+        print("Self-test failed: audio-spectrum evidence gate did not distinguish fixtures", file=sys.stderr)
         return 1
     blank_metadata = dict(metadata)
     blank_metadata["snapshots"] = [

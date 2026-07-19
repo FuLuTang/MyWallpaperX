@@ -343,6 +343,23 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
  runtimeProfile: service.recommendedWebRuntimeProfile(for: record),
  multiDisplayEnabled: true
  )
+ self.scheduleDebugWebAudioSpectrumIfRequested()
+ }
+
+ private func scheduleDebugWebAudioSpectrumIfRequested() {
+ let arguments = ProcessInfo.processInfo.arguments
+ guard arguments.contains("--mwx-debug-web-audio-spectrum-fixture") else { return }
+
+ for frame in 0..<80 {
+ DispatchQueue.main.asyncAfter(deadline: .now() + 1.0 + Double(frame) * 0.1) {
+ let phase = Float(frame % 20) / 20
+ let levels = (0..<128).map { index -> Float in
+ let position = Float(index) / 127
+ return 0.12 + 0.72 * abs(sin((position + phase) * .pi * 4))
+ }
+ WallpaperEngine.shared.dispatchWebRuntimeCommand(.pushAudioSpectrum(levels))
+ }
+ }
  }
 #else
  private func scheduleDebugWorkshopPlaybackIfRequested() {}

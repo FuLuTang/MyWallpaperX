@@ -6,6 +6,7 @@
 let webCompatibilityScriptBootstrapFoundation = #"""
   const audioStreams = [];
   const audioListeners = [];
+  let hasLoggedAudioSpectrumDelivery = false;
   const volumeListeners = [];
   const mediaStatusListeners = [];
   const mediaPropertiesListeners = [];
@@ -227,6 +228,7 @@ let webCompatibilityScriptBootstrapFoundation = #"""
   window.wallpaperRegisterAudioListener = function(listener) {
     if (typeof listener === 'function') {
       audioListeners.push(listener);
+      hostLogger.post('audio.listener.registered', `count=${audioListeners.length}`);
     }
   };
   window.wallpaperRegisterVolumeListener = function(listener) {
