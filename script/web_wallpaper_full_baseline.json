@@ -1,0 +1,275 @@
+{
+  "schema_version": 1,
+  "name": "web-runtime-full-baseline-2026-07-20",
+  "minimum_sample_duration_seconds": 12,
+  "gates": {
+    "minimum_average_score": 95,
+    "minimum_average_coverage": 90,
+    "forbidden_shortfalls": [
+      "launch",
+      "host_runtime",
+      "navigation",
+      "resource_mapping",
+      "properties",
+      "sample_resource",
+      "media_audio",
+      "interaction",
+      "visual_output",
+      "performance",
+      "animation"
+    ]
+  },
+  "samples": [
+    {
+      "id": "1103493745",
+      "title": "Colorful Matrix",
+      "capabilities": ["dependency-runtime", "canvas", "properties"],
+      "minimum_grade": "A",
+      "minimum_coverage": 88
+    },
+    {
+      "id": "1509243786",
+      "title": "CWAV Engine",
+      "capabilities": ["property-dense", "file-directory", "media-integration", "audio-spectrum"],
+      "minimum_grade": "A",
+      "minimum_coverage": 90
+    },
+    {
+      "id": "2675660496",
+      "title": "True code of MATRIX",
+      "capabilities": ["dependency-shell", "color-string", "audio-spectrum"],
+      "dependencies": ["1103493745"],
+      "minimum_grade": "A",
+      "minimum_coverage": 88
+    },
+    {
+      "id": "2731942107",
+      "title": "Beer Girl Cat Window City",
+      "capabilities": ["dependency-shell", "directory-property", "webm", "remote-iframe"],
+      "allowed_shortfalls": ["sample_resource", "media_audio"],
+      "minimum_grade": "A",
+      "minimum_coverage": 90
+    },
+    {
+      "id": "2997985023",
+      "title": "SDVX Live2D wallpaper",
+      "capabilities": ["live2d", "webgl", "startup-input", "html-media"],
+      "allowed_shortfalls": ["sample_resource", "media_audio"],
+      "minimum_grade": "A",
+      "minimum_coverage": 95
+    },
+    {
+      "id": "3696478440",
+      "title": "Rio Tsukatsuki",
+      "capabilities": ["properties", "remote-font", "canvas"],
+      "minimum_grade": "A",
+      "minimum_coverage": 88
+    },
+    {
+      "id": "3700131876",
+      "title": "Raindrops - MIKU",
+      "capabilities": ["textured-webgl", "loopback-origin", "property-recovery", "animation"],
+      "allowed_shortfalls": ["properties"],
+      "minimum_grade": "B",
+      "minimum_coverage": 90
+    },
+    {
+      "id": "3700928191",
+      "title": "Raindrops - Doomer",
+      "capabilities": ["textured-webgl", "loopback-origin", "property-recovery", "animation"],
+      "allowed_shortfalls": ["properties"],
+      "minimum_grade": "B",
+      "minimum_coverage": 90
+    },
+    {
+      "id": "3710506251",
+      "title": "Star Citizen - Sunset Flight",
+      "capabilities": ["properties", "canvas"],
+      "minimum_grade": "A",
+      "minimum_coverage": 88
+    },
+    {
+      "id": "3726135866",
+      "title": "ASCII Digital Image",
+      "capabilities": ["webgl", "persistent-storage", "file-property"],
+      "minimum_grade": "A",
+      "minimum_coverage": 88
+    },
+    {
+      "id": "3740867386",
+      "title": "Nothing OS Dashboard",
+      "capabilities": ["es-module", "persistent-storage", "general-properties", "remote-font"],
+      "minimum_grade": "A",
+      "minimum_coverage": 88
+    },
+    {
+      "id": "3744584100",
+      "title": "lapwing",
+      "capabilities": ["dependency-shell", "webgl", "persistent-storage"],
+      "minimum_grade": "A",
+      "minimum_coverage": 88
+    },
+    {
+      "id": "3746833443",
+      "title": "Resident Evil 4 Interactive Inventory",
+      "capabilities": ["interactive-game", "html-audio", "canvas"],
+      "allowed_shortfalls": ["sample_resource"],
+      "minimum_grade": "A",
+      "minimum_coverage": 90
+    },
+    {
+      "id": "3747222633",
+      "title": "Audio Domain Echo",
+      "capabilities": ["webgl", "es-module", "general-properties"],
+      "minimum_grade": "A",
+      "minimum_coverage": 88
+    },
+    {
+      "id": "3749492163",
+      "title": "DubVisual",
+      "capabilities": ["webgl", "properties", "audio-spectrum"],
+      "minimum_grade": "A",
+      "minimum_coverage": 88
+    },
+    {
+      "id": "3752541815",
+      "title": "3DGS Depth Wallpaper",
+      "capabilities": ["directory-property", "persistent-storage", "hover-input"],
+      "minimum_grade": "A",
+      "minimum_coverage": 88
+    },
+    {
+      "id": "3755604367",
+      "title": "Audio Domain Echo dependency",
+      "capabilities": ["dependency-shell", "webgl", "es-module", "general-properties"],
+      "minimum_grade": "A",
+      "minimum_coverage": 88
+    },
+    {
+      "id": "3757331413",
+      "title": "NIKKE Cinderella",
+      "capabilities": ["spine", "remote-script", "file-property", "pointer-input"],
+      "minimum_grade": "A",
+      "minimum_coverage": 88
+    },
+    {
+      "id": "3759094339",
+      "title": "Marine Depth Wallpaper",
+      "capabilities": ["dependency-shell", "directory-property", "persistent-storage", "hover-input"],
+      "minimum_grade": "A",
+      "minimum_coverage": 88
+    },
+    {
+      "id": "3759146455",
+      "title": "Nikke Anachiro",
+      "capabilities": ["spine", "iframe", "remote-script", "webm"],
+      "allowed_shortfalls": ["sample_resource"],
+      "minimum_grade": "A",
+      "minimum_coverage": 90
+    },
+    {
+      "id": "3759574534",
+      "title": "Calliope Depth Wallpaper",
+      "capabilities": ["dependency-shell", "directory-property", "persistent-storage", "hover-input"],
+      "minimum_grade": "A",
+      "minimum_coverage": 88
+    },
+    {
+      "id": "3760221363",
+      "title": "Prayer Times and Clock",
+      "capabilities": ["properties", "persistent-storage", "clock"],
+      "minimum_grade": "A",
+      "minimum_coverage": 88
+    },
+    {
+      "id": "3760736637",
+      "title": "Kronii Depth Wallpaper",
+      "capabilities": ["dependency-shell", "directory-property", "persistent-storage", "hover-input"],
+      "minimum_grade": "A",
+      "minimum_coverage": 88
+    },
+    {
+      "id": "3761028986",
+      "title": "Task Manager Performance Gource Tree",
+      "capabilities": ["webgl", "es-module", "webm", "general-fps"],
+      "minimum_grade": "A",
+      "minimum_coverage": 88
+    },
+    {
+      "id": "3761112434",
+      "title": "YK7 Hero",
+      "capabilities": ["properties", "canvas", "pointer-input"],
+      "minimum_grade": "A",
+      "minimum_coverage": 88
+    },
+    {
+      "id": "3762337744",
+      "title": "Gargantua ASCII",
+      "capabilities": ["webgl", "pointer-input", "canvas"],
+      "minimum_grade": "A",
+      "minimum_coverage": 88
+    },
+    {
+      "id": "3762954599",
+      "title": "Signal Architecture",
+      "capabilities": ["properties", "canvas", "pointer-input"],
+      "minimum_grade": "A",
+      "minimum_coverage": 88
+    },
+    {
+      "id": "3763203095",
+      "title": "MAdEaR MAdEaR",
+      "capabilities": ["unity-webgl", "wasm", "persistent-storage", "general-fps"],
+      "minimum_grade": "A",
+      "minimum_coverage": 88
+    },
+    {
+      "id": "3763370103",
+      "title": "Interactive Neon Constellation",
+      "capabilities": ["canvas", "pointer-input", "remote-font"],
+      "minimum_grade": "A",
+      "minimum_coverage": 88
+    },
+    {
+      "id": "3765121260",
+      "title": "Fosters PC World of Tanks",
+      "capabilities": ["properties", "canvas"],
+      "minimum_grade": "A",
+      "minimum_coverage": 88
+    },
+    {
+      "id": "3765238355",
+      "title": "Flurry",
+      "capabilities": ["webgl", "persistent-storage", "external-probe"],
+      "minimum_grade": "A",
+      "minimum_coverage": 88
+    },
+    {
+      "id": "3765286189",
+      "title": "Galaxy Traveler OLED safe mode",
+      "capabilities": ["webgl2", "sparse-dark-output", "general-properties", "general-fps"],
+      "minimum_grade": "A",
+      "minimum_coverage": 88
+    },
+    {
+      "id": "884307090",
+      "title": "Perfect Wallpaper",
+      "capabilities": ["property-dense", "directory-property", "webm", "remote-iframe"],
+      "allowed_shortfalls": ["sample_resource", "media_audio"],
+      "minimum_grade": "A",
+      "minimum_coverage": 90
+    },
+    {
+      "id": "923576681",
+      "title": "Simplistic Audio Visualizer",
+      "capabilities": ["file-property", "html-media", "audio-spectrum", "canvas"],
+      "property_overrides": {
+        "backgroundimagef": {
+          "value": "{sample_root}/preview.jpg"
+        }
+      },
+      "minimum_grade": "A",
+      "minimum_coverage": 90
+    }
+  ]
+}

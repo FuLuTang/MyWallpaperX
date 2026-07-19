@@ -256,6 +256,9 @@ final class DedicatedWebWallpaperHostPlaceholderAdapter: NSObject, WallpaperEngi
     var transientCaptureReleaseWorkItems: [CGDirectDisplayID: DispatchWorkItem] = [:]
     var transientCaptureActiveScreenID: CGDirectDisplayID?
     var lastPreheatedRegionIDByScreen: [CGDirectDisplayID: String] = [:]
+    #if DEBUG
+    var debugSnapshotLumaSamplesByScreen: [CGDirectDisplayID: [Double]] = [:]
+    #endif
 
     static let pointerMoveThrottleInterval: TimeInterval = 1.0 / 30.0
     static let activeClickWarmupDuration: TimeInterval = 0.45

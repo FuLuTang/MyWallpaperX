@@ -50,6 +50,9 @@ SNAPSHOT_RE = re.compile(
     r"(?: lumaStdDev=(?P<stddev>[0-9.]+) colored=(?P<colored>[0-9.]+) white=(?P<white>[0-9.]+)"
     r"(?: peakLuma=(?P<peak>[0-9.]+))?)?"
 )
+MOTION_RE = re.compile(
+    r"meanDelta=(?P<mean_delta>[0-9.]+) changedRatio=(?P<changed_ratio>[0-9.]+)"
+)
 TIMESTAMP_RE = re.compile(r"^(?P<stamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?)")
 RAW_RUNTIME_ERROR_TOKENS = (
     "request to run javascript failed",
@@ -75,6 +78,7 @@ class Sample:
     capabilities: list[str] = field(default_factory=list)
     dependencies: list[str] = field(default_factory=list)
     property_overrides: dict[str, Any] = field(default_factory=dict)
+    allowed_shortfalls: list[str] = field(default_factory=list)
     minimum_grade: str | None = None
     minimum_coverage: float | None = None
 
@@ -689,6 +693,22 @@ def score_sample(
         )
     )
 
+    if "animation" in sample.capabilities:
+        motion_events = events_matching(events, ("evidence.motion",))
+        motion_match = MOTION_RE.search(motion_events[-1].message) if motion_events else None
+        if motion_match:
+            mean_delta = float(motion_match.group("mean_delta"))
+            changed_ratio = float(motion_match.group("changed_ratio"))
+            if mean_delta < 0.002 and changed_ratio < 0.02:
+                findings.append(
+                    "Expected animated output was effectively static: "
+                    f"meanDelta={mean_delta:.4f}, changedRatio={changed_ratio:.4f}."
+                )
+                categories.add("animation")
+        else:
+            findings.append("Expected animated output has no two-frame motion evidence.")
+            categories.add("animation")
+
     for dimension in dimensions:
         findings.extend(dimension.findings)
 
@@ -955,7 +975,9 @@ def evaluate_matrix_gate(
         if str(category).strip()
     }
     for result in results:
-        blocked = sorted(forbidden.intersection(result.shortfall_categories))
+        blocked = sorted(
+            forbidden.intersection(result.shortfall_categories).difference(result.sample.allowed_shortfalls)
+        )
         if blocked:
             failures.append(f"{result.sample.id}: forbidden shortfalls {', '.join(blocked)}")
     return {
@@ -1125,6 +1147,7 @@ def load_sample_matrix(path: Path) -> tuple[list[Sample], dict[str, Any]]:
                     if isinstance(entry.get("property_overrides", {}), dict)
                     else {}
                 ),
+                allowed_shortfalls=[str(value) for value in entry.get("allowed_shortfalls", [])],
                 minimum_grade=str(entry["minimum_grade"]) if entry.get("minimum_grade") else None,
                 minimum_coverage=(
                     float(entry["minimum_coverage"])
@@ -1406,6 +1429,7 @@ def run_self_test(args: argparse.Namespace) -> int:
                 "2026-06-26 10:00:02.375 MyWallpaperX[1:1] MWX WEB DIAG record=fixture screen=1 severity=info type=evidence.interaction url=- message={events:[pointer,click,drag,wheel]}",
                 "2026-06-26 10:00:02.390 MyWallpaperX[1:1] MWX WEB DIAG record=fixture screen=1 severity=info type=evidence.dom url=- message={visibleElementCount:4}",
                 "2026-06-26 10:00:02.400 MyWallpaperX[1:1] webSnapshot[ready] size=1920x1080 avgLuma=0.230 nonBlack=0.8000 lumaStdDev=0.180 colored=0.400 white=0.010 peakLuma=0.920",
+                "2026-06-26 10:00:02.450 MyWallpaperX[1:1] MWX WEB DIAG record=fixture screen=1 severity=info type=evidence.motion url=- message=meanDelta=0.0250 changedRatio=0.5000 samples=25600",
             ]
         ),
         encoding="utf-8",
@@ -1581,6 +1605,33 @@ def run_self_test(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return 1
+    animated_result = score_sample(
+        Sample(id="animated-fixture", capabilities=["animation"]),
+        events,
+        metadata,
+        log_path,
+        screenshot_path=None,
+        web_snapshot_paths=[web_snapshot_path],
+        exit_code=-15,
+        duration_seconds=3.0,
+    )
+    static_events = [event for event in events if event.type != "evidence.motion"]
+    static_result = score_sample(
+        Sample(id="static-fixture", capabilities=["animation"]),
+        static_events,
+        metadata,
+        log_path,
+        screenshot_path=None,
+        web_snapshot_paths=[web_snapshot_path],
+        exit_code=-15,
+        duration_seconds=3.0,
+    )
+    if "animation" in animated_result.shortfall_categories or "animation" not in static_result.shortfall_categories:
+        print(
+            "Self-test failed: animation evidence did not distinguish animated and static fixtures",
+            file=sys.stderr,
+        )
+        return 1
     gate_config = {
         "name": "self-test-gate",
         "gates": {
@@ -1591,11 +1642,27 @@ def run_self_test(args: argparse.Namespace) -> int:
     }
     passing_gate = summarize([result], comparison=None, matrix_config=gate_config).get("matrix_gate")
     failing_gate = summarize([blank_result], comparison=None, matrix_config=gate_config).get("matrix_gate")
+    allowed_blank_result = score_sample(
+        Sample(id="allowed-blank-fixture", allowed_shortfalls=["visual_output"]),
+        events,
+        blank_metadata,
+        log_path,
+        screenshot_path=None,
+        web_snapshot_paths=[web_snapshot_path],
+        exit_code=-15,
+        duration_seconds=3.0,
+    )
+    allowed_gate = summarize(
+        [allowed_blank_result], comparison=None, matrix_config=gate_config
+    ).get("matrix_gate")
     if not passing_gate or passing_gate.get("passed") is not True:
         print(f"Self-test failed: passing matrix gate={passing_gate}", file=sys.stderr)
         return 1
     if not failing_gate or failing_gate.get("passed") is not False:
         print(f"Self-test failed: failing matrix gate={failing_gate}", file=sys.stderr)
+        return 1
+    if not allowed_gate or allowed_gate.get("passed") is not True:
+        print(f"Self-test failed: allowed shortfall matrix gate={allowed_gate}", file=sys.stderr)
         return 1
     print(f"Self-test passed: score={result.score} coverage={result.coverage}%")
     print(f"Report JSON: {json_path}")

@@ -100,6 +100,9 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
         stopAllDirectoryWatchers()
         stopDirectoryWatchTimer()
         directoryAccessErrorsByProperty.removeAll()
+        #if DEBUG
+        debugSnapshotLumaSamplesByScreen.removeAll()
+        #endif
         for screenID in Array(surfaces.keys) {
             removeSurface(for: screenID)
         }
@@ -121,6 +124,9 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
         guard let surface = surfaces[screenID] else { return }
         resetWebContentRecoveryState(for: screenID)
         resetInteractionState(for: screenID)
+        #if DEBUG
+        debugSnapshotLumaSamplesByScreen.removeValue(forKey: screenID)
+        #endif
         surfaces.removeValue(forKey: screenID)
         if let loopbackServer = loopbackServers.removeValue(forKey: screenID) {
             recordDiagnostic(

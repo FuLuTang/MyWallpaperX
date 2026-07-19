@@ -224,6 +224,7 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
             }
 
             let metrics = Self.snapshotMetrics(bitmap)
+            let lumaSamples = Self.snapshotLumaSamples(bitmap)
             let message = String(
                 format: "size=%dx%d avgLuma=%.3f nonBlack=%.4f lumaStdDev=%.3f colored=%.3f white=%.3f peakLuma=%.3f path=%@",
                 bitmap.pixelsWide,
@@ -256,7 +257,61 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
                 screenID: screenID,
                 url: webView.url?.absoluteString
             )
+            if reason == "ready" {
+                self.debugSnapshotLumaSamplesByScreen[screenID] = lumaSamples
+            } else if let readySamples = self.debugSnapshotLumaSamplesByScreen[screenID],
+                      let motion = Self.snapshotMotionMetrics(from: readySamples, to: lumaSamples) {
+                self.recordDiagnostic(
+                    type: "evidence.motion",
+                    severity: .info,
+                    message: String(
+                        format: "meanDelta=%.4f changedRatio=%.4f samples=%d",
+                        motion.meanDelta,
+                        motion.changedRatio,
+                        lumaSamples.count
+                    ),
+                    screenID: screenID,
+                    url: webView.url?.absoluteString
+                )
+            }
         }
+    }
+
+    private static func snapshotLumaSamples(_ bitmap: NSBitmapImageRep) -> [Double] {
+        guard bitmap.pixelsWide > 0, bitmap.pixelsHigh > 0 else { return [] }
+        let xStep = max(1, bitmap.pixelsWide / 160)
+        let yStep = max(1, bitmap.pixelsHigh / 160)
+        var samples: [Double] = []
+        samples.reserveCapacity(160 * 160)
+        for y in stride(from: 0, to: bitmap.pixelsHigh, by: yStep) {
+            for x in stride(from: 0, to: bitmap.pixelsWide, by: xStep) {
+                guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else { continue }
+                samples.append(
+                    0.2126 * Double(color.redComponent)
+                    + 0.7152 * Double(color.greenComponent)
+                    + 0.0722 * Double(color.blueComponent)
+                )
+            }
+        }
+        return samples
+    }
+
+    private static func snapshotMotionMetrics(
+        from first: [Double],
+        to second: [Double]
+    ) -> (meanDelta: Double, changedRatio: Double)? {
+        guard !first.isEmpty, first.count == second.count else { return nil }
+        var totalDelta = 0.0
+        var changedCount = 0
+        for (before, after) in zip(first, second) {
+            let delta = abs(after - before)
+            totalDelta += delta
+            if delta >= 0.01 {
+                changedCount += 1
+            }
+        }
+        let divisor = Double(first.count)
+        return (totalDelta / divisor, Double(changedCount) / divisor)
     }
 
     private static func snapshotMetrics(

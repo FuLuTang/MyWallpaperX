@@ -11,7 +11,8 @@
       "navigation",
       "resource_mapping",
       "interaction",
-      "visual_output"
+      "visual_output",
+      "animation"
     ]
   },
   "samples": [
@@ -52,7 +53,7 @@
     {
       "id": "3700131876",
       "title": "Raindrops - MIKU",
-      "capabilities": ["textured-webgl", "loopback-origin", "property-recovery"],
+      "capabilities": ["textured-webgl", "loopback-origin", "property-recovery", "animation"],
       "minimum_grade": "B",
       "minimum_coverage": 90
     },
