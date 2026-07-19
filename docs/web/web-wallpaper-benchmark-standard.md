@@ -20,9 +20,9 @@
 - `navigation.finish`：WebKit 完成导航。
 - `resource.*` / `local-resource-*` / `loopback.resource.*`：资源读取、映射和跨源访问问题。
 - `properties.*`：Wallpaper Engine Web 属性桥接状态。
-- `media.*` / `audio.*`：媒体与音频能力状态。
+- `media.*` / `audio.*`：媒体与音频能力状态。声明 `audio-spectrum` 的样本还必须有 listener 注册、128-bin 分发和连续帧变化证据。
 - `pointer.*` / `wheel.*`：输入转发状态。
-- `webSnapshot[...]`：旧 daemon 链路可输出的画面亮度证据。
+- `webSnapshot[...]`：WebView、页面 Canvas 或当前进程独立窗口的画面亮度证据。运动比较只允许使用同一来源的非空前后帧。
 
 ## 评分维度
 
@@ -54,6 +54,7 @@
 - `media_audio`：媒体、音频播放或 AudioContext 恢复问题。
 - `interaction`：鼠标、滚轮、右键等输入派发问题。
 - `visual_output`：黑屏、透明、无首帧或缺少画面证据。
+- `animation`：声明动态能力但没有同源双帧变化证据，或变化低于门限。
 - `performance`：启动慢、ready 慢、导航慢。
 
 ## 推荐使用方式
@@ -65,7 +66,8 @@
 
 ## 验收线
 
-- 代表样本平均分不低于 90，且没有 `host_runtime` / `resource_mapping` / `properties` 阻断。
-- 全量样本平均分不低于 85。
+- 实际执行门以对应 matrix JSON 中的批次阈值、单样本最低等级、最低 coverage、允许例外和禁止短板为准；本文不复制一份可能漂移的数值作为执行真相。
+- 默认代表矩阵、34 项完整基线和外部代表矩阵承担不同层级的验证职责，不因第三方 fixture 缺失而互相替代或合并。
 - 新改动不得让任一样本的总分下降 10 分以上，除非报告能证明旧分数是误判。
 - `host.ready` 覆盖率应接近 100%；缺失时优先排查宿主链路。
+- Debug 音频 fixture 只证明桥接、布局和变化，不替代真实系统音频相关性、设备切换和静音恢复测试。

@@ -1,0 +1,96 @@
+{
+  "schema_version": 1,
+  "name": "web-runtime-external-representative-v1",
+  "minimum_sample_duration_seconds": 18,
+  "gates": {
+    "minimum_average_score": 95,
+    "minimum_average_coverage": 92,
+    "forbidden_shortfalls": [
+      "launch",
+      "host_runtime",
+      "navigation",
+      "resource_mapping",
+      "properties",
+      "media_audio",
+      "interaction",
+      "visual_output",
+      "animation"
+    ]
+  },
+  "samples": [
+    {
+      "id": "1748506393",
+      "title": "Colorful Fluid Animation [Audio Responsive]",
+      "capabilities": [
+        "webgl2",
+        "properties",
+        "audio-spectrum",
+        "pointer-input",
+        "animation"
+      ],
+      "minimum_grade": "A",
+      "minimum_coverage": 95
+    },
+    {
+      "id": "1396475780",
+      "title": "AudiOrbits 2.4",
+      "capabilities": [
+        "property-dense",
+        "wasm",
+        "worker",
+        "webgl",
+        "audio-spectrum",
+        "animation"
+      ],
+      "property_overrides": {
+        "seizure_warning": {
+          "value": false
+        },
+        "icue_mode": {
+          "value": 0
+        }
+      },
+      "minimum_grade": "A",
+      "minimum_coverage": 95
+    },
+    {
+      "id": "2014502586",
+      "title": "ReactiveInk (Rorschach)",
+      "capabilities": [
+        "webgl",
+        "properties",
+        "audio-spectrum",
+        "worker",
+        "animation"
+      ],
+      "minimum_grade": "A",
+      "minimum_coverage": 95
+    },
+    {
+      "id": "2119347960",
+      "title": "Living Worlds - Animated Web Wallpaper",
+      "capabilities": [
+        "canvas",
+        "large-static-content",
+        "general-properties",
+        "general-fps",
+        "animation"
+      ],
+      "minimum_grade": "A",
+      "minimum_coverage": 90
+    },
+    {
+      "id": "2553306714",
+      "title": "Vanta",
+      "capabilities": [
+        "webgl",
+        "property-dense",
+        "pointer-input",
+        "general-properties",
+        "animation"
+      ],
+      "minimum_grade": "A",
+      "minimum_coverage": 90
+    }
+  ]
+}

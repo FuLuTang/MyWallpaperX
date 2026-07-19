@@ -1,6 +1,6 @@
 # Web 壁纸文档入口
 
-> 最后更新：2026-06-26
+> 最后更新：2026-07-20
 > 目的：给当前 Web 专题文档提供一个稳定入口，区分长期规范、阶段计划与进度/历史记录，避免继续把状态散落在文件名里猜测。
 
 ## 1. 长期规范与运行模型
@@ -26,6 +26,7 @@
 
 - [web-official-alignment-progress-2026-04-14.md](web-official-alignment-progress-2026-04-14.md)
 - [regression/](regression/)：Web 样本回归、专项 handoff 和 2026-06-19 调试总结。
+- [regression/WEB_EXTERNAL_SAMPLE_BASELINE_2026-07-20.md](regression/WEB_EXTERNAL_SAMPLE_BASELINE_2026-07-20.md)：5 个公开作者源码样本的来源、构建、能力矩阵、最终结果和证据边界。
 - [../agents/web-development-expert-agent/web-handoff-2026-04-16.md](../agents/web-development-expert-agent/web-handoff-2026-04-16.md)
 
 ## 4. 角色入口
