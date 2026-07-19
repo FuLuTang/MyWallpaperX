@@ -49,6 +49,7 @@ extension SteamWorkshopService {
         var usesIframeCrossFrameAccess = false
         var referencesSchemeColorUserProperty = false
         var hasUncertainUserPropertyUsage = false
+        var hasTruncatedStaticAnalysis = false
         let hasFetchAllDirectoryProperty = propertyDefinitions.contains {
             $0.kind == .directory && $0.directoryMode?.lowercased() == "fetchall"
         }
@@ -59,9 +60,14 @@ extension SteamWorkshopService {
         while let fileURL = pendingFiles.first {
             pendingFiles.removeFirst()
             guard scannedFiles.insert(fileURL).inserted else { continue }
-            guard let content = try? String(contentsOf: fileURL, encoding: .utf8) else {
+            guard let scan = Self.webStaticAnalysisContent(from: fileURL) else {
                 hasUncertainUserPropertyUsage = true
                 continue
+            }
+            let content = scan.content
+            if scan.isTruncated {
+                hasTruncatedStaticAnalysis = true
+                hasUncertainUserPropertyUsage = true
             }
 
             if Self.webContentUsesWebMResource(content) {
@@ -177,6 +183,7 @@ extension SteamWorkshopService {
             usesHoverOnlyInteraction: usesHoverOnlyInteraction,
             referencesSchemeColorUserProperty: referencesSchemeColorUserProperty,
             hasUncertainUserPropertyUsage: hasUncertainUserPropertyUsage,
+            hasTruncatedStaticAnalysis: hasTruncatedStaticAnalysis,
             hasFetchAllDirectoryProperty: hasFetchAllDirectoryProperty,
             hasOnDemandDirectoryProperty: hasOnDemandDirectoryProperty,
             externalDependencyHosts: hosts.sorted(),

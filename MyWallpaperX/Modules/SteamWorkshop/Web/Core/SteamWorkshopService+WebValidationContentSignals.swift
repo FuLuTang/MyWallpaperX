@@ -1,6 +1,38 @@
 import Foundation
 
 extension SteamWorkshopService {
+    static let webStaticAnalysisMaximumFileBytes = 128 * 1024
+
+    static func webStaticAnalysisContent(from fileURL: URL) -> (content: String, isTruncated: Bool)? {
+        guard let handle = try? FileHandle(forReadingFrom: fileURL) else { return nil }
+        defer { try? handle.close() }
+
+        guard let fileSize = try? handle.seekToEnd(),
+              (try? handle.seek(toOffset: 0)) != nil else {
+            return nil
+        }
+
+        let maximumBytes = webStaticAnalysisMaximumFileBytes
+        if fileSize <= UInt64(maximumBytes) {
+            guard let data = try? handle.readToEnd(),
+                  let content = String(data: data, encoding: .utf8) else {
+                return nil
+            }
+            return (content, false)
+        }
+
+        let segmentBytes = maximumBytes / 2
+        guard let prefix = try? handle.read(upToCount: segmentBytes),
+              (try? handle.seek(toOffset: fileSize - UInt64(segmentBytes))) != nil,
+              let suffix = try? handle.read(upToCount: segmentBytes) else {
+            return nil
+        }
+        let content = String(decoding: prefix, as: UTF8.self)
+            + "\n/* static analysis truncated */\n"
+            + String(decoding: suffix, as: UTF8.self)
+        return (content, true)
+    }
+
     static func webContentUsesWebMResource(_ content: String) -> Bool {
         let lowered = content.lowercased()
         return lowered.contains(".webm")

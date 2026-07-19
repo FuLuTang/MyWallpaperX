@@ -59,6 +59,9 @@ extension SteamWorkshopService {
         if staticContentSummary.usesIframeCrossFrameAccess {
             runtimeRiskFlags = runtimeRiskFlags.union(with: [.iframeCrossFrameAccess])
         }
+        if staticContentSummary.hasTruncatedStaticAnalysis {
+            runtimeRiskFlags = runtimeRiskFlags.union(with: [.truncatedStaticAnalysis])
+        }
         let presetResourceBindingsByKey = resolvedWebPresetResourceBindings(for: record)
         let baselineVisiblePropertyKeys = propertyDefinitions
             .filter {

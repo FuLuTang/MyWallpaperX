@@ -78,6 +78,7 @@ extension SteamWorkshopService {
         var usesCustomSchemeSensitiveWebGL = staticContentSummary?.usesCustomSchemeSensitiveWebGL ?? false
         var usesIframeCrossFrameAccess = staticContentSummary?.usesIframeCrossFrameAccess ?? false
         var scannedRiskFlags = Set<ResolvedWebRuntimeRiskFlag>()
+        var truncatedScanFileCount = 0
 
         func appendIssue(_ severity: SteamWorkshopWebValidationSeverity, _ level: SteamWorkshopWebValidationLevel, _ message: String) {
             let issue = SteamWorkshopWebValidationIssue(severity: severity, level: level, message: message)
@@ -139,9 +140,13 @@ extension SteamWorkshopService {
         while let fileURL = pendingFiles.first, scannedFiles.count < maxScanFiles {
             pendingFiles.removeFirst()
             guard scannedFiles.insert(fileURL).inserted else { continue }
-            guard let content = try? String(contentsOf: fileURL, encoding: .utf8) else {
+            guard let scan = Self.webStaticAnalysisContent(from: fileURL) else {
                 appendIssue(.warning, .warning, "无法读取文件：\(webRelativePath(for: fileURL, under: rootURL))")
                 continue
+            }
+            let content = scan.content
+            if scan.isTruncated {
+                truncatedScanFileCount += 1
             }
 
             if Self.webContentUsesWebMResource(content) {
@@ -232,6 +237,13 @@ extension SteamWorkshopService {
 
         if !scannedFiles.isEmpty {
             appendIssue(.info, .info, "已扫描 \(scannedFiles.count) 个入口/依赖文件")
+        }
+        if truncatedScanFileCount > 0 {
+            appendIssue(
+                .info,
+                .info,
+                "为避免大型数据脚本阻塞启动，\(truncatedScanFileCount) 个文件仅扫描了首尾片段；运行时将使用 HTTP loopback 兼容模式"
+            )
         }
         let cachedExternalURLs = staticContentSummary.map {
             Set($0.externalDependencyHosts.map { "https://\($0)" })

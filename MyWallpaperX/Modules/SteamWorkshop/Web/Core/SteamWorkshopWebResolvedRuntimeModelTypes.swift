@@ -48,6 +48,7 @@ struct ResolvedWebStaticContentSummary: Codable, Equatable {
     let usesHoverOnlyInteraction: Bool
     let referencesSchemeColorUserProperty: Bool
     let hasUncertainUserPropertyUsage: Bool
+    let hasTruncatedStaticAnalysis: Bool
     let hasFetchAllDirectoryProperty: Bool
     let hasOnDemandDirectoryProperty: Bool
     let externalDependencyHosts: [String]
@@ -70,6 +71,7 @@ struct ResolvedWebStaticContentSummary: Codable, Equatable {
         case usesHoverOnlyInteraction
         case referencesSchemeColorUserProperty
         case hasUncertainUserPropertyUsage
+        case hasTruncatedStaticAnalysis
         case hasFetchAllDirectoryProperty
         case hasOnDemandDirectoryProperty
         case externalDependencyHosts
@@ -93,6 +95,7 @@ struct ResolvedWebStaticContentSummary: Codable, Equatable {
         usesHoverOnlyInteraction: Bool,
         referencesSchemeColorUserProperty: Bool,
         hasUncertainUserPropertyUsage: Bool,
+        hasTruncatedStaticAnalysis: Bool,
         hasFetchAllDirectoryProperty: Bool,
         hasOnDemandDirectoryProperty: Bool,
         externalDependencyHosts: [String],
@@ -114,6 +117,7 @@ struct ResolvedWebStaticContentSummary: Codable, Equatable {
         self.usesHoverOnlyInteraction = usesHoverOnlyInteraction
         self.referencesSchemeColorUserProperty = referencesSchemeColorUserProperty
         self.hasUncertainUserPropertyUsage = hasUncertainUserPropertyUsage
+        self.hasTruncatedStaticAnalysis = hasTruncatedStaticAnalysis
         self.hasFetchAllDirectoryProperty = hasFetchAllDirectoryProperty
         self.hasOnDemandDirectoryProperty = hasOnDemandDirectoryProperty
         self.externalDependencyHosts = externalDependencyHosts
@@ -139,6 +143,7 @@ struct ResolvedWebStaticContentSummary: Codable, Equatable {
             usesHoverOnlyInteraction: try container.decode(Bool.self, forKey: .usesHoverOnlyInteraction),
             referencesSchemeColorUserProperty: try container.decodeIfPresent(Bool.self, forKey: .referencesSchemeColorUserProperty) ?? false,
             hasUncertainUserPropertyUsage: try container.decodeIfPresent(Bool.self, forKey: .hasUncertainUserPropertyUsage) ?? true,
+            hasTruncatedStaticAnalysis: try container.decodeIfPresent(Bool.self, forKey: .hasTruncatedStaticAnalysis) ?? false,
             hasFetchAllDirectoryProperty: try container.decode(Bool.self, forKey: .hasFetchAllDirectoryProperty),
             hasOnDemandDirectoryProperty: try container.decode(Bool.self, forKey: .hasOnDemandDirectoryProperty),
             externalDependencyHosts: try container.decode([String].self, forKey: .externalDependencyHosts),
@@ -204,6 +209,7 @@ enum ResolvedWebRuntimeRiskFlag: String, Codable, Equatable, Hashable {
     case wasmStreamingUsage
     case customSchemeSensitiveWebGL
     case iframeCrossFrameAccess
+    case truncatedStaticAnalysis
 
     var displayName: String {
         switch self {
@@ -247,6 +253,8 @@ enum ResolvedWebRuntimeRiskFlag: String, Codable, Equatable, Hashable {
             return "WebGL/纹理 Origin 敏感"
         case .iframeCrossFrameAccess:
             return "iframe 跨 frame DOM 访问"
+        case .truncatedStaticAnalysis:
+            return "大型脚本静态分析截断"
         }
     }
 }
