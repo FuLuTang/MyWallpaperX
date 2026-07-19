@@ -21,6 +21,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterable
+from urllib.parse import urlsplit
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -319,6 +320,18 @@ def events_matching(events: list[DiagnosticEvent], prefixes: tuple[str, ...]) ->
 def classify_sample_resource_noise(event: DiagnosticEvent) -> bool:
     message = event.message.lower()
     url = (event.url or "").lower()
+    if event.type in {"resource.error", "fetch.error"}:
+        return True
+    if "reason=missing" in message or "denied_missing" in message:
+        return True
+    parsed_url = urlsplit(url)
+    is_remote_url = parsed_url.scheme in {"http", "https"} and parsed_url.hostname not in {
+        "127.0.0.1",
+        "localhost",
+        "::1",
+    }
+    if is_remote_url:
+        return True
     known_optional_names = (
         "background.png",
         "placeholder.png",
@@ -327,7 +340,6 @@ def classify_sample_resource_noise(event: DiagnosticEvent) -> bool:
         "google",
         "fonts",
         "cdn",
-        "http",
     )
     return any(name in message or name in url for name in known_optional_names)
 
@@ -1399,6 +1411,36 @@ def run_self_test(args: argparse.Namespace) -> int:
         encoding="utf-8",
     )
     events, metadata = parse_log(log_path)
+    missing_resource = DiagnosticEvent(
+        type="local-resource-deny",
+        severity="warning",
+        message="reason=missing candidate=/tmp/item/images/egg.png resolved=/tmp/item/images/egg.png",
+        url="mwx-local://wallpaper/images/egg.png",
+        line="fixture",
+    )
+    host_mapping_failure = DiagnosticEvent(
+        type="loopback.resource.error",
+        severity="error",
+        message="response_write_failed",
+        url="http://127.0.0.1:51234/index.html",
+        line="fixture",
+    )
+    escaped_resource = DiagnosticEvent(
+        type="local-resource-deny",
+        severity="warning",
+        message="reason=outside_allowed_roots candidate=/tmp/outside.png",
+        url="mwx-local://wallpaper/__absolute__/tmp/outside.png",
+        line="fixture",
+    )
+    if not classify_sample_resource_noise(missing_resource):
+        print("Self-test failed: missing in-package resource was not classified as sample_resource", file=sys.stderr)
+        return 1
+    if classify_sample_resource_noise(host_mapping_failure):
+        print("Self-test failed: loopback response failure was classified as sample_resource", file=sys.stderr)
+        return 1
+    if classify_sample_resource_noise(escaped_resource):
+        print("Self-test failed: outside-root denial was classified as sample_resource", file=sys.stderr)
+        return 1
     result = score_sample(
         Sample(id="fixture"),
         events,
