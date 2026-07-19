@@ -46,6 +46,7 @@ PRECONDITION_RE = re.compile(
 SNAPSHOT_RE = re.compile(
     r"webSnapshot\[(?P<reason>[^\]]+)\] size=(?P<size>\S+) "
     r"avgLuma=(?P<avg>[0-9.]+) nonBlack=(?P<nonblack>[0-9.]+)"
+    r"(?: lumaStdDev=(?P<stddev>[0-9.]+) colored=(?P<colored>[0-9.]+) white=(?P<white>[0-9.]+))?"
 )
 TIMESTAMP_RE = re.compile(r"^(?P<stamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?)")
 RAW_RUNTIME_ERROR_TOKENS = (
@@ -102,6 +103,7 @@ class SampleResult:
     shortfall_categories: list[str]
     log_path: str
     screenshot_path: str | None
+    web_snapshot_paths: list[str]
     process_exit_code: int | None
     duration_seconds: float
     event_counts: dict[str, int]
@@ -240,6 +242,21 @@ def parse_log(log_path: Path) -> tuple[list[DiagnosticEvent], dict[str, Any]]:
                     "size": snapshot_match.group("size"),
                     "avgLuma": float(snapshot_match.group("avg")),
                     "nonBlack": float(snapshot_match.group("nonblack")),
+                    "lumaStdDev": (
+                        float(snapshot_match.group("stddev"))
+                        if snapshot_match.group("stddev") is not None
+                        else None
+                    ),
+                    "colored": (
+                        float(snapshot_match.group("colored"))
+                        if snapshot_match.group("colored") is not None
+                        else None
+                    ),
+                    "white": (
+                        float(snapshot_match.group("white"))
+                        if snapshot_match.group("white") is not None
+                        else None
+                    ),
                 }
             )
 
@@ -310,6 +327,7 @@ def score_sample(
     metadata: dict[str, Any],
     log_path: Path,
     screenshot_path: Path | None,
+    web_snapshot_paths: list[Path],
     exit_code: int | None,
     duration_seconds: float,
 ) -> SampleResult:
@@ -337,6 +355,7 @@ def score_sample(
             shortfall_categories=["precondition"],
             log_path=str(log_path),
             screenshot_path=str(screenshot_path) if screenshot_path else None,
+            web_snapshot_paths=[str(path) for path in web_snapshot_paths],
             process_exit_code=exit_code,
             duration_seconds=round(duration_seconds, 2),
             event_counts=counts,
@@ -547,16 +566,34 @@ def score_sample(
 
     pointer_events = events_matching(events, ("pointer.", "wheel."))
     pointer_errors = [event for event in pointer_events if "error" in event.type or event.severity == "error"]
+    interaction_smoke = has_event(events, "evidence.interaction")
+    interaction_smoke_error = has_event(events, "evidence.interaction.error")
+    pointer_down = has_event(events, "pointer.down")
+    pointer_up = has_event(events, "pointer.up")
     interaction_score = 7.0
     interaction_findings: list[str] = []
-    interaction_evidence = "strong" if pointer_events else "weak"
-    if pointer_errors:
-        interaction_score -= min(7, 4 * len(pointer_errors))
-        interaction_findings.append(f"{len(pointer_errors)} input dispatch error event(s).")
+    interaction_evidence = "weak"
+    if pointer_errors or interaction_smoke_error:
+        input_error_count = len(pointer_errors) + int(interaction_smoke_error)
+        interaction_score -= min(7, 4 * input_error_count)
+        interaction_findings.append(f"{input_error_count} input dispatch error event(s).")
         categories.add("interaction")
-    elif not pointer_events:
-        interaction_score = 5.0
-        interaction_findings.append("No interaction smoke events observed.")
+    elif interaction_smoke and pointer_down and pointer_up:
+        interaction_evidence = "strong"
+    elif interaction_smoke:
+        interaction_score = 4.0
+        interaction_evidence = "medium"
+        interaction_findings.append("Synthetic interaction completed, but pointer down/up receipt was incomplete.")
+        categories.add("interaction")
+    elif pointer_events:
+        interaction_score = 3.0
+        interaction_evidence = "medium"
+        interaction_findings.append("Passive pointer events were observed without a complete interaction smoke sequence.")
+        categories.add("interaction")
+    else:
+        interaction_score = 1.0
+        interaction_findings.append("No pointer/click/drag/wheel interaction evidence was collected.")
+        categories.add("interaction")
     dimensions.append(
         DimensionScore(
             name="interaction",
@@ -569,20 +606,45 @@ def score_sample(
     )
 
     snapshots = metadata.get("snapshots") or []
-    visual_score = 3.0 if host_ready else 0.0
+    dom_evidence = has_event(events, "evidence.dom")
+    dom_errors = events_matching(events, ("evidence.dom.error",))
+    visual_score = 0.0
     visual_findings: list[str] = []
     visual_evidence = "weak"
-    if snapshots:
+    complete_snapshots = [snapshot for snapshot in snapshots if snapshot.get("lumaStdDev") is not None]
+    if complete_snapshots and web_snapshot_paths and dom_evidence and not dom_errors:
         visual_evidence = "strong"
-        best_nonblack = max(float(snapshot["nonBlack"]) for snapshot in snapshots)
-        if best_nonblack >= 0.02:
+        meaningful_snapshots = [
+            snapshot
+            for snapshot in complete_snapshots
+            if float(snapshot["nonBlack"]) >= 0.02
+            and float(snapshot["white"]) < 0.98
+            and (float(snapshot["lumaStdDev"]) >= 0.01 or float(snapshot["colored"]) >= 0.02)
+        ]
+        if meaningful_snapshots:
             visual_score = 5.0
         else:
-            visual_score = 1.0
-            visual_findings.append(f"Snapshot looked black/empty: nonBlack={best_nonblack:.3f}.")
+            visual_score = 0.0
+            best = max(complete_snapshots, key=lambda snapshot: float(snapshot["lumaStdDev"]))
+            visual_findings.append(
+                "Snapshot looked uniform/empty: "
+                f"nonBlack={float(best['nonBlack']):.3f}, "
+                f"lumaStdDev={float(best['lumaStdDev']):.3f}, "
+                f"colored={float(best['colored']):.3f}, white={float(best['white']):.3f}."
+            )
             categories.add("visual_output")
+    elif snapshots and web_snapshot_paths:
+        visual_score = 3.0
+        visual_evidence = "medium"
+        visual_findings.append("WebView snapshot exists, but DOM evidence is missing or failed.")
+        categories.add("visual_output")
+    elif snapshots:
+        visual_score = 1.0
+        visual_findings.append("Snapshot metrics were logged without a saved WebView image artifact.")
+        categories.add("visual_output")
     else:
-        visual_findings.append("No Web snapshot evidence; visual output is inferred from host readiness.")
+        visual_findings.append("No WebView snapshot or DOM evidence was collected; host readiness is not visual proof.")
+        categories.add("visual_output")
     dimensions.append(
         DimensionScore(
             name="visual_output",
@@ -616,6 +678,19 @@ def score_sample(
     else:
         grade = "F"
 
+    grade_rank = {"A": 4, "B": 3, "C": 2, "D": 1, "F": 0}
+    critical_dimensions = [
+        dimension for dimension in dimensions if dimension.name in {"interaction", "visual_output"}
+    ]
+    grade_cap = "A"
+    if any(dimension.status == "fail" for dimension in critical_dimensions):
+        grade_cap = "C"
+    elif any(dimension.status == "warn" for dimension in critical_dimensions):
+        grade_cap = "B"
+    if grade_rank[grade] > grade_rank[grade_cap]:
+        findings.append(f"Grade capped at {grade_cap}: critical interaction/visual evidence is incomplete.")
+        grade = grade_cap
+
     return SampleResult(
         sample=sample,
         score=round(weighted_score, 1),
@@ -626,6 +701,7 @@ def score_sample(
         shortfall_categories=sorted(categories),
         log_path=str(log_path),
         screenshot_path=str(screenshot_path) if screenshot_path else None,
+        web_snapshot_paths=[str(path) for path in web_snapshot_paths],
         process_exit_code=exit_code,
         duration_seconds=round(duration_seconds, 2),
         event_counts=counts,
@@ -707,6 +783,8 @@ def run_one_sample(
         "--mwx-log-web-diagnostics",
         "--mwx-debug-run-web-workshop-id",
         sample.id,
+        "--mwx-debug-web-evidence-dir",
+        str(sample_dir),
     ]
     if runtime_workshop_root:
         command.extend(["--mwx-debug-workshop-root", str(runtime_workshop_root)])
@@ -743,7 +821,17 @@ def run_one_sample(
     elapsed = time.monotonic() - started
 
     events, metadata = parse_log(log_path)
-    return score_sample(sample, events, metadata, log_path, screenshot_path, exit_code, elapsed)
+    web_snapshot_paths = sorted(sample_dir.glob("web-snapshot-*.png"))
+    return score_sample(
+        sample,
+        events,
+        metadata,
+        log_path,
+        screenshot_path,
+        web_snapshot_paths,
+        exit_code,
+        elapsed,
+    )
 
 
 def compare_with_baseline(results: list[SampleResult], baseline_path: Path | None) -> dict[str, Any] | None:
@@ -814,7 +902,7 @@ def summarize(results: list[SampleResult], comparison: dict[str, Any] | None) ->
 
 def write_json_report(output_dir: Path, args: argparse.Namespace, results: list[SampleResult], summary: dict[str, Any]) -> Path:
     report = {
-        "schema_version": 2,
+        "schema_version": 3,
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "repo_root": str(REPO_ROOT),
         "command": vars(args),
@@ -841,15 +929,16 @@ def write_markdown_report(output_dir: Path, results: list[SampleResult], summary
         "",
         "## Samples",
         "",
-        "| ID | Score | Grade | Coverage | Diagnostics | Raw errors | Shortfalls | Log |",
-        "| --- | ---: | --- | ---: | ---: | ---: | --- | --- |",
+        "| ID | Score | Grade | Coverage | Web snapshots | Diagnostics | Raw errors | Shortfalls | Log |",
+        "| --- | ---: | --- | ---: | ---: | ---: | ---: | --- | --- |",
     ]
     for result in sorted(results, key=lambda item: item.score):
         shortfalls = ", ".join(result.shortfall_categories) if result.shortfall_categories else "-"
         log_name = Path(result.log_path).relative_to(output_dir)
         lines.append(
             f"| `{result.sample.id}` | {result.score:.1f} | {result.grade} | "
-            f"{result.coverage:.1f}% | {len(result.diagnostic_warnings) + len(result.diagnostic_errors)} | "
+            f"{result.coverage:.1f}% | {len(result.web_snapshot_paths)} | "
+            f"{len(result.diagnostic_warnings) + len(result.diagnostic_errors)} | "
             f"{len(result.raw_error_lines)} | {shortfalls} | `{log_name}` |"
         )
 
@@ -987,6 +1076,8 @@ def run_self_test(args: argparse.Namespace) -> int:
     fixture_dir = output_dir / "fixture"
     fixture_dir.mkdir(parents=True, exist_ok=True)
     log_path = fixture_dir / "app.log"
+    web_snapshot_path = fixture_dir / "web-snapshot-1-ready.png"
+    web_snapshot_path.write_bytes(b"fixture")
     log_path.write_text(
         "\n".join(
             [
@@ -997,7 +1088,10 @@ def run_self_test(args: argparse.Namespace) -> int:
                 "2026-06-26 10:00:02.100 MyWallpaperX[1:1] MWX WEB DIAG record=fixture screen=1 severity=info type=navigation.finish url=mwx-local://wallpaper/index.html message=ready",
                 "2026-06-26 10:00:02.200 MyWallpaperX[1:1] MWX WEB DIAG record=fixture screen=1 severity=info type=media.initial url=- message=mwx-local://wallpaper/a.mp4 tag=video readyState=4",
                 "2026-06-26 10:00:02.300 MyWallpaperX[1:1] MWX WEB DIAG record=fixture screen=1 severity=info type=pointer.down url=- message=x=10 y=10",
-                "2026-06-26 10:00:02.400 MyWallpaperX[1:1] webSnapshot[delayed] size=1920x1080 avgLuma=0.230 nonBlack=0.800",
+                "2026-06-26 10:00:02.350 MyWallpaperX[1:1] MWX WEB DIAG record=fixture screen=1 severity=info type=pointer.up url=- message=x=20 y=20",
+                "2026-06-26 10:00:02.375 MyWallpaperX[1:1] MWX WEB DIAG record=fixture screen=1 severity=info type=evidence.interaction url=- message={events:[pointer,click,drag,wheel]}",
+                "2026-06-26 10:00:02.390 MyWallpaperX[1:1] MWX WEB DIAG record=fixture screen=1 severity=info type=evidence.dom url=- message={visibleElementCount:4}",
+                "2026-06-26 10:00:02.400 MyWallpaperX[1:1] webSnapshot[ready] size=1920x1080 avgLuma=0.230 nonBlack=0.800 lumaStdDev=0.180 colored=0.400 white=0.010",
             ]
         ),
         encoding="utf-8",
@@ -1009,6 +1103,7 @@ def run_self_test(args: argparse.Namespace) -> int:
         metadata,
         log_path,
         screenshot_path=None,
+        web_snapshot_paths=[web_snapshot_path],
         exit_code=-15,
         duration_seconds=3.0,
     )
@@ -1018,6 +1113,35 @@ def run_self_test(args: argparse.Namespace) -> int:
     md_path = write_markdown_report(output_dir, [result], summary)
     if result.score < 90:
         print(f"Self-test failed: score={result.score}", file=sys.stderr)
+        return 1
+    blank_metadata = dict(metadata)
+    blank_metadata["snapshots"] = [
+        {
+            "reason": "ready",
+            "size": "1920x1080",
+            "avgLuma": 1.0,
+            "nonBlack": 1.0,
+            "lumaStdDev": 0.0,
+            "colored": 0.0,
+            "white": 1.0,
+        }
+    ]
+    blank_result = score_sample(
+        Sample(id="blank-fixture"),
+        events,
+        blank_metadata,
+        log_path,
+        screenshot_path=None,
+        web_snapshot_paths=[web_snapshot_path],
+        exit_code=-15,
+        duration_seconds=3.0,
+    )
+    if blank_result.grade != "C" or "visual_output" not in blank_result.shortfall_categories:
+        print(
+            f"Self-test failed: blank frame grade={blank_result.grade} "
+            f"shortfalls={blank_result.shortfall_categories}",
+            file=sys.stderr,
+        )
         return 1
     print(f"Self-test passed: score={result.score} coverage={result.coverage}%")
     print(f"Report JSON: {json_path}")

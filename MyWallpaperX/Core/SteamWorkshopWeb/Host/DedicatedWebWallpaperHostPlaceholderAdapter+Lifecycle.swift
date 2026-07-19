@@ -409,6 +409,7 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
         recordDiagnostic(type: "host.ready", severity: .info, message: "ready", screenID: screenID, url: nil)
         phase = .ready
         eventHandler?(.ready)
+        scheduleDebugEvidenceIfNeeded()
     }
 
     func diagnosticSeverity(for type: String) -> WebRuntimeDiagnosticEvent.Severity {
