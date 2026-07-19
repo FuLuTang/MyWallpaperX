@@ -353,11 +353,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
  for frame in 0..<80 {
  DispatchQueue.main.asyncAfter(deadline: .now() + 1.0 + Double(frame) * 0.1) {
  let phase = Float(frame % 20) / 20
- let levels = (0..<128).map { index -> Float in
- let position = Float(index) / 127
+ let levels = (0..<32).map { index -> Float in
+ let position = Float(index) / 31
  return 0.12 + 0.72 * abs(sin((position + phase) * .pi * 4))
  }
- WallpaperEngine.shared.dispatchWebRuntimeCommand(.pushAudioSpectrum(levels))
+ _ = WallpaperEngine.shared.dispatchWebAudioSpectrumIfNeeded(levels)
  }
  }
  }

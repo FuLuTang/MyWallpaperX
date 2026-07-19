@@ -8,6 +8,7 @@ import QuartzCore
 
 extension WallpaperEngine {
     private static let legacyWebSpectrumSampleCount = 128
+    private static let legacyWebSpectrumChannelSampleCount = legacyWebSpectrumSampleCount / 2
     private static let legacyWebSpectrumGain: Float = 0.18
     private static let legacyWebSpectrumResponsePower: Float = 1.35
     private static let webSpectrumRiseBlend: Float = 0.58
@@ -38,10 +39,12 @@ extension WallpaperEngine {
     }
 
     private func legacyWebSpectrumLevels(_ levels: [Float], count: Int) -> [Float] {
-        interpolatedWebSpectrumLevels(levels, count: count).map { level in
+        let channelSampleCount = min(count, Self.legacyWebSpectrumChannelSampleCount)
+        let monoChannel = interpolatedWebSpectrumLevels(levels, count: channelSampleCount).map { level in
             let clamped = min(max(level, 0), 1)
             return min(1, pow(clamped, Self.legacyWebSpectrumResponsePower) * Self.legacyWebSpectrumGain)
         }
+        return Array((monoChannel + monoChannel).prefix(count))
     }
 
     private func smoothedWebSpectrumLevels(_ levels: [Float]) -> [Float] {

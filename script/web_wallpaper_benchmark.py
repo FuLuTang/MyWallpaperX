@@ -575,18 +575,23 @@ def score_sample(
     media_evidence = "strong" if media_events else "weak"
     audio_listener_registered = has_event(events, "audio.listener.registered")
     audio_spectrum_dispatched = has_event(events, "audio.spectrum.dispatched")
+    audio_spectrum_changed = has_event(events, "audio.spectrum.changed")
     requires_audio_spectrum = "audio-spectrum" in sample.capabilities
     if media_errors:
         media_score -= min(8, 3 * len(media_errors))
         media_findings.append(f"{len(media_errors)} media/audio error event(s).")
         categories.add("media_audio")
-    elif requires_audio_spectrum and not (audio_listener_registered and audio_spectrum_dispatched):
+    elif requires_audio_spectrum and not (
+        audio_listener_registered and audio_spectrum_dispatched and audio_spectrum_changed
+    ):
         media_score = 2.0
         missing = []
         if not audio_listener_registered:
             missing.append("listener registration")
         if not audio_spectrum_dispatched:
             missing.append("spectrum dispatch")
+        if not audio_spectrum_changed:
+            missing.append("changing spectrum data")
         media_findings.append(f"Required audio-spectrum evidence missing: {', '.join(missing)}.")
         categories.add("media_audio")
     elif not media_events:
@@ -1441,6 +1446,7 @@ def run_self_test(args: argparse.Namespace) -> int:
                 "2026-06-26 10:00:02.200 MyWallpaperX[1:1] MWX WEB DIAG record=fixture screen=1 severity=info type=media.initial url=- message=mwx-local://wallpaper/a.mp4 tag=video readyState=4",
                 "2026-06-26 10:00:02.220 MyWallpaperX[1:1] MWX WEB DIAG record=fixture screen=1 severity=info type=audio.listener.registered url=- message=count=1",
                 "2026-06-26 10:00:02.225 MyWallpaperX[1:1] MWX WEB DIAG record=fixture screen=1 severity=info type=audio.spectrum.dispatched url=- message=listeners=1 bins=128 peak=0.8400",
+                "2026-06-26 10:00:02.230 MyWallpaperX[1:1] MWX WEB DIAG record=fixture screen=1 severity=info type=audio.spectrum.changed url=- message=meanDelta=0.1200",
                 "2026-06-26 10:00:02.300 MyWallpaperX[1:1] MWX WEB DIAG record=fixture screen=1 severity=info type=pointer.down url=- message=x=10 y=10",
                 "2026-06-26 10:00:02.350 MyWallpaperX[1:1] MWX WEB DIAG record=fixture screen=1 severity=info type=pointer.up url=- message=x=20 y=20",
                 "2026-06-26 10:00:02.375 MyWallpaperX[1:1] MWX WEB DIAG record=fixture screen=1 severity=info type=evidence.interaction url=- message={events:[pointer,click,drag,wheel]}",

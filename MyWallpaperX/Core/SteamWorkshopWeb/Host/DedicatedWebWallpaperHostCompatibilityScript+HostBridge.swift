@@ -542,11 +542,33 @@ let webCompatibilityScriptHostBridge = #"""
       : [];
     if (!hasLoggedAudioSpectrumDelivery && audioListeners.length > 0) {
       const peak = safeLevels.reduce((maximum, value) => Math.max(maximum, value), 0);
+      const half = Math.floor(safeLevels.length / 2);
+      const stereoDelta = half > 0
+        ? safeLevels.slice(0, half).reduce(
+            (total, value, index) => total + Math.abs(value - safeLevels[index + half]),
+            0
+          ) / half
+        : 0;
       hostLogger.post(
         'audio.spectrum.dispatched',
-        `listeners=${audioListeners.length} bins=${safeLevels.length} peak=${peak.toFixed(4)}`
+        `listeners=${audioListeners.length} bins=${safeLevels.length} peak=${peak.toFixed(4)} stereoDelta=${stereoDelta.toFixed(4)}`
       );
+      firstDeliveredAudioSpectrum.splice(0, firstDeliveredAudioSpectrum.length, ...safeLevels);
       hasLoggedAudioSpectrumDelivery = true;
+    } else if (
+      !hasLoggedAudioSpectrumChange &&
+      audioListeners.length > 0 &&
+      firstDeliveredAudioSpectrum.length === safeLevels.length &&
+      safeLevels.length > 0
+    ) {
+      const meanDelta = safeLevels.reduce(
+        (total, value, index) => total + Math.abs(value - firstDeliveredAudioSpectrum[index]),
+        0
+      ) / safeLevels.length;
+      if (meanDelta >= 0.001) {
+        hostLogger.post('audio.spectrum.changed', `meanDelta=${meanDelta.toFixed(4)}`);
+        hasLoggedAudioSpectrumChange = true;
+      }
     }
     try {
       window.dispatchEvent(new CustomEvent('wallpaper-audio-spectrum', { detail: safeLevels }));
