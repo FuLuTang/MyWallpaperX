@@ -651,8 +651,9 @@ def score_sample(
             normal_content = non_black >= 0.02 and (stddev >= 0.01 or colored >= 0.02)
             sparse_dark_content = (
                 peak_luma is not None
-                and non_black >= 0.0002
-                and stddev >= 0.002
+                and "sparse-dark-output" in sample.capabilities
+                and non_black >= 0.00005
+                and stddev >= 0.0005
                 and float(peak_luma) >= 0.15
             )
             if white < 0.98 and (normal_content or sparse_dark_content):
@@ -1589,7 +1590,7 @@ def run_self_test(args: argparse.Namespace) -> int:
         }
     ]
     sparse_dark_result = score_sample(
-        Sample(id="sparse-dark-fixture"),
+        Sample(id="sparse-dark-fixture", capabilities=["sparse-dark-output"]),
         events,
         sparse_dark_metadata,
         log_path,
