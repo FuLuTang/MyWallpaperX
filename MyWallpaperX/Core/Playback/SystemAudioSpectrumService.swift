@@ -18,6 +18,7 @@ final class SystemAudioSpectrumService: NSObject {
     private let captureBuffer = SystemAudioCaptureBuffer(maximumFrameCount: 4096)
     private let overlayAnalyzer: SystemAudioOverlaySpectrumAnalyzer
     private let webAnalyzer = SystemAudioWebSpectrumAnalyzer()
+    private lazy var configurationMonitor = SystemAudioCaptureConfigurationMonitor(queue: sampleQueue)
 
     private var processingSource: DispatchSourceUserDataAdd!
     private var tapID: AudioObjectID = kAudioObjectUnknown
@@ -31,6 +32,9 @@ final class SystemAudioSpectrumService: NSObject {
     private var captureRetryWorkItem: DispatchWorkItem?
     private var captureGeneration = 0
     private var hasLoggedCapturedData = false
+    private var captureResourceGeneration = 0
+    private var captureRestartSequence = 0
+    private var captureRestartWorkItem: DispatchWorkItem?
 
     var onLevels: (([Float]) -> Void)?
     var onWebLevels: (([Float]) -> Void)?
@@ -52,6 +56,7 @@ final class SystemAudioSpectrumService: NSObject {
 
     deinit {
         captureRetryWorkItem?.cancel()
+        captureRestartWorkItem?.cancel()
         processingSource?.cancel()
         stopCapture()
     }
@@ -112,6 +117,12 @@ final class SystemAudioSpectrumService: NSObject {
             let aggregateID = try SystemAudioCaptureDeviceFactory.createAggregateDevice(tapUID: tapUID)
             aggregateDeviceID = aggregateID
             SystemAudioCaptureDeviceFactory.configureCaptureBufferFrameSize(for: aggregateID)
+            captureResourceGeneration += 1
+            let resourceGeneration = captureResourceGeneration
+            try configurationMonitor.install(tapID: createdTapID, aggregateDeviceID: aggregateID) {
+                [weak self] reason in
+                self?.scheduleCaptureRestart(reason: reason, generation: resourceGeneration)
+            }
 
             var createdIOProcID: AudioDeviceIOProcID?
             let ioStatus = AudioDeviceCreateIOProcIDWithBlock(
@@ -152,7 +163,9 @@ final class SystemAudioSpectrumService: NSObject {
             || aggregateDeviceID != kAudioObjectUnknown
             || ioProcID != nil
         if shouldCapture {
-            if !hasCaptureResources, captureRetryWorkItem == nil {
+            if !hasCaptureResources,
+               captureRetryWorkItem == nil,
+               captureRestartWorkItem == nil {
                 startCaptureIfNeeded()
             }
             return
@@ -161,6 +174,7 @@ final class SystemAudioSpectrumService: NSObject {
         captureRetryWorkItem?.cancel()
         captureRetryWorkItem = nil
         captureRetryAttempt = 0
+        cancelCaptureRestart()
         if hasCaptureResources {
             stopCapture()
         }
@@ -181,8 +195,56 @@ final class SystemAudioSpectrumService: NSObject {
         sampleQueue.asyncAfter(deadline: .now() + delay, execute: workItem)
     }
 
+    private func scheduleCaptureRestart(reason: String, generation: Int) {
+        guard generation == captureResourceGeneration,
+              overlayEnabled || webEnabled,
+              tapID != kAudioObjectUnknown,
+              aggregateDeviceID != kAudioObjectUnknown else { return }
+        captureRestartSequence += 1
+        let sequence = captureRestartSequence
+        captureRestartWorkItem?.cancel()
+        NSLog("MWX AUDIO CAPTURE: invalidated reason=%@ generation=%d", reason, generation)
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self,
+                  self.captureRestartSequence == sequence,
+                  self.captureResourceGeneration == generation,
+                  self.overlayEnabled || self.webEnabled else { return }
+            self.captureRestartWorkItem = nil
+            NSLog("MWX AUDIO CAPTURE: restarting reason=%@ generation=%d", reason, generation)
+            self.stopCapture()
+            self.scheduleCaptureStartAfterRestart()
+        }
+        captureRestartWorkItem = workItem
+        sampleQueue.asyncAfter(deadline: .now() + 0.25, execute: workItem)
+    }
+
+    private func scheduleCaptureStartAfterRestart() {
+        guard overlayEnabled || webEnabled else { return }
+        captureRestartSequence += 1
+        let sequence = captureRestartSequence
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self,
+                  self.captureRestartSequence == sequence,
+                  self.overlayEnabled || self.webEnabled else { return }
+            self.captureRestartWorkItem = nil
+            self.startCaptureIfNeeded()
+        }
+        captureRestartWorkItem = workItem
+        NSLog("MWX AUDIO CAPTURE: restart waiting delay=1.0")
+        sampleQueue.asyncAfter(deadline: .now() + 1.0, execute: workItem)
+    }
+
+    private func cancelCaptureRestart() {
+        captureRestartSequence += 1
+        captureRestartWorkItem?.cancel()
+        captureRestartWorkItem = nil
+    }
+
     private func stopCapture() {
         let hadCapture = aggregateDeviceID != kAudioObjectUnknown || tapID != kAudioObjectUnknown
+        cancelCaptureRestart()
+        captureResourceGeneration += 1
+        configurationMonitor.remove()
         if aggregateDeviceID != kAudioObjectUnknown, let ioProcID {
             AudioDeviceStop(aggregateDeviceID, ioProcID)
             AudioDeviceDestroyIOProcID(aggregateDeviceID, ioProcID)
@@ -210,6 +272,15 @@ final class SystemAudioSpectrumService: NSObject {
             NSLog("MWX AUDIO CAPTURE: stopped")
         }
     }
+
+#if DEBUG
+    func debugSimulateCaptureConfigurationInvalidation() {
+        sampleQueue.async { [weak self] in
+            guard let self else { return }
+            self.scheduleCaptureRestart(reason: "debug", generation: self.captureResourceGeneration)
+        }
+    }
+#endif
 
     private func resetConsumersAfterCaptureFailure() {
         overlayEnabled = false

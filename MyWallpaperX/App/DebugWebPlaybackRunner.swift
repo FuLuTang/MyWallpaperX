@@ -17,6 +17,7 @@ enum DebugWebPlaybackRunner {
         arguments.contains("--mwx-debug-run-web-workshop-id")
             || arguments.contains("--mwx-debug-web-lifecycle-sequence")
             || arguments.contains("--mwx-debug-web-system-state-sequence")
+            || arguments.contains("--mwx-debug-web-audio-restart-sequence")
     }
 
     private static var arguments: [String] {
@@ -57,6 +58,12 @@ enum DebugWebPlaybackRunner {
     }
 
     static func scheduleWebWorkshopRuntimeIfRequested() {
+        if let restartIndex = arguments.firstIndex(of: "--mwx-debug-web-audio-restart-sequence"),
+           arguments.indices.contains(restartIndex + 1) {
+            scheduleAudioRestartSequence(itemID: arguments[restartIndex + 1])
+            return
+        }
+
         if let stateIndex = arguments.firstIndex(of: "--mwx-debug-web-system-state-sequence"),
            arguments.indices.contains(stateIndex + 1) {
             scheduleSystemStateSequence(itemID: arguments[stateIndex + 1])
@@ -158,6 +165,37 @@ enum DebugWebPlaybackRunner {
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + 12.2) {
                 NSLog("MWX DEBUG SYSTEM STATE: action=completed")
+            }
+        }
+    }
+
+    private static func scheduleAudioRestartSequence(itemID: String) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+            guard hasUsableWorkshopRoot else {
+                NSLog("MWX DEBUG AUDIO RESTART: precondition=isolated-root-required")
+                return
+            }
+            let service = SteamWorkshopService.shared
+            NSLog("MWX DEBUG PLAY: using workshop root %@", service.libraryRootURL.path)
+            service.reloadInstalledItems()
+            launchWebWorkshopItem(itemID, using: service)
+
+            for (index, delay) in [6.0, 6.05, 6.1].enumerated() {
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                    NSLog("MWX DEBUG AUDIO RESTART: action=burst-%d", index + 1)
+                    WallpaperEngine.shared.debugSimulateSystemAudioCaptureInvalidation()
+                }
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 8.0) {
+                NSLog("MWX DEBUG AUDIO RESTART: action=single")
+                WallpaperEngine.shared.debugSimulateSystemAudioCaptureInvalidation()
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 10.5) {
+                NSLog("MWX DEBUG AUDIO RESTART: action=stop")
+                WallpaperEngine.shared.stopPlayback()
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 11.9) {
+                NSLog("MWX DEBUG AUDIO RESTART: action=completed")
             }
         }
     }

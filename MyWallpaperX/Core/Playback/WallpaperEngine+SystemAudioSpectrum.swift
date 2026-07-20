@@ -122,6 +122,12 @@ extension WallpaperEngine {
         )
     }
 
+#if DEBUG
+    func debugSimulateSystemAudioCaptureInvalidation() {
+        systemAudioSpectrumService.debugSimulateCaptureConfigurationInvalidation()
+    }
+#endif
+
     public func updateSystemAudioSpectrumLevels(_ levels: [Float]) {
         guard currentSystemAudioSpectrumEnabled else { return }
 

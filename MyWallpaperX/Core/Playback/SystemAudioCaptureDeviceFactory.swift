@@ -131,6 +131,21 @@ enum SystemAudioCaptureDeviceFactory {
         return format
     }
 
+    static func isDeviceAlive(_ deviceID: AudioObjectID) throws -> Bool {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyDeviceIsAlive,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var isAlive: UInt32 = 0
+        var dataSize = UInt32(MemoryLayout<UInt32>.size)
+        let status = AudioObjectGetPropertyData(deviceID, &address, 0, nil, &dataSize, &isAlive)
+        guard status == noErr else {
+            throw CaptureError.osStatus(status)
+        }
+        return isAlive != 0
+    }
+
     enum CaptureError: LocalizedError {
         case osStatus(OSStatus)
 
