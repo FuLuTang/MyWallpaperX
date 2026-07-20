@@ -11,31 +11,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
  private var statusBarController: StatusBarController?
  private var pendingInitialWindowOpen: DispatchWorkItem?
 
- #if DEBUG
- private var shouldSuppressInitialMainWindowForDebugPlayback: Bool {
- ProcessInfo.processInfo.arguments.contains("--mwx-debug-suppress-main-window")
- }
-
- private var runsIsolatedWebWorkshopSample: Bool {
- let arguments = ProcessInfo.processInfo.arguments
- return arguments.contains("--mwx-debug-run-web-workshop-id")
- || arguments.contains("--mwx-debug-web-lifecycle-sequence")
- }
-
- private var hasUsableDebugWorkshopRoot: Bool {
- let arguments = ProcessInfo.processInfo.arguments
- guard let flagIndex = arguments.firstIndex(of: "--mwx-debug-workshop-root"),
-       arguments.indices.contains(flagIndex + 1) else {
- return false
- }
- let rootPath = arguments[flagIndex + 1].trimmingCharacters(in: .whitespacesAndNewlines)
- var isDirectory = ObjCBool(false)
- return !rootPath.isEmpty
- && FileManager.default.fileExists(atPath: rootPath, isDirectory: &isDirectory)
- && isDirectory.boolValue
- }
- #endif
-
  private func normalizedMenuTitle(_ menuItem: NSMenuItem) -> String {
  menuItem.title.replacingOccurrences(of: " ", with: "")
  }
@@ -108,8 +83,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
  func applicationDidFinishLaunching(_ notification: Notification) {
 #if DEBUG
- if runsIsolatedWebWorkshopSample {
- scheduleDebugWebWorkshopRuntimeIfRequested()
+ if DebugWebPlaybackRunner.runsIsolatedWebWorkshopSample {
+ DebugWebPlaybackRunner.scheduleWebWorkshopRuntimeIfRequested()
  return
  }
 #endif
@@ -121,8 +96,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
  NSHelpManager.shared.registerBooks(in: Bundle(path: helpPath) ?? .main)
  }
  scheduleInitialMainWindowActivation()
- scheduleDebugWorkshopPlaybackIfRequested()
- scheduleDebugWebWorkshopRuntimeIfRequested()
+#if DEBUG
+ DebugWebPlaybackRunner.scheduleWorkshopPlaybackIfRequested()
+ DebugWebPlaybackRunner.scheduleWebWorkshopRuntimeIfRequested()
+#endif
  // 避开启动期布局敏感窗口，延后创建状态栏项，降低触发 AppKit 布局递归的概率。
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.75) { [weak self] in
  guard let self, self.statusBarController == nil else { return }
@@ -158,7 +135,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
  func applicationWillTerminate(_ notification: Notification) {
 #if DEBUG
- if runsIsolatedWebWorkshopSample {
+ if DebugWebPlaybackRunner.runsIsolatedWebWorkshopSample {
  WallpaperEngine.shared.cleanup()
  return
  }
@@ -174,7 +151,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
  // 启动分阶段：优先让壁纸播放链路起稳，再激活主窗口，降低冷启动"同时抢占"造成的卡顿感。
  private func scheduleInitialMainWindowActivation() {
  #if DEBUG
- if shouldSuppressInitialMainWindowForDebugPlayback {
+ if DebugWebPlaybackRunner.shouldSuppressInitialMainWindow {
  return
  }
  #endif
@@ -203,168 +180,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
  pendingInitialWindowOpen = firstTry
  DispatchQueue.main.async(execute: firstTry)
  }
-
- #if DEBUG
- private func scheduleDebugWorkshopPlaybackIfRequested() {
- let arguments = ProcessInfo.processInfo.arguments
- guard let flagIndex = arguments.firstIndex(of: "--mwx-debug-play-workshop-id"),
-       arguments.indices.contains(flagIndex + 1) else { return }
- let itemID = arguments[flagIndex + 1]
-
- DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
- let service = SteamWorkshopService.shared
- service.reloadInstalledItems()
- guard let record = service.latestDownloadRecord(for: itemID) else {
- NSLog("MWX DEBUG PLAY: workshop item %@ not found", itemID)
- return
- }
-
- NSLog("MWX DEBUG PLAY: launching workshop item %@ type=%@", itemID, String(describing: record.contentType))
- service.setAsWallpaper(record)
- }
- }
-
- private func debugWebPropertiesJSON(overriding baseJSON: String?) -> String? {
- let arguments = ProcessInfo.processInfo.arguments
- guard let flagIndex = arguments.firstIndex(of: "--mwx-debug-web-properties-file"),
-       arguments.indices.contains(flagIndex + 1),
-       let overrideData = try? Data(contentsOf: URL(fileURLWithPath: arguments[flagIndex + 1])),
-       let overrides = try? JSONSerialization.jsonObject(with: overrideData) as? [String: Any] else {
- return baseJSON
- }
- var merged: [String: Any] = [:]
- if let baseJSON,
-    let baseData = baseJSON.data(using: .utf8),
-    let base = try? JSONSerialization.jsonObject(with: baseData) as? [String: Any] {
- merged = base
- }
- for (key, rawOverride) in overrides {
- if let overridePayload = rawOverride as? [String: Any] {
- var propertyPayload = merged[key] as? [String: Any] ?? [:]
- for (field, value) in overridePayload {
- propertyPayload[field] = value
- }
- merged[key] = propertyPayload
- } else {
- var propertyPayload = merged[key] as? [String: Any] ?? [:]
- propertyPayload["value"] = rawOverride
- merged[key] = propertyPayload
- }
- }
- guard JSONSerialization.isValidJSONObject(merged),
-       let data = try? JSONSerialization.data(withJSONObject: merged),
-       let json = String(data: data, encoding: .utf8) else {
- return baseJSON
- }
- NSLog("MWX DEBUG PLAY: applied %ld Web property override(s)", overrides.count)
- return json
- }
-
- private func scheduleDebugWebWorkshopRuntimeIfRequested() {
- let arguments = ProcessInfo.processInfo.arguments
- if let sequenceIndex = arguments.firstIndex(of: "--mwx-debug-web-lifecycle-sequence"),
-    arguments.indices.contains(sequenceIndex + 1) {
- let itemIDs = arguments[sequenceIndex + 1]
- .split(separator: ",")
- .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
- .filter { !$0.isEmpty }
- guard itemIDs.count >= 2 else {
- NSLog("MWX DEBUG LIFECYCLE: precondition=at-least-two-items-required")
- return
- }
- DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
- guard self.hasUsableDebugWorkshopRoot else {
- NSLog("MWX DEBUG LIFECYCLE: precondition=isolated-root-required")
- return
- }
- let service = SteamWorkshopService.shared
- NSLog("MWX DEBUG PLAY: using workshop root %@", service.libraryRootURL.path)
- service.reloadInstalledItems()
- for (index, itemID) in itemIDs.enumerated() {
- DispatchQueue.main.asyncAfter(deadline: .now() + Double(index) * 4.0) {
- self.launchDebugWebWorkshopItem(itemID, using: service)
- }
- }
- DispatchQueue.main.asyncAfter(deadline: .now() + Double(itemIDs.count) * 4.0) {
- WallpaperEngine.shared.stopPlayback()
- NSLog("MWX DEBUG LIFECYCLE: stop requested")
- DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
- NSLog("MWX DEBUG LIFECYCLE: completed")
- }
- }
- }
- return
- }
- guard let flagIndex = arguments.firstIndex(of: "--mwx-debug-run-web-workshop-id"),
-       arguments.indices.contains(flagIndex + 1) else { return }
- let itemID = arguments[flagIndex + 1]
-
- DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
- guard self.hasUsableDebugWorkshopRoot else {
- NSLog("MWX DEBUG PLAY: workshop item %@ precondition=isolated-root-required", itemID)
- return
- }
- let service = SteamWorkshopService.shared
- NSLog("MWX DEBUG PLAY: using workshop root %@", service.libraryRootURL.path)
- service.reloadInstalledItems()
- self.launchDebugWebWorkshopItem(itemID, using: service)
- }
- }
-
- private func launchDebugWebWorkshopItem(_ itemID: String, using service: SteamWorkshopService) {
- guard let record = service.latestDownloadRecord(for: itemID) else {
- NSLog("MWX DEBUG PLAY: workshop item %@ not found", itemID)
- return
- }
- if case let .missing(dependencyItemID) = record.dependencyStatus {
- NSLog("MWX DEBUG PLAY: workshop item %@ precondition=missing-dependency-%@", itemID, dependencyItemID)
- return
- }
- guard record.contentType == .web else {
- NSLog("MWX DEBUG PLAY: workshop item %@ type=%@ is not web", itemID, String(describing: record.contentType))
- return
- }
- guard service.canLaunchDownloadRecord(record) else {
- NSLog("MWX DEBUG PLAY: workshop item %@ precondition=not-launchable", itemID)
- return
- }
- guard let playbackContext = service.resolvedWebPlaybackContext(for: record) else {
- NSLog("MWX DEBUG PLAY: workshop item %@ precondition=missing-playback-context", itemID)
- return
- }
- NSLog("MWX DEBUG PLAY: launching workshop item %@ type=%@ isolatedRoot=%@", itemID, String(describing: record.contentType), service.libraryRootURL.path)
- WallpaperEngine.shared.setSystemAudioSpectrumEnabled(false)
- WallpaperEngine.shared.setWebWallpaper(
- entryURL: playbackContext.effectiveEntryURL,
- rootURL: playbackContext.effectiveRootURL,
- propertiesJSON: self.debugWebPropertiesJSON(overriding: playbackContext.propertyPayloadJSON),
- recordID: record.id,
- language: playbackContext.language,
- runtimeProfile: service.recommendedWebRuntimeProfile(for: record),
- multiDisplayEnabled: true
- )
- self.scheduleDebugWebAudioSpectrumIfRequested()
- }
-
- private func scheduleDebugWebAudioSpectrumIfRequested() {
- let arguments = ProcessInfo.processInfo.arguments
- guard arguments.contains("--mwx-debug-web-audio-spectrum-fixture") else { return }
-
- for frame in 0..<80 {
- DispatchQueue.main.asyncAfter(deadline: .now() + 1.0 + Double(frame) * 0.1) {
- let phase = Float(frame % 20) / 20
- let monoLevels = (0..<64).map { index -> Float in
- let position = Float(index) / 63
- return 0.12 + 0.72 * abs(sin((position + phase) * .pi * 4))
- }
- _ = WallpaperEngine.shared.dispatchWebAudioSpectrumIfNeeded(monoLevels + monoLevels)
- }
- }
- }
-#else
- private func scheduleDebugWorkshopPlaybackIfRequested() {}
- private func scheduleDebugWebWorkshopRuntimeIfRequested() {}
-#endif
 
  @objc func showSettingsMenuAction(_ sender: Any?) {
  SettingsWindowController.shared.showWindow()

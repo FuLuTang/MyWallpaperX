@@ -121,7 +121,7 @@ extension WallpaperEngine {
             currentWebPropertiesJSON = nil
             currentWebRecordID = nil
             currentWebLaunchSource = nil
-            playbackPaused = false
+            setPlaybackPausedState(false)
         }
         currentWebHostStrategy = strategy
         NSLog("WallpaperEngine: switched Web host strategy to %@", strategy.rawValue)
@@ -132,7 +132,7 @@ extension WallpaperEngine {
             setWebAudioSpectrumRequested(false)
         }
         if ProcessInfo.processInfo.isLowPowerModeEnabled {
-            playbackPaused = true
+            setPlaybackPausedState(true)
         }
         let runtimeState = webWallpaperRuntimeState()
         currentMultiDisplayEnabled = request.multiDisplayEnabled

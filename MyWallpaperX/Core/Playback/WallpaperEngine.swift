@@ -61,7 +61,6 @@ public final class WallpaperEngine: NSObject {
     var currentWebLaunchSource: WebWallpaperLaunchSource?
     lazy var dedicatedWebHostAdapter: WebWallpaperHostAdapter = DedicatedWebWallpaperHostPlaceholderAdapter()
     var displayIDs: [CGDirectDisplayID] = []
-    var wasPlayingBeforeSleep = true
     var screenLocked = false
     var visibilityReductionActive = false
     var playbackPaused = false
@@ -94,8 +93,7 @@ public final class WallpaperEngine: NSObject {
 
     var systemSleeping = false
     var displaysSleeping = false
-    var wasPlayingBeforeSystemSleep = false
-    var wasPlayingBeforeDisplaySleep = false
+    var activeSystemInterruptions: Set<PlaybackSystemInterruption> = []
     var lastClickTime: TimeInterval = 0
     let clickDebounceInterval: TimeInterval = 0.3
     var lastFailureVideoPath: String?
@@ -188,7 +186,7 @@ public final class WallpaperEngine: NSObject {
             currentContentPath = nil
             currentWebLaunchSource = nil
             currentWebRecordID = nil
-            playbackPaused = false
+            setPlaybackPausedState(false)
         }
 
         // 先更新内存态，再决定是否复用现有 daemon session 或下发新的 play 命令。
@@ -309,36 +307,6 @@ public final class WallpaperEngine: NSObject {
         currentWebPropertiesJSON = nil
         currentWebRecordID = nil
         currentWebLaunchSource = nil
-    }
-
-    public func pauseAllPlayers() {
-        assert(Thread.isMainThread, "pauseAllPlayers must be called on main thread")
-        if playbackPaused { return }
-
-        if currentPlaybackContentKind == .web {
-            dispatchWebRuntimeCommand(.pause)
-        } else {
-            // 统一给所有正在运行的 daemon 下发 pause，保持引擎状态机单一。
-            for session in displaySessions.values where session.process.isRunning {
-                send(DaemonCommand(action: "pause", videoPath: nil, framePath: nil, webRootPath: nil, propertiesJSON: nil, fillMode: nil, shouldLoopCurrentItem: nil, volume: nil, playbackRate: nil, spectrumEnabled: nil, spectrumLevels: nil, spectrumBarCount: nil, spectrumColorHex: nil, spectrumOffsetX: nil, spectrumOffsetY: nil, spectrumPeakCapsEnabled: nil, requestID: nil), to: session)
-            }
-        }
-        playbackPaused = true
-    }
-
-    public func resumeAllPlayers() {
-        assert(Thread.isMainThread, "resumeAllPlayers must be called on main thread")
-        if !playbackPaused { return }
-
-        if currentPlaybackContentKind == .web {
-            dispatchWebRuntimeCommand(.resume(playbackRate: targetPlaybackRate))
-        } else {
-            // 恢复时统一带回当前播放速率，避免不同 session 恢复节奏不一致。
-            for session in displaySessions.values where session.process.isRunning {
-                send(DaemonCommand(action: "resume", videoPath: nil, framePath: nil, webRootPath: nil, propertiesJSON: nil, fillMode: nil, shouldLoopCurrentItem: nil, volume: nil, playbackRate: targetPlaybackRate, spectrumEnabled: nil, spectrumLevels: nil, spectrumBarCount: nil, spectrumColorHex: nil, spectrumOffsetX: nil, spectrumOffsetY: nil, spectrumPeakCapsEnabled: nil, requestID: nil), to: session)
-            }
-        }
-        playbackPaused = false
     }
 
     public func setVolume(_ volume: Float) {

@@ -27,6 +27,10 @@ final class SystemAudioSpectrumService: NSObject {
     private var overlayEnabled = false
     private var webEnabled = false
     private var lastProcessedAt: TimeInterval = 0
+    private var captureRetryAttempt = 0
+    private var captureRetryWorkItem: DispatchWorkItem?
+    private var captureGeneration = 0
+    private var hasLoggedCapturedData = false
 
     var onLevels: (([Float]) -> Void)?
     var onWebLevels: (([Float]) -> Void)?
@@ -47,6 +51,7 @@ final class SystemAudioSpectrumService: NSObject {
     }
 
     deinit {
+        captureRetryWorkItem?.cancel()
         processingSource?.cancel()
         stopCapture()
     }
@@ -54,8 +59,6 @@ final class SystemAudioSpectrumService: NSObject {
     func setConsumers(overlayEnabled: Bool, webEnabled: Bool) {
         sampleQueue.async { [weak self] in
             guard let self else { return }
-            let wasCapturing = self.overlayEnabled || self.webEnabled
-
             if self.overlayEnabled != overlayEnabled {
                 self.onLevels?(self.overlayAnalyzer.reset())
             }
@@ -64,13 +67,7 @@ final class SystemAudioSpectrumService: NSObject {
             }
             self.overlayEnabled = overlayEnabled
             self.webEnabled = webEnabled
-
-            let shouldCapture = overlayEnabled || webEnabled
-            if shouldCapture, !wasCapturing {
-                self.startCaptureIfNeeded()
-            } else if !shouldCapture, wasCapturing {
-                self.stopCapture()
-            }
+            self.reconcileCaptureState()
         }
     }
 
@@ -86,6 +83,7 @@ final class SystemAudioSpectrumService: NSObject {
     }
 
     private func startCaptureIfNeeded() {
+        guard overlayEnabled || webEnabled else { return }
         guard tapID == kAudioObjectUnknown, aggregateDeviceID == kAudioObjectUnknown else { return }
         guard #available(macOS 14.2, *) else {
             NSLog("MWX AUDIO CAPTURE: unavailable before macOS 14.2")
@@ -94,7 +92,9 @@ final class SystemAudioSpectrumService: NSObject {
         }
 
         do {
-            let excludedProcessIDs = currentProcessObjectID().map { [$0] } ?? []
+            captureRetryWorkItem?.cancel()
+            captureRetryWorkItem = nil
+            let excludedProcessIDs = SystemAudioCaptureDeviceFactory.currentProcessObjectID().map { [$0] } ?? []
             let tapDescription = CATapDescription(
                 stereoGlobalTapButExcludeProcesses: excludedProcessIDs
             )
@@ -104,14 +104,14 @@ final class SystemAudioSpectrumService: NSObject {
             tapDescription.muteBehavior = .unmuted
             tapDescription.isProcessRestoreEnabled = false
 
-            let createdTapID = try createProcessTap(description: tapDescription)
+            let createdTapID = try SystemAudioCaptureDeviceFactory.createProcessTap(description: tapDescription)
             tapID = createdTapID
-            let tapUID = try fetchTapUID(for: createdTapID)
-            tapStreamFormat = try fetchTapFormat(for: createdTapID)
+            let tapUID = try SystemAudioCaptureDeviceFactory.fetchTapUID(for: createdTapID)
+            tapStreamFormat = try SystemAudioCaptureDeviceFactory.fetchTapFormat(for: createdTapID)
 
-            let aggregateID = try createAggregateDevice(tapUID: tapUID)
+            let aggregateID = try SystemAudioCaptureDeviceFactory.createAggregateDevice(tapUID: tapUID)
             aggregateDeviceID = aggregateID
-            configureCaptureBufferFrameSize(for: aggregateID)
+            SystemAudioCaptureDeviceFactory.configureCaptureBufferFrameSize(for: aggregateID)
 
             var createdIOProcID: AudioDeviceIOProcID?
             let ioStatus = AudioDeviceCreateIOProcIDWithBlock(
@@ -122,25 +122,63 @@ final class SystemAudioSpectrumService: NSObject {
                 self?.processAudioBufferList(inInputData)
             }
             guard ioStatus == noErr, let createdIOProcID else {
-                throw CaptureError.osStatus(ioStatus)
+                throw SystemAudioCaptureDeviceFactory.CaptureError.osStatus(ioStatus)
             }
             ioProcID = createdIOProcID
 
             let startStatus = AudioDeviceStart(aggregateID, createdIOProcID)
             guard startStatus == noErr else {
-                throw CaptureError.osStatus(startStatus)
+                throw SystemAudioCaptureDeviceFactory.CaptureError.osStatus(startStatus)
             }
+            captureRetryAttempt = 0
+            captureGeneration += 1
+            hasLoggedCapturedData = false
             NSLog(
-                "MWX AUDIO CAPTURE: started sampleRate=%.0f channels=%u",
+                "MWX AUDIO CAPTURE: started generation=%d sampleRate=%.0f channels=%u",
+                captureGeneration,
                 tapStreamFormat.mSampleRate,
                 tapStreamFormat.mChannelsPerFrame
             )
         } catch {
             NSLog("MWX AUDIO CAPTURE: failed %@", error.localizedDescription)
             stopCapture()
-            overlayEnabled = false
-            webEnabled = false
+            scheduleCaptureRetryIfNeeded()
         }
+    }
+
+    private func reconcileCaptureState() {
+        let shouldCapture = overlayEnabled || webEnabled
+        let hasCaptureResources = tapID != kAudioObjectUnknown
+            || aggregateDeviceID != kAudioObjectUnknown
+            || ioProcID != nil
+        if shouldCapture {
+            if !hasCaptureResources, captureRetryWorkItem == nil {
+                startCaptureIfNeeded()
+            }
+            return
+        }
+
+        captureRetryWorkItem?.cancel()
+        captureRetryWorkItem = nil
+        captureRetryAttempt = 0
+        if hasCaptureResources {
+            stopCapture()
+        }
+    }
+
+    private func scheduleCaptureRetryIfNeeded() {
+        guard overlayEnabled || webEnabled else { return }
+        captureRetryAttempt += 1
+        let delay = min(pow(2, Double(captureRetryAttempt - 1)), 30)
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.captureRetryWorkItem = nil
+            self.startCaptureIfNeeded()
+        }
+        captureRetryWorkItem?.cancel()
+        captureRetryWorkItem = workItem
+        NSLog("MWX AUDIO CAPTURE: retry scheduled attempt=%d delay=%.1f", captureRetryAttempt, delay)
+        sampleQueue.asyncAfter(deadline: .now() + delay, execute: workItem)
     }
 
     private func stopCapture() {
@@ -180,146 +218,6 @@ final class SystemAudioSpectrumService: NSObject {
         onWebLevels?(Self.clearedWebLevels)
     }
 
-    private func createProcessTap(description: CATapDescription) throws -> AudioObjectID {
-        var tapID = AudioObjectID(kAudioObjectUnknown)
-        let status = AudioHardwareCreateProcessTap(description, &tapID)
-        guard status == noErr else {
-            throw CaptureError.osStatus(status)
-        }
-        return tapID
-    }
-
-    private func currentProcessObjectID() -> AudioObjectID? {
-        var pid = pid_t(ProcessInfo.processInfo.processIdentifier)
-        var address = AudioObjectPropertyAddress(
-            mSelector: kAudioHardwarePropertyTranslatePIDToProcessObject,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        var processObjectID = AudioObjectID(kAudioObjectUnknown)
-        var dataSize = UInt32(MemoryLayout<AudioObjectID>.size)
-        let status = withUnsafePointer(to: &pid) { pidPointer in
-            AudioObjectGetPropertyData(
-                AudioObjectID(kAudioObjectSystemObject),
-                &address,
-                UInt32(MemoryLayout<pid_t>.size),
-                pidPointer,
-                &dataSize,
-                &processObjectID
-            )
-        }
-
-        guard status == noErr, processObjectID != kAudioObjectUnknown else {
-            return nil
-        }
-        return processObjectID
-    }
-
-    private func createAggregateDevice(tapUID: CFString) throws -> AudioObjectID {
-        let tapList: [[String: Any]] = [[
-            kAudioSubTapUIDKey: tapUID,
-            kAudioSubTapDriftCompensationKey: NSNumber(value: false)
-        ]]
-        let aggregateDescription: [String: Any] = [
-            kAudioAggregateDeviceNameKey: "MyWallpaperX System Audio Spectrum",
-            kAudioAggregateDeviceUIDKey: "com.songziqiang.MyWallpaperX.system-audio-spectrum.\(UUID().uuidString)",
-            kAudioAggregateDeviceIsPrivateKey: NSNumber(value: 1),
-            kAudioAggregateDeviceTapListKey: tapList,
-            kAudioAggregateDeviceTapAutoStartKey: NSNumber(value: 1)
-        ]
-
-        var deviceID = AudioObjectID(kAudioObjectUnknown)
-        let status = AudioHardwareCreateAggregateDevice(aggregateDescription as CFDictionary, &deviceID)
-        guard status == noErr else {
-            throw CaptureError.osStatus(status)
-        }
-        return deviceID
-    }
-
-    private func configureCaptureBufferFrameSize(for deviceID: AudioObjectID) {
-        var rangeAddress = AudioObjectPropertyAddress(
-            mSelector: kAudioDevicePropertyBufferFrameSizeRange,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        var range = AudioValueRange()
-        var rangeSize = UInt32(MemoryLayout<AudioValueRange>.size)
-        guard AudioObjectGetPropertyData(
-            deviceID,
-            &rangeAddress,
-            0,
-            nil,
-            &rangeSize,
-            &range
-        ) == noErr else {
-            return
-        }
-
-        let preferredFrameCount = 4096.0
-        var frameCount = UInt32(
-            max(range.mMinimum, min(preferredFrameCount, range.mMaximum))
-        )
-        var frameSizeAddress = AudioObjectPropertyAddress(
-            mSelector: kAudioDevicePropertyBufferFrameSize,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        AudioObjectSetPropertyData(
-            deviceID,
-            &frameSizeAddress,
-            0,
-            nil,
-            UInt32(MemoryLayout<UInt32>.size),
-            &frameCount
-        )
-    }
-
-    private func fetchTapUID(for tapID: AudioObjectID) throws -> CFString {
-        var address = AudioObjectPropertyAddress(
-            mSelector: kAudioTapPropertyUID,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        var tapUID: CFString = "" as CFString
-        var dataSize = UInt32(MemoryLayout<CFString>.size)
-        let status = withUnsafeMutablePointer(to: &tapUID) { pointer in
-            AudioObjectGetPropertyData(
-                tapID,
-                &address,
-                0,
-                nil,
-                &dataSize,
-                pointer
-            )
-        }
-        guard status == noErr else {
-            throw CaptureError.osStatus(status)
-        }
-        return tapUID
-    }
-
-    private func fetchTapFormat(for tapID: AudioObjectID) throws -> AudioStreamBasicDescription {
-        var address = AudioObjectPropertyAddress(
-            mSelector: kAudioTapPropertyFormat,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        var format = AudioStreamBasicDescription()
-        var dataSize = UInt32(MemoryLayout<AudioStreamBasicDescription>.size)
-        let status = AudioObjectGetPropertyData(
-            tapID,
-            &address,
-            0,
-            nil,
-            &dataSize,
-            &format
-        )
-        guard status == noErr else {
-            throw CaptureError.osStatus(status)
-        }
-        return format
-    }
-
     private func processAudioBufferList(_ inputData: UnsafePointer<AudioBufferList>) {
         let now = ProcessInfo.processInfo.systemUptime
         guard now - lastProcessedAt >= processingMinInterval else { return }
@@ -335,6 +233,17 @@ final class SystemAudioSpectrumService: NSObject {
     private func processCapturedAudio() {
         guard let frame = captureBuffer.decodedFrame else { return }
         let sampleRate = Float(max(1, tapStreamFormat.mSampleRate))
+        if !hasLoggedCapturedData {
+            let peak = frame.rectifiedMono.max() ?? 0
+            if peak >= 0.0001 {
+                hasLoggedCapturedData = true
+                NSLog(
+                    "MWX AUDIO CAPTURE: data generation=%d peak=%.4f",
+                    captureGeneration,
+                    peak
+                )
+            }
+        }
         if overlayEnabled {
             onLevels?(
                 overlayAnalyzer.analyze(
@@ -354,15 +263,4 @@ private extension SystemAudioSpectrumService {
         repeating: Float(0),
         count: SystemAudioWebSpectrumAnalyzer.outputLevelCount
     )
-
-    enum CaptureError: LocalizedError {
-        case osStatus(OSStatus)
-
-        var errorDescription: String? {
-            switch self {
-            case let .osStatus(status):
-                return "CoreAudio OSStatus \(status)"
-            }
-        }
-    }
 }

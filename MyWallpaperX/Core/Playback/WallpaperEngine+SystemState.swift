@@ -110,48 +110,6 @@ extension WallpaperEngine {
         )
     }
 
-    @objc func handleScreenLocked() {
-        wasPlayingBeforeSleep = isPlaying()
-        screenLocked = true
-        pauseAllPlayers()
-    }
-
-    @objc func handleScreenUnlocked() {
-        screenLocked = false
-        if wasPlayingBeforeSleep {
-            resumeAllPlayers()
-        }
-        requestPlaybackStateEvaluation(delay: 0.5)
-    }
-
-    @objc func handleWillSleep() {
-        wasPlayingBeforeSystemSleep = isPlaying()
-        systemSleeping = true
-        pauseAllPlayers()
-    }
-
-    @objc func handleDidWake() {
-        systemSleeping = false
-        if wasPlayingBeforeSystemSleep && !screenLocked && !displaysSleeping {
-            resumeAllPlayers()
-        }
-        requestPlaybackStateEvaluation(delay: 0.5)
-    }
-
-    @objc func handleScreensDidSleep() {
-        wasPlayingBeforeDisplaySleep = isPlaying()
-        displaysSleeping = true
-        pauseAllPlayers()
-    }
-
-    @objc func handleScreensDidWake() {
-        displaysSleeping = false
-        if wasPlayingBeforeDisplaySleep && !screenLocked && !systemSleeping {
-            resumeAllPlayers()
-        }
-        requestPlaybackStateEvaluation(delay: 0.3)
-    }
-
     @objc func activeApplicationChanged() {
         guard !screenLocked else { return }
         guard pauseWhenOtherAppFocused else { return }

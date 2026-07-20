@@ -112,9 +112,12 @@ extension WallpaperEngine {
     }
 
     func refreshSystemAudioSpectrumCapture() {
-        let webCaptureRequested = currentPlaybackContentKind == .web && currentWebAudioSpectrumRequested
+        let captureAllowed = !playbackPaused && !screenLocked && !systemSleeping && !displaysSleeping
+        let webCaptureRequested = captureAllowed
+            && currentPlaybackContentKind == .web
+            && currentWebAudioSpectrumRequested
         systemAudioSpectrumService.setConsumers(
-            overlayEnabled: currentSystemAudioSpectrumEnabled,
+            overlayEnabled: captureAllowed && currentSystemAudioSpectrumEnabled,
             webEnabled: webCaptureRequested
         )
     }
