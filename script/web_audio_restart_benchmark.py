@@ -20,13 +20,8 @@ from web_system_state_benchmark import (
     real_workshop_root,
     validate_runtime_paths,
 )
-from web_wallpaper_benchmark import (
-    APP_NAME,
-    DEFAULT_APP_BINARY,
-    REPO_ROOT,
-    start_unified_log_capture,
-    terminate_process,
-)
+from web_debug_defaults import debug_defaults_suites, delete_debug_defaults_suite, make_debug_defaults_suite
+from web_wallpaper_benchmark import APP_NAME, DEFAULT_APP_BINARY, REPO_ROOT, start_unified_log_capture, terminate_process
 
 
 EXPECTED_ACTIONS = ["burst-1", "burst-2", "burst-3", "single", "stop", "completed"]
@@ -49,8 +44,9 @@ def matching_positions(lines: list[str], pattern: re.Pattern[str], after: int) -
     return [index for index, line in enumerate(lines) if index > after and pattern.search(line)]
 
 
-def score_log(log_text: str, sample_id: str) -> dict[str, Any]:
+def score_log(log_text: str, sample_id: str, expected_defaults_suite: str) -> dict[str, Any]:
     lines = log_text.splitlines()
+    defaults_suite_confirmed = expected_defaults_suite in debug_defaults_suites(log_text)
     ready_positions = [
         index
         for index, line in enumerate(lines)
@@ -147,6 +143,8 @@ def score_log(log_text: str, sample_id: str) -> dict[str, Any]:
         )
 
     failures: list[str] = []
+    if not defaults_suite_confirmed:
+        failures.append("debug UserDefaults isolation suite was not confirmed in app logs")
     if not ready_positions:
         failures.append(f"missing host.ready for {sample_id}")
     if actions != EXPECTED_ACTIONS:
@@ -187,6 +185,7 @@ def score_log(log_text: str, sample_id: str) -> dict[str, Any]:
     return {
         "passed": not failures,
         "sample_id": sample_id,
+        "debug_defaults_suite": expected_defaults_suite if defaults_suite_confirmed else None,
         "measurement_started_after_host_ready": bool(ready_positions),
         "expected_actions": EXPECTED_ACTIONS,
         "observed_actions": actions,
@@ -232,6 +231,7 @@ def write_reports(output_dir: Path, report: dict[str, Any]) -> tuple[Path, Path]
         "",
         f"- Result: {'PASS' if report['passed'] else 'FAIL'}",
         f"- Sample: `{report['sample_id']}`",
+        f"- UserDefaults suite: `{report['debug_defaults_suite'] or '-'}`",
         f"- Actions: {' -> '.join(report['observed_actions']) or '-'}",
         f"- Host ready: {report['host_ready_count']}",
         f"- Debug restarts: {report['audio_restart_count']} (expected 2)",
@@ -288,6 +288,7 @@ def run_benchmark(args: argparse.Namespace) -> int:
         time.sleep(0.25)
     command = [
         str(app_binary),
+        "--mwx-debug-user-defaults-suite", (defaults_suite := make_debug_defaults_suite()),
         "--mwx-debug-suppress-main-window",
         "--mwx-log-web-diagnostics",
         "--mwx-debug-web-audio-restart-sequence",
@@ -340,8 +341,9 @@ def run_benchmark(args: argparse.Namespace) -> int:
             if process is not None:
                 exit_code = terminate_process(process)
             terminate_process(log_process)
+            delete_debug_defaults_suite(defaults_suite, environment)
 
-    report = score_log(log_path.read_text(encoding="utf-8", errors="replace"), args.id)
+    report = score_log(log_path.read_text(encoding="utf-8", errors="replace"), args.id, defaults_suite)
     report.update(
         {
             "schema_version": 1,
@@ -369,9 +371,7 @@ def run_benchmark(args: argparse.Namespace) -> int:
 
 
 def make_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        description="Verify debounced Web audio capture restart and final cleanup."
-    )
+    parser = argparse.ArgumentParser(description="Verify debounced Web audio capture restart and final cleanup.")
     parser.add_argument("--app", default=str(DEFAULT_APP_BINARY))
     parser.add_argument("--runtime-workshop-root")
     parser.add_argument("--runtime-home")

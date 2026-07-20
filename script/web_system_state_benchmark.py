@@ -15,16 +15,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from web_wallpaper_benchmark import (
-    APP_NAME,
-    DEFAULT_APP_BINARY,
-    REPO_ROOT,
-    start_unified_log_capture,
-    terminate_process,
-)
+from web_debug_defaults import debug_defaults_suites, delete_debug_defaults_suite, make_debug_defaults_suite
+from web_wallpaper_benchmark import APP_NAME, DEFAULT_APP_BINARY, REPO_ROOT, start_unified_log_capture, terminate_process
 EXPECTED_ACTIONS = [
-    "system-sleep", "display-sleep", "system-wake", "display-wake",
-    "screen-lock", "screen-unlock", "stop", "completed",
+    "system-sleep", "display-sleep", "system-wake", "display-wake", "screen-lock", "screen-unlock", "stop", "completed",
 ]
 DEBUG_ACTION_RE = re.compile(r"MWX DEBUG SYSTEM STATE:\s*(?:action=)?(?P<action>[a-z-]+)\b")
 DIAG_RE = re.compile(
@@ -82,8 +76,9 @@ def diagnostic_events(log_text: str) -> list[dict[str, str]]:
     return events
 
 
-def score_log(log_text: str, sample_id: str) -> dict[str, Any]:
+def score_log(log_text: str, sample_id: str, expected_defaults_suite: str) -> dict[str, Any]:
     lines = log_text.splitlines()
+    defaults_suite_confirmed = expected_defaults_suite in debug_defaults_suites(log_text)
     action_entries = [
         (match.group("action"), index)
         for index, line in enumerate(lines)
@@ -166,10 +161,10 @@ def score_log(log_text: str, sample_id: str) -> dict[str, Any]:
         )
 
     failures: list[str] = []
+    if not defaults_suite_confirmed:
+        failures.append("debug UserDefaults isolation suite was not confirmed in app logs")
     if actions != EXPECTED_ACTIONS:
-        failures.append(
-            f"debug action order {actions} did not match {EXPECTED_ACTIONS}"
-        )
+        failures.append(f"debug action order {actions} did not match {EXPECTED_ACTIONS}")
     if ready_count < 1:
         failures.append(f"missing host.ready for {sample_id}")
     if audio_start_count != 3:
@@ -194,6 +189,7 @@ def score_log(log_text: str, sample_id: str) -> dict[str, Any]:
     return {
         "passed": not failures,
         "sample_id": sample_id,
+        "debug_defaults_suite": expected_defaults_suite if defaults_suite_confirmed else None,
         "expected_actions": EXPECTED_ACTIONS,
         "observed_actions": actions,
         "host_ready_count": ready_count,
@@ -235,6 +231,7 @@ def write_reports(output_dir: Path, report: dict[str, Any]) -> tuple[Path, Path]
         "",
         f"- Result: {'PASS' if report['passed'] else 'FAIL'}",
         f"- Sample: `{report['sample_id']}`",
+        f"- UserDefaults suite: `{report['debug_defaults_suite'] or '-'}`",
         f"- Actions: {' -> '.join(report['observed_actions']) or '-'}",
         f"- Host ready: {report['host_ready_count']}",
         f"- Audio start/data/stop: {report['audio_start_count']}/{report['audio_data_count']}/{report['audio_stop_count']}",
@@ -291,6 +288,7 @@ def run_benchmark(args: argparse.Namespace) -> int:
 
     command = [
         str(app_binary),
+        "--mwx-debug-user-defaults-suite", (defaults_suite := make_debug_defaults_suite()),
         "--mwx-debug-suppress-main-window",
         "--mwx-log-web-diagnostics",
         "--mwx-debug-web-system-state-sequence",
@@ -343,8 +341,9 @@ def run_benchmark(args: argparse.Namespace) -> int:
             if process is not None:
                 exit_code = terminate_process(process)
             terminate_process(log_process)
+            delete_debug_defaults_suite(defaults_suite, environment)
 
-    report = score_log(log_path.read_text(encoding="utf-8", errors="replace"), args.id)
+    report = score_log(log_path.read_text(encoding="utf-8", errors="replace"), args.id, defaults_suite)
     report.update(
         {
             "schema_version": 1,
@@ -373,9 +372,7 @@ def run_benchmark(args: argparse.Namespace) -> int:
 
 
 def make_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        description="Verify Web audio capture recovery across system interruptions."
-    )
+    parser = argparse.ArgumentParser(description="Verify Web audio capture recovery across system interruptions.")
     parser.add_argument("--app", default=str(DEFAULT_APP_BINARY))
     parser.add_argument("--runtime-workshop-root")
     parser.add_argument("--runtime-home")
@@ -390,8 +387,7 @@ def make_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str]) -> int:
-    args = make_parser().parse_args(argv)
-    return run_benchmark(args)
+    return run_benchmark(make_parser().parse_args(argv))
 
 
 if __name__ == "__main__":

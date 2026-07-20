@@ -15,11 +15,13 @@ from web_audio_restart_benchmark import (
 
 
 SAMPLE_ID = "1509243786"
+DEFAULTS_SUITE = "com.songziqiang.MyWallpaperX.Debug.audio-restart-test"
 
 
 def passing_fixture() -> str:
     return "\n".join(
         [
+            f"MWX DEBUG DEFAULTS: suite={DEFAULTS_SUITE}",
             f"MWX WEB DIAG record={SAMPLE_ID} screen=1 severity=info type=host.ready url=- message=ready",
             "MWX AUDIO CAPTURE: listeners installed",
             "MWX AUDIO CAPTURE: started generation=1 sampleRate=48000 channels=2",
@@ -56,9 +58,16 @@ def passing_fixture() -> str:
 
 class WebAudioRestartBenchmarkTests(unittest.TestCase):
     def test_passing_restart_timeline(self) -> None:
-        result = score_log(passing_fixture(), SAMPLE_ID)
+        result = score_log(passing_fixture(), SAMPLE_ID, DEFAULTS_SUITE)
         self.assertTrue(result["passed"], result["failures"])
         self.assertEqual(result["audio_restart_count"], 2)
+        self.assertEqual(result["debug_defaults_suite"], DEFAULTS_SUITE)
+
+    def test_rejects_missing_defaults_isolation_confirmation(self) -> None:
+        fixture = passing_fixture().replace(f"MWX DEBUG DEFAULTS: suite={DEFAULTS_SUITE}\n", "")
+        result = score_log(fixture, SAMPLE_ID, DEFAULTS_SUITE)
+        self.assertFalse(result["passed"])
+        self.assertIsNone(result["debug_defaults_suite"])
 
     def test_measurement_ignores_events_before_host_ready(self) -> None:
         prefix = "\n".join(
@@ -72,7 +81,7 @@ class WebAudioRestartBenchmarkTests(unittest.TestCase):
                 "MWX AUDIO CAPTURE: stopped",
             ]
         )
-        result = score_log(prefix + "\n" + passing_fixture(), SAMPLE_ID)
+        result = score_log(prefix + "\n" + passing_fixture(), SAMPLE_ID, DEFAULTS_SUITE)
         self.assertTrue(result["passed"], result["failures"])
 
     def test_rejects_uncoalesced_burst(self) -> None:
@@ -81,7 +90,7 @@ class WebAudioRestartBenchmarkTests(unittest.TestCase):
             "MWX AUDIO CAPTURE: restarting reason=debug generation=1\n"
             "MWX DEBUG AUDIO RESTART: action=burst-3",
         )
-        result = score_log(fixture, SAMPLE_ID)
+        result = score_log(fixture, SAMPLE_ID, DEFAULTS_SUITE)
         self.assertFalse(result["passed"])
         self.assertEqual(result["audio_restart_count"], 3)
 
@@ -94,7 +103,7 @@ class WebAudioRestartBenchmarkTests(unittest.TestCase):
             "MWX DEBUG AUDIO RESTART: action=burst-3\n"
             "MWX AUDIO CAPTURE: invalidated reason=debug generation=1",
         )
-        result = score_log(fixture, SAMPLE_ID)
+        result = score_log(fixture, SAMPLE_ID, DEFAULTS_SUITE)
         self.assertFalse(result["passed"])
         self.assertFalse(result["capture_timeline_valid"])
 
@@ -103,7 +112,7 @@ class WebAudioRestartBenchmarkTests(unittest.TestCase):
             "MWX AUDIO CAPTURE: data generation=3 peak=0.1000\n",
             "",
         )
-        result = score_log(fixture, SAMPLE_ID)
+        result = score_log(fixture, SAMPLE_ID, DEFAULTS_SUITE)
         self.assertFalse(result["passed"])
         self.assertEqual(result["audio_data_count"], 2)
 
@@ -119,18 +128,18 @@ class WebAudioRestartBenchmarkTests(unittest.TestCase):
                     "MWX DEBUG AUDIO RESTART: action=completed",
                     marker + "\nMWX DEBUG AUDIO RESTART: action=completed",
                 )
-                self.assertFalse(score_log(fixture, SAMPLE_ID)["passed"])
+                self.assertFalse(score_log(fixture, SAMPLE_ID, DEFAULTS_SUITE)["passed"])
 
     def test_rejects_health_error_before_host_ready(self) -> None:
         fixture = "MWX AUDIO CAPTURE: failed pre-ready\n" + passing_fixture()
-        self.assertFalse(score_log(fixture, SAMPLE_ID)["passed"])
+        self.assertFalse(score_log(fixture, SAMPLE_ID, DEFAULTS_SUITE)["passed"])
 
     def test_rejects_nonzero_stop_and_retained_surface(self) -> None:
         fixture = passing_fixture().replace("surfaces=0", "surfaces=1").replace(
             "lifecycle.surface.released",
             "lifecycle.surface.retained",
         )
-        result = score_log(fixture, SAMPLE_ID)
+        result = score_log(fixture, SAMPLE_ID, DEFAULTS_SUITE)
         self.assertFalse(result["passed"])
         self.assertFalse(result["final_stop_zero"])
         self.assertEqual(result["retained_surface_count"], 1)

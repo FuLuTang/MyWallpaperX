@@ -137,7 +137,25 @@ final class SteamWorkshopService: ObservableObject {
     // MARK: - Shared infrastructure
 
     var cancellables = Set<AnyCancellable>()
-    let defaults = UserDefaults.standard
+    let defaults: UserDefaults = {
+#if DEBUG
+        let arguments = ProcessInfo.processInfo.arguments
+        if let index = arguments.firstIndex(of: "--mwx-debug-user-defaults-suite"),
+           arguments.indices.contains(index + 1) {
+            let suiteName = arguments[index + 1]
+            precondition(
+                suiteName.hasPrefix("com.songziqiang.MyWallpaperX.Debug."),
+                "Debug defaults suite must use the MyWallpaperX Debug namespace"
+            )
+            guard let defaults = UserDefaults(suiteName: suiteName) else {
+                preconditionFailure("Unable to create Debug defaults suite")
+            }
+            NSLog("MWX DEBUG DEFAULTS: suite=%@", suiteName)
+            return defaults
+        }
+#endif
+        return .standard
+    }()
     var loginProcess: Process?
     var loginInputHandle: FileHandle?
     var loginOutputHandle: FileHandle?

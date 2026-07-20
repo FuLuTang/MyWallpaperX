@@ -11,11 +11,13 @@ from web_system_state_benchmark import is_same_or_descendant, real_workshop_root
 
 
 SAMPLE_ID = "1509243786"
+DEFAULTS_SUITE = "com.songziqiang.MyWallpaperX.Debug.system-state-test"
 
 
 def passing_fixture() -> str:
     return "\n".join(
         [
+            f"MWX DEBUG DEFAULTS: suite={DEFAULTS_SUITE}",
             f"MWX WEB DIAG record={SAMPLE_ID} screen=1 severity=info type=host.ready url=- message=ready",
             "MWX AUDIO CAPTURE: started generation=1 sampleRate=48000 channels=2",
             "MWX AUDIO CAPTURE: data generation=1 peak=0.1000",
@@ -42,15 +44,22 @@ def passing_fixture() -> str:
 
 class WebSystemStateBenchmarkTests(unittest.TestCase):
     def test_passing_timeline(self) -> None:
-        result = score_log(passing_fixture(), SAMPLE_ID)
+        result = score_log(passing_fixture(), SAMPLE_ID, DEFAULTS_SUITE)
         self.assertTrue(result["passed"], result["failures"])
+        self.assertEqual(result["debug_defaults_suite"], DEFAULTS_SUITE)
+
+    def test_rejects_missing_defaults_isolation_confirmation(self) -> None:
+        fixture = passing_fixture().replace(f"MWX DEBUG DEFAULTS: suite={DEFAULTS_SUITE}\n", "")
+        result = score_log(fixture, SAMPLE_ID, DEFAULTS_SUITE)
+        self.assertFalse(result["passed"])
+        self.assertIsNone(result["debug_defaults_suite"])
 
     def test_rejects_restart_before_final_wake(self) -> None:
         fixture = passing_fixture().replace(
             "MWX DEBUG SYSTEM STATE: action=display-wake\nMWX AUDIO CAPTURE: started generation=2",
             "MWX AUDIO CAPTURE: started generation=2\nMWX DEBUG SYSTEM STATE: action=display-wake",
         )
-        result = score_log(fixture, SAMPLE_ID)
+        result = score_log(fixture, SAMPLE_ID, DEFAULTS_SUITE)
         self.assertFalse(result["passed"])
         self.assertFalse(result["capture_timeline_valid"])
 
@@ -59,7 +68,7 @@ class WebSystemStateBenchmarkTests(unittest.TestCase):
             "MWX AUDIO CAPTURE: data generation=3 peak=0.1000\n",
             "",
         )
-        result = score_log(fixture, SAMPLE_ID)
+        result = score_log(fixture, SAMPLE_ID, DEFAULTS_SUITE)
         self.assertFalse(result["passed"])
         self.assertEqual(result["audio_data_count"], 2)
 
@@ -69,7 +78,7 @@ class WebSystemStateBenchmarkTests(unittest.TestCase):
             "lifecycle.surface.retained",
         )
         fixture += "\nMWX AUDIO CAPTURE: retry scheduled attempt=1 delay=1.0"
-        result = score_log(fixture, SAMPLE_ID)
+        result = score_log(fixture, SAMPLE_ID, DEFAULTS_SUITE)
         self.assertFalse(result["passed"])
         self.assertEqual(result["capture_retry_count"], 1)
         self.assertEqual(result["retained_surface_count"], 1)

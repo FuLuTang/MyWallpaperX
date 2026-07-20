@@ -23,6 +23,13 @@ from pathlib import Path
 from typing import Any, Iterable
 from urllib.parse import urlsplit
 
+from web_debug_defaults import (
+    DEBUG_DEFAULTS_RE,
+    debug_defaults_suites,
+    delete_debug_defaults_suite,
+    make_debug_defaults_suite,
+)
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_WORKSHOP_ROOT = Path.home() / "Movies/MyWallpaperX/创意工坊"
@@ -121,6 +128,7 @@ class SampleResult:
     diagnostic_warnings: list[str]
     diagnostic_errors: list[str]
     raw_error_lines: list[str]
+    debug_defaults_suite: str | None
 
 
 def run_command(command: list[str], cwd: Path, log_path: Path | None = None) -> None:
@@ -216,6 +224,7 @@ def parse_log(log_path: Path) -> tuple[list[DiagnosticEvent], dict[str, Any]]:
     events: list[DiagnosticEvent] = []
     metadata: dict[str, Any] = {
         "debug_launch_type": None,
+        "debug_defaults_suites": [],
         "item_not_found": False,
         "precondition": None,
         "snapshots": [],
@@ -237,6 +246,10 @@ def parse_log(log_path: Path) -> tuple[list[DiagnosticEvent], dict[str, Any]]:
         launch_match = DEBUG_LAUNCH_RE.search(line)
         if launch_match:
             metadata["debug_launch_type"] = launch_match.group("type").strip()
+
+        defaults_match = DEBUG_DEFAULTS_RE.search(line)
+        if defaults_match:
+            metadata["debug_defaults_suites"].append(defaults_match.group("suite"))
 
         if "MWX DEBUG PLAY: workshop item" in line and "not found" in line:
             metadata["item_not_found"] = True
@@ -389,6 +402,7 @@ def score_sample(
             diagnostic_warnings=diagnostic_warnings,
             diagnostic_errors=diagnostic_errors,
             raw_error_lines=raw_error_lines,
+            debug_defaults_suite=None,
         )
     findings: list[str] = []
     categories: set[str] = set()
@@ -403,6 +417,14 @@ def score_sample(
     launch_score = 0.0
     launch_findings: list[str] = []
     launch_type = metadata.get("debug_launch_type")
+    expected_defaults_suite = metadata.get("expected_debug_defaults_suite")
+    observed_defaults_suites = metadata.get("debug_defaults_suites", [])
+    defaults_suite_confirmed = bool(
+        expected_defaults_suite and expected_defaults_suite in observed_defaults_suites
+    )
+    if not defaults_suite_confirmed:
+        launch_findings.append("Debug UserDefaults isolation suite was not confirmed in app logs.")
+        categories.add("defaults_isolation")
     if metadata.get("item_not_found"):
         launch_findings.append("App did not find this Workshop record.")
         categories.add("launch")
@@ -430,7 +452,7 @@ def score_sample(
             name="launch_classification",
             score=min(15, launch_score),
             weight=15,
-            status="pass" if launch_score >= 13 else "fail",
+            status="pass" if launch_score >= 13 and defaults_suite_confirmed else "fail",
             evidence="strong" if runtime_profile else "weak",
             findings=launch_findings,
         )
@@ -779,6 +801,7 @@ def score_sample(
         diagnostic_warnings=diagnostic_warnings,
         diagnostic_errors=diagnostic_errors,
         raw_error_lines=raw_error_lines,
+        debug_defaults_suite=expected_defaults_suite if defaults_suite_confirmed else None,
     )
 
 
@@ -850,6 +873,8 @@ def run_one_sample(
 
     command = [
         str(app_binary),
+        "--mwx-debug-user-defaults-suite",
+        (defaults_suite := make_debug_defaults_suite()),
         "--mwx-debug-suppress-main-window",
         "--mwx-log-web-diagnostics",
         "--mwx-debug-run-web-workshop-id",
@@ -909,9 +934,11 @@ def run_one_sample(
             if process is not None:
                 exit_code = terminate_process(process)
             terminate_process(log_process)
+            delete_debug_defaults_suite(defaults_suite, environment)
     elapsed = time.monotonic() - started
 
     events, metadata = parse_log(log_path)
+    metadata["expected_debug_defaults_suite"] = defaults_suite
     web_snapshot_paths = sorted(sample_dir.glob("web-snapshot-*.png"))
     return score_sample(
         sample,
@@ -1039,6 +1066,7 @@ def summarize(
         "precondition_count": len(results) - len(runnable_results),
         "average_score": round(sum(result.score for result in runnable_results) / len(runnable_results), 1) if runnable_results else 0,
         "average_coverage": round(sum(result.coverage for result in runnable_results) / len(runnable_results), 1) if runnable_results else 0,
+        "defaults_isolation_count": sum(result.debug_defaults_suite is not None for result in runnable_results),
         "grade_counts": dict(sorted(grade_counts.items())),
         "category_counts": dict(sorted(category_counts.items())),
         "comparison": comparison,
@@ -1071,6 +1099,7 @@ def write_markdown_report(output_dir: Path, results: list[SampleResult], summary
         f"- Precondition skips: {summary['precondition_count']}",
         f"- Average score: {summary['average_score']}",
         f"- Average evidence coverage: {summary['average_coverage']}%",
+        f"- UserDefaults isolation: {summary['defaults_isolation_count']}/{summary['runnable_sample_count']} confirmed",
         f"- Grades: {summary['grade_counts']}",
         f"- Shortfall categories: {summary['category_counts']}",
         "",
@@ -1233,6 +1262,8 @@ def run_lifecycle_sequence(
     environment["CFFIXED_USER_HOME"] = str(lifecycle_home)
     command = [
         str(app_binary),
+        "--mwx-debug-user-defaults-suite",
+        (defaults_suite := make_debug_defaults_suite()),
         "--mwx-debug-suppress-main-window",
         "--mwx-log-web-diagnostics",
         "--mwx-debug-web-lifecycle-sequence",
@@ -1261,9 +1292,12 @@ def run_lifecycle_sequence(
             if process is not None:
                 exit_code = terminate_process(process)
             terminate_process(log_process)
+            delete_debug_defaults_suite(defaults_suite, environment)
 
     events, _ = parse_log(log_path)
     log_text = log_path.read_text(encoding="utf-8", errors="replace")
+    observed_defaults_suites = debug_defaults_suites(log_text)
+    defaults_suite_confirmed = defaults_suite in observed_defaults_suites
     launched_ids = DEBUG_LAUNCH_RE.findall(log_text)
     launched_ids = [match[0] for match in launched_ids]
     ready_ids = re.findall(r"MWX WEB DIAG record=(\S+).*?type=host\.ready\b", log_text)
@@ -1289,6 +1323,8 @@ def run_lifecycle_sequence(
     )
 
     failures: list[str] = []
+    if not defaults_suite_confirmed:
+        failures.append("debug UserDefaults isolation suite was not confirmed in app logs")
     if launched_ids != item_ids:
         failures.append(f"launch order {launched_ids} did not match {item_ids}")
     missing_ready = [item_id for item_id in item_ids if item_id not in ready_ids]
@@ -1318,6 +1354,7 @@ def run_lifecycle_sequence(
         "ready": ready_ids,
         "duration_seconds": round(time.monotonic() - started, 2),
         "process_exit_code": exit_code,
+        "debug_defaults_suite": defaults_suite if defaults_suite_confirmed else None,
         "teardown_count": len(teardown_events),
         "released_surface_count": released_count,
         "retained_surface_count": retained_count,
@@ -1335,6 +1372,7 @@ def run_lifecycle_sequence(
         f"- Result: {'PASS' if report['passed'] else 'FAIL'}",
         f"- Sequence: {' -> '.join(item_ids)} -> stop",
         f"- Ready: {', '.join(ready_ids) or '-'}",
+        f"- UserDefaults suite: `{report['debug_defaults_suite'] or '-'}`",
         f"- Teardowns: {len(teardown_events)}",
         f"- Released surfaces: {released_count}",
         f"- Retained surfaces: {retained_count}",
@@ -1425,6 +1463,12 @@ def run_benchmark(args: argparse.Namespace) -> int:
     if matrix_gate and not matrix_gate.get("passed"):
         print(f"Matrix gate failed: {len(matrix_gate.get('failures', []))} failure(s)", file=sys.stderr)
         return 1
+    if any(
+        result.grade != "N/A" and result.debug_defaults_suite is None
+        for result in results
+    ):
+        print("UserDefaults isolation gate failed for one or more samples.", file=sys.stderr)
+        return 1
     return 0
 
 
@@ -1438,6 +1482,7 @@ def run_self_test(args: argparse.Namespace) -> int:
     log_path.write_text(
         "\n".join(
             [
+                "2026-06-26 09:59:59.900 MyWallpaperX[1:1] MWX DEBUG DEFAULTS: suite=com.songziqiang.MyWallpaperX.Debug.self-test",
                 "2026-06-26 10:00:00.000 MyWallpaperX[1:1] MWX DEBUG PLAY: launching workshop item fixture type=web",
                 "2026-06-26 10:00:01.000 MyWallpaperX[1:1] MWX WEB DIAG record=fixture screen=- severity=info type=runtime.profile url=mwx-local://wallpaper/index.html message=profile=standard origin=customScheme dataStore=persistent",
                 "2026-06-26 10:00:01.500 MyWallpaperX[1:1] MWX WEB DIAG record=fixture screen=1 severity=info type=dom.ready url=- message=mwx-local://wallpaper/index.html",
@@ -1458,6 +1503,7 @@ def run_self_test(args: argparse.Namespace) -> int:
         encoding="utf-8",
     )
     events, metadata = parse_log(log_path)
+    metadata["expected_debug_defaults_suite"] = "com.songziqiang.MyWallpaperX.Debug.self-test"
     missing_resource = DiagnosticEvent(
         type="local-resource-deny",
         severity="warning",
@@ -1504,6 +1550,24 @@ def run_self_test(args: argparse.Namespace) -> int:
     md_path = write_markdown_report(output_dir, [result], summary)
     if result.score < 90:
         print(f"Self-test failed: score={result.score}", file=sys.stderr)
+        return 1
+    missing_defaults_metadata = dict(metadata)
+    missing_defaults_metadata["debug_defaults_suites"] = []
+    missing_defaults_result = score_sample(
+        Sample(id="missing-defaults-fixture"),
+        events,
+        missing_defaults_metadata,
+        log_path,
+        screenshot_path=None,
+        web_snapshot_paths=[web_snapshot_path],
+        exit_code=-15,
+        duration_seconds=3.0,
+    )
+    if (
+        missing_defaults_result.debug_defaults_suite is not None
+        or "defaults_isolation" not in missing_defaults_result.shortfall_categories
+    ):
+        print("Self-test failed: missing defaults suite did not fail isolation scoring", file=sys.stderr)
         return 1
     audio_result = score_sample(
         Sample(id="audio-fixture", capabilities=["audio-spectrum"]),
