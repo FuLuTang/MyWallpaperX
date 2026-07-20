@@ -397,7 +397,7 @@ descriptor 能识别 image、particle、text、container，但 renderer 当前�
 - 已固定 10 个代表样本并加入能力标签、最低等级、最低 coverage 和批次禁用短板。
 - benchmark 已增加 WebView/Canvas/当前进程窗口视觉像素、同源运动、DOM、主动音频和自动 pointer/click/drag/wheel 断言。
 - 当前固定门结果：平均 97.9、coverage 94.3%、10A；作者源码能力门结果：平均 98.8、coverage 94.3%、5A；Steam CDN 代表门结果：平均 98.0、coverage 90.3%、3A；完整门结果：平均 98.2、coverage 93.3%、34A。
-- 音频生产链已按 Wallpaper Engine 契约输出 signed stereo 64+64 布局，并在分发边界应用兼容幅度响应；受控系统音源验证频率、幅度和声道，Debug fixture 只用于确定性桥接和最终画面幅度门。
+- 音频生产链已按 Wallpaper Engine 契约输出 signed stereo 64+64 布局，并在分发边界应用兼容幅度响应；受控系统音源验证频率、幅度和声道，Debug fixture 只用于确定性桥接和样本视觉回归证据。
 - coverage 未设为 95% 的原因是部分样本没有媒体节点或特定能力事件，不能用伪造事件抬高覆盖率；单样本关键门禁优先于平均 coverage。
 
 ### M3：Web 生命周期与性能闭环（进行中）
