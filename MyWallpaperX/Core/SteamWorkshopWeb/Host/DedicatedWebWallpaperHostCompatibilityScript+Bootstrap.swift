@@ -6,6 +6,8 @@
 let webCompatibilityScriptBootstrap = #"""
 (() => {
 """#
++ webCompatibilityScriptScheduling
++ "\n"
 + webCompatibilityScriptBootstrapFoundation
 + "\n"
 + webCompatibilityScriptBootstrapPlugins

@@ -55,6 +55,26 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
                 forMainFrameOnly: true
             )
         )
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--mwx-debug-web-stall-animation-frame") {
+            controller.addUserScript(
+                WKUserScript(
+                    source: """
+                    window.requestAnimationFrame = function() { return 1; };
+                    window.__myWallpaperDebugAnimationFrameStalled = true;
+                    try {
+                      window.webkit.messageHandlers.wallpaperHostLog.postMessage({
+                        type: 'debug.animation-frame.suppressed',
+                        message: 'active'
+                      });
+                    } catch (_) {}
+                    """,
+                    injectionTime: .atDocumentStart,
+                    forMainFrameOnly: true
+                )
+            )
+        }
+        #endif
         controller.addUserScript(
             WKUserScript(
                 source: webRemoteStylesheetCompatibilityScript,

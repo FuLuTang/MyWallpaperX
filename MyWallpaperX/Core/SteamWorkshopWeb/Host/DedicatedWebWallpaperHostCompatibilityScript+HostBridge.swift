@@ -1,8 +1,3 @@
-//
-//  DedicatedWebWallpaperHostCompatibilityScript+HostBridge.swift
-//  MyWallpaperX
-//
-
 let webCompatibilityScriptHostBridge = #"""
   window.__myWallpaperRegisterInteractiveRegions = function(payload) {
     try {
@@ -213,38 +208,18 @@ let webCompatibilityScriptHostBridge = #"""
       try { window.requestAnimationFrame = originalRequestAnimationFrame; } catch (_) {}
     }
   };
-  const myWallpaperRunAfterSettledFrames = function(callback) {
-    try {
-      if (typeof window.requestAnimationFrame !== 'function') {
-        window.setTimeout(callback, 0);
-        return;
-      }
-      let framesRemaining = 2;
-      const step = () => {
-        if (framesRemaining <= 0) {
-          window.setTimeout(callback, 0);
-          return;
-        }
-        framesRemaining -= 1;
-        window.requestAnimationFrame(step);
-      };
-      window.requestAnimationFrame(step);
-    } catch (_) {
-      try { window.setTimeout(callback, 0); } catch (_) {}
-    }
-  };
   const myWallpaperSchedulePendingPropertyApply = function(delayMS) {
     try {
       if (myWallpaperPropertyReplayState.timer !== null) return;
       myWallpaperPropertyReplayState.timer = window.setTimeout(() => {
         myWallpaperPropertyReplayState.timer = null;
-        myWallpaperRunAfterSettledFrames(window.__myWallpaperDrainPendingProperties);
+        window.__myWallpaperRunAfterSettledFrames(window.__myWallpaperDrainPendingProperties);
       }, Math.max(0, Number(delayMS) || 0));
     } catch (_) {}
   };
   const myWallpaperDispatchResizeAfterPropertyError = function(reason) {
     try {
-      myWallpaperRunAfterSettledFrames(() => {
+      window.__myWallpaperRunAfterSettledFrames(() => {
         try {
           window.dispatchEvent(new Event('resize'));
           hostLogger.post('properties.resize-after-script-failure', reason || 'script error');
@@ -338,6 +313,7 @@ let webCompatibilityScriptHostBridge = #"""
       state.pendingProperties = null;
       state.pendingSignature = '';
       state.attempt = 0;
+      hostLogger.post('properties.applied', `count=${Object.keys(safeProperties).length}`);
       window.dispatchEvent(new CustomEvent('wallpaper-properties-applied', { detail: safeProperties }));
     } else {
       const error = applyResult.error;

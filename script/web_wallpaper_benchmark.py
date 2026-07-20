@@ -565,6 +565,29 @@ def score_sample(
     property_info_recoveries = [
         event for event in property_events if event.type == "properties.resize-after-script-failure"
     ]
+    property_applied_events = [
+        event
+        for event in property_events
+        if (
+            event.type in {"properties.applied.compatible", "properties.applied.partial"}
+            or (
+                event.type == "properties.applied"
+                and (match := re.search(r"\bcount=(\d+)\b", event.message)) is not None
+                and int(match.group(1)) > 0
+            )
+        )
+    ]
+    requires_user_properties = bool(
+        {
+            "properties",
+            "property-dense",
+            "file-directory",
+            "file-property",
+            "directory-property",
+            "color-string",
+            "property-recovery",
+        }.intersection(sample.capabilities)
+    )
     property_score = 15.0
     property_findings: list[str] = []
     if property_errors:
@@ -574,13 +597,23 @@ def score_sample(
     if property_info_recoveries:
         property_score -= 1
         property_findings.append("Renderer refresh after sample script failure was needed.")
+    if requires_user_properties and not property_applied_events:
+        property_score -= 12
+        property_findings.append("No successful user-property application was observed.")
+        categories.add("properties")
+    if metadata.get("stall_animation_frame_requested") and not has_event(
+        events, "debug.animation-frame.suppressed"
+    ):
+        property_score -= 12
+        property_findings.append("Animation-frame stall injection was not observed.")
+        categories.add("evidence_infrastructure")
     dimensions.append(
         DimensionScore(
             name="property_bridge",
             score=max(0, property_score),
             weight=15,
             status="pass" if property_score >= 13 else "warn" if property_score >= 8 else "fail",
-            evidence="strong" if property_events else "medium",
+            evidence="strong" if property_applied_events else "medium" if property_events else "weak",
             findings=property_findings,
         )
     )
@@ -862,6 +895,7 @@ def run_one_sample(
     kill_existing: bool,
     runtime_workshop_root: Path | None,
     runtime_home: Path | None,
+    stall_animation_frame: bool,
 ) -> SampleResult:
     sample_dir = output_dir / sample.id
     sample_dir.mkdir(parents=True, exist_ok=True)
@@ -884,6 +918,8 @@ def run_one_sample(
     ]
     if "audio-spectrum" in sample.capabilities:
         command.append("--mwx-debug-web-audio-spectrum-fixture")
+    if stall_animation_frame:
+        command.append("--mwx-debug-web-stall-animation-frame")
     if sample.property_overrides:
         sample_root = runtime_workshop_root / "Web" / sample.id if runtime_workshop_root else None
 
@@ -939,6 +975,7 @@ def run_one_sample(
 
     events, metadata = parse_log(log_path)
     metadata["expected_debug_defaults_suite"] = defaults_suite
+    metadata["stall_animation_frame_requested"] = stall_animation_frame
     web_snapshot_paths = sorted(sample_dir.glob("web-snapshot-*.png"))
     return score_sample(
         sample,
@@ -1448,6 +1485,7 @@ def run_benchmark(args: argparse.Namespace) -> int:
                 kill_existing=args.kill_existing,
                 runtime_workshop_root=runtime_workshop_root,
                 runtime_home=runtime_home,
+                stall_animation_frame=args.stall_animation_frame,
             )
         )
 
@@ -1488,6 +1526,7 @@ def run_self_test(args: argparse.Namespace) -> int:
                 "2026-06-26 10:00:01.500 MyWallpaperX[1:1] MWX WEB DIAG record=fixture screen=1 severity=info type=dom.ready url=- message=mwx-local://wallpaper/index.html",
                 "2026-06-26 10:00:02.000 MyWallpaperX[1:1] MWX WEB DIAG record=fixture screen=1 severity=info type=host.ready url=- message=ready",
                 "2026-06-26 10:00:02.100 MyWallpaperX[1:1] MWX WEB DIAG record=fixture screen=1 severity=info type=navigation.finish url=mwx-local://wallpaper/index.html message=ready",
+                "2026-06-26 10:00:02.150 MyWallpaperX[1:1] MWX WEB DIAG record=fixture screen=1 severity=info type=properties.applied url=- message=count=4",
                 "2026-06-26 10:00:02.200 MyWallpaperX[1:1] MWX WEB DIAG record=fixture screen=1 severity=info type=media.initial url=- message=mwx-local://wallpaper/a.mp4 tag=video readyState=4",
                 "2026-06-26 10:00:02.220 MyWallpaperX[1:1] MWX WEB DIAG record=fixture screen=1 severity=info type=audio.listener.registered url=- message=count=1",
                 "2026-06-26 10:00:02.225 MyWallpaperX[1:1] MWX WEB DIAG record=fixture screen=1 severity=info type=audio.spectrum.dispatched url=- message=listeners=1 bins=128 peak=0.8400",
@@ -1595,6 +1634,71 @@ def run_self_test(args: argparse.Namespace) -> int:
         or "media_audio" not in missing_audio_result.shortfall_categories
     ):
         print("Self-test failed: audio-spectrum evidence gate did not distinguish fixtures", file=sys.stderr)
+        return 1
+    property_result = score_sample(
+        Sample(id="property-fixture", capabilities=["properties"]),
+        events,
+        metadata,
+        log_path,
+        screenshot_path=None,
+        web_snapshot_paths=[web_snapshot_path],
+        exit_code=-15,
+        duration_seconds=3.0,
+    )
+    missing_property_result = score_sample(
+        Sample(id="missing-property-fixture", capabilities=["properties"]),
+        [event for event in events if not event.type.startswith("properties.applied")],
+        metadata,
+        log_path,
+        screenshot_path=None,
+        web_snapshot_paths=[web_snapshot_path],
+        exit_code=-15,
+        duration_seconds=3.0,
+    )
+    if (
+        "properties" in property_result.shortfall_categories
+        or "properties" not in missing_property_result.shortfall_categories
+    ):
+        print("Self-test failed: property evidence gate did not distinguish fixtures", file=sys.stderr)
+        return 1
+    zero_property_events = [
+        event for event in events if event.type != "properties.applied"
+    ] + [
+        DiagnosticEvent(
+            type="properties.applied",
+            severity="info",
+            message="count=0",
+            url=None,
+            line="fixture",
+        )
+    ]
+    zero_property_result = score_sample(
+        Sample(id="zero-property-fixture", capabilities=["properties"]),
+        zero_property_events,
+        metadata,
+        log_path,
+        screenshot_path=None,
+        web_snapshot_paths=[web_snapshot_path],
+        exit_code=-15,
+        duration_seconds=3.0,
+    )
+    if "properties" not in zero_property_result.shortfall_categories:
+        print("Self-test failed: empty property application passed the evidence gate", file=sys.stderr)
+        return 1
+    missing_stall_metadata = dict(metadata)
+    missing_stall_metadata["stall_animation_frame_requested"] = True
+    missing_stall_result = score_sample(
+        Sample(id="missing-stall-fixture", capabilities=["properties"]),
+        events,
+        missing_stall_metadata,
+        log_path,
+        screenshot_path=None,
+        web_snapshot_paths=[web_snapshot_path],
+        exit_code=-15,
+        duration_seconds=3.0,
+    )
+    if "evidence_infrastructure" not in missing_stall_result.shortfall_categories:
+        print("Self-test failed: missing animation-frame stall marker passed", file=sys.stderr)
         return 1
     blank_metadata = dict(metadata)
     blank_metadata["snapshots"] = [
@@ -1808,6 +1912,11 @@ def make_parser() -> argparse.ArgumentParser:
     parser.add_argument("--limit", type=int, help="Limit discovered samples.")
     parser.add_argument("--duration", type=float, default=10.0, help="Seconds to run each sample.")
     parser.add_argument("--screenshot", action="store_true", help="Capture a desktop screenshot near the end of each run.")
+    parser.add_argument(
+        "--stall-animation-frame",
+        action="store_true",
+        help="Debug gate: suppress requestAnimationFrame callbacks before sample scripts run.",
+    )
     parser.add_argument("--kill-existing", action="store_true", help="Kill existing MyWallpaperX processes before each sample.")
     parser.add_argument("--baseline", help="Previous report.json for score comparison.")
     parser.add_argument("--output-dir", help="Directory for logs and reports.")

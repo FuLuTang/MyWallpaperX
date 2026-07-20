@@ -1,8 +1,3 @@
-//
-//  DedicatedWebWallpaperHostCompatibilityScript+BootstrapFoundation.swift
-//  MyWallpaperX
-//
-
 let webCompatibilityScriptBootstrapFoundation = #"""
   const audioStreams = [];
   const audioListeners = [];
@@ -354,17 +349,13 @@ let webCompatibilityScriptBootstrapFoundation = #"""
     try {
       if (window.__myWallpaperPropertyReplayQueued === true) return;
       window.__myWallpaperPropertyReplayQueued = true;
-      const replay = () => {
+      window.__myWallpaperRunAfterSettledFrames(() => {
         window.__myWallpaperPropertyReplayQueued = false;
         replayWallpaperPropertyListenerState({ includeUserProperties: true });
-      };
-      if (typeof window.requestAnimationFrame === 'function') {
-        window.requestAnimationFrame(() => window.setTimeout(replay, 0));
-      } else {
-        window.setTimeout(replay, 0);
-      }
+      });
     } catch (_) {
-      try { replayWallpaperPropertyListenerState(); } catch (_) {}
+      window.__myWallpaperPropertyReplayQueued = false;
+      try { replayWallpaperPropertyListenerState({ includeUserProperties: true }); } catch (_) {}
     }
   };
   try {

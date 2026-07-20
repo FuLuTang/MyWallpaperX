@@ -3,7 +3,11 @@ import WebKit
 
 extension DedicatedWebWallpaperHostPlaceholderAdapter {
     #if DEBUG
-    func collectDebugDOMEvidence(from webView: WKWebView, screenID: CGDirectDisplayID) {
+    func collectDebugDOMEvidence(
+        from webView: WKWebView,
+        screenID: CGDirectDisplayID,
+        reason: String
+    ) {
         let script = #"""
         const elements = Array.from(document.querySelectorAll('body *')).slice(0, 10000);
         const isVisible = (element) => {
@@ -16,6 +20,18 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
         const images = Array.from(document.images);
         const canvases = Array.from(document.querySelectorAll('canvas'));
         const media = Array.from(document.querySelectorAll('video, audio'));
+        const propertyListener = window.wallpaperPropertyListener;
+        const propertyReplayState = window.__myWallpaperPropertyReplayState || null;
+        const lastUserProperties = window.__myWallpaperLastUserProperties;
+        const pendingProperties = propertyReplayState ? propertyReplayState.pendingProperties : null;
+        const propertyDescriptor = Object.getOwnPropertyDescriptor(window, 'wallpaperPropertyListener');
+        const userPropertyCallback = propertyListener && typeof propertyListener.applyUserProperties === 'function'
+          ? propertyListener.applyUserProperties
+          : null;
+        const keyCount = (value) => {
+          try { return value && typeof value === 'object' ? Object.keys(value).length : 0; }
+          catch (_) { return 0; }
+        };
         const backgroundCount = visible.filter((element) => {
           const value = getComputedStyle(element).backgroundImage;
           return value && value !== 'none';
@@ -30,6 +46,7 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
           }
         }
         return {
+          evidencePhase: String(reason || ''),
           readyState: document.readyState,
           titleLength: String(document.title || '').length,
           bodyChildCount: document.body ? document.body.children.length : 0,
@@ -42,6 +59,30 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
           mediaCount: media.length,
           iframeCount: document.querySelectorAll('iframe').length,
           backgroundCount,
+          bodyBackgroundImageSet: Boolean(document.body && getComputedStyle(document.body).backgroundImage !== 'none'),
+          documentBackgroundImageSet: getComputedStyle(document.documentElement).backgroundImage !== 'none',
+          userPropertyCount: keyCount(lastUserProperties),
+          pendingPropertyCount: keyCount(pendingProperties),
+          propertyListenerAvailable: Boolean(userPropertyCallback),
+          propertyBridgeAvailable: typeof window.__myWallpaperApplyProperties === 'function',
+          propertyInterceptorInstalled: Boolean(propertyDescriptor && typeof propertyDescriptor.set === 'function'),
+          propertyListenerReplayQueued: window.__myWallpaperPropertyReplayQueued === true,
+          propertyDeferredReplayScheduled: window.__myWallpaperDeferredPropertyReplayScheduled === true,
+          propertyReplayPending: Boolean(propertyReplayState && (
+            propertyReplayState.pendingProperties !== null || propertyReplayState.pendingSignature
+          )),
+          propertyReplayAttempt: Number(propertyReplayState && propertyReplayState.attempt || 0),
+          propertyReplayTimerActive: Boolean(propertyReplayState && propertyReplayState.timer !== null),
+          propertyPendingSignaturePresent: Boolean(propertyReplayState && propertyReplayState.pendingSignature),
+          propertyAppliedSignaturePresent: Boolean(window.__myWallpaperLastAppliedUserPropertySignature),
+          propertyAppliedToCurrentListener: Boolean(
+            userPropertyCallback && userPropertyCallback === window.__myWallpaperLastAppliedUserPropertyCallback
+          ),
+          propertyAppliedToCurrentPayload: Boolean(
+            userPropertyCallback && typeof window.__myWallpaperStablePropertySignature === 'function' &&
+            window.__myWallpaperStablePropertySignature(lastUserProperties || {}) ===
+              window.__myWallpaperLastAppliedUserPropertySignature
+          ),
           serviceWorkerSupported: 'serviceWorker' in navigator,
           serviceWorkerRegistrationCount: serviceWorkerRegistrations.length,
           serviceWorkerControlled: Boolean(navigator.serviceWorker && navigator.serviceWorker.controller),
@@ -51,7 +92,12 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
           scrollSize: `${document.documentElement.scrollWidth}x${document.documentElement.scrollHeight}`
         };
         """#
-        webView.callAsyncJavaScript(script, arguments: [:], in: nil, in: .page) { [weak self, weak webView] result in
+        webView.callAsyncJavaScript(
+            script,
+            arguments: ["reason": reason],
+            in: nil,
+            in: .page
+        ) { [weak self, weak webView] result in
             guard let self, let webView else { return }
             switch result {
             case let .success(value):

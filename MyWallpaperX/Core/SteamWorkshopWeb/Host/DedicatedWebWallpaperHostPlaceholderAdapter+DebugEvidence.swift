@@ -11,7 +11,7 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
         for surface in evidenceSurfaces {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self, weak webView = surface.webView] in
                 guard let self, let webView, self.surfaces[surface.screenID]?.webView === webView else { return }
-                self.collectDebugDOMEvidence(from: webView, screenID: surface.screenID)
+                self.collectDebugDOMEvidence(from: webView, screenID: surface.screenID, reason: "ready")
                 self.captureDebugWebSnapshot(
                     from: webView,
                     screenID: surface.screenID,
@@ -19,13 +19,13 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
                     outputDirectory: outputDirectory
                 )
             }
-            // The compatibility layer deliberately defers buttoned pointer events during
-            // its first six seconds, so exercise the bridge after that protection window.
+            // Exercise buttoned input after the compatibility layer's six-second protection window.
             DispatchQueue.main.asyncAfter(deadline: .now() + 6.25) { [weak self, weak webView = surface.webView] in
                 guard let self, let webView, self.surfaces[surface.screenID]?.webView === webView else { return }
                 self.dispatchDebugInteractionEvidence(to: webView, screenID: surface.screenID)
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self, weak webView] in
                     guard let self, let webView, self.surfaces[surface.screenID]?.webView === webView else { return }
+                    self.collectDebugDOMEvidence(from: webView, screenID: surface.screenID, reason: "after-interaction")
                     self.captureDebugWebSnapshot(
                         from: webView,
                         screenID: surface.screenID,
