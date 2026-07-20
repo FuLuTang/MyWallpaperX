@@ -4,7 +4,7 @@
 
 这组基线用于补充本机已有 10 项代表矩阵和 34 项完整基线，重点覆盖属性密集、WebGL2、WASM、Worker、音频频谱、大体积生成脚本和持续动画的组合场景。
 
-2026-07-20 使用当前 Debug App 在隔离 Workshop 根执行，结果为：
+2026-07-20 使用提交 `3b69614` 后的最终 Debug App 在隔离 Workshop 根重跑，结果为：
 
 - 5/5 可运行，5 个 A；
 - 平均得分 98.8，平均 evidence coverage 94.3%；
@@ -43,7 +43,7 @@ AudiOrbits 的作者 production webpack 配置要求本地 HTTPS 证书，准备
 
 ## 4. 最终结果
 
-最终报告目录：`/tmp/mwx-external-final-report-2`。它是本机临时证据，不属于版本控制资产。
+本轮最终报告目录：`/private/tmp/mwx-web-audio-external-report`，并保留副本到 `.codex/web-closure-final-20260720/external-matrix/`。它们是本机证据，不属于版本控制资产。
 
 | ID | 得分/等级 | Coverage | 视觉快照 | 结果 |
 | --- | ---: | ---: | ---: | --- |
@@ -57,13 +57,13 @@ AudiOrbits 的作者 production webpack 配置要求本地 HTTPS 证书，准备
 
 ## 5. 音频证据边界
 
-基准命令在 Debug 专用参数下生成会变化的单声道测试频谱，再走正式转换函数输出 Wallpaper Engine 约定的 128 项布局：前 64 项为左声道，后 64 项为右声道。音频样本必须同时出现：
+基准命令在 Debug 专用参数下生成确定性的 64+64 测试频谱，再走正式 JS 分发链输出 Wallpaper Engine 约定的 128 项布局：前 64 项为左声道，后 64 项为右声道。音频样本必须同时出现：
 
 1. `audio.listener.registered`；
 2. `audio.spectrum.dispatched`，且 `bins=128`、`stereoDelta=0`；
 3. `audio.spectrum.changed`，证明不是重复发送静态数组。
 
-这个 fixture 证明监听注册、mono-to-stereo 布局、JS 桥接和样本消费链路。它不证明系统音频采集结果与正在播放的真实音乐逐帧相关。真实系统音频相关性、设备切换和静音恢复仍需单独验收，不能用本基线替代。
+这个 fixture 证明监听注册、64+64 布局、JS 桥接和样本消费链路，不单独证明系统音频采集相关性。生产链的 signed stereo FFT、受控系统音源和按需采集生命周期证据见 [Web 与 Scene 当前状况评估](../../reviews/web-scene-current-state-roadmap-2026-07-19.md)；设备切换、真正系统静音和睡眠恢复仍需单独验收，不能用本基线替代。
 
 ## 6. 复现
 
