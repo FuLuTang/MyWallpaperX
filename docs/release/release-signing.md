@@ -22,8 +22,8 @@ The workflow intentionally fails early when any signing secret is missing. Unsig
 
 ## Publish an auto-update
 
-Pushes to non-`main` branches build and upload CI artifacts only. They do not
-create GitHub Releases and they do not update the Sparkle feed.
+Pushes to non-`main` branches run the Swift file-health gate only. They do not
+build app artifacts, create GitHub Releases, or update the Sparkle feed.
 
 Pushing to `main` is the release action. The release version must already be
 committed in `MyWallpaperX.xcodeproj/project.pbxproj`; CI does not bump or
