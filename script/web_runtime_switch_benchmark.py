@@ -29,15 +29,49 @@ from web_wallpaper_benchmark import (
 )
 
 
-EXPECTED_ACTIONS = ["preflight", "video1", "web", "video2", "stop", "completed"]
+EXPECTED_ACTIONS = [
+    "preflight",
+    "video1",
+    "web",
+    "video2",
+    "inject-stale-failure",
+    "crash-video2",
+    "crash-video2-delayed",
+    "stop",
+    "completed",
+]
 EXPECTED_CHECKPOINTS = [
     "preflight",
     "video1-requested",
     "web-requested",
     "video2-requested",
+    "stale-event-filtered",
     "video2-stable",
+    "video2-recovered",
+    "recovery-pending",
     "stopped",
+    "post-stop",
 ]
+SWITCH_ACTIONS = ["preflight", "video1", "web", "video2"]
+OWNERSHIP_ACTIONS = [
+    "inject-stale-failure",
+    "crash-video2",
+    "crash-video2-delayed",
+]
+CLEANUP_ACTIONS = ["stop", "completed"]
+SWITCH_CHECKPOINTS = [
+    "preflight",
+    "video1-requested",
+    "web-requested",
+    "video2-requested",
+    "video2-stable",
+]
+OWNERSHIP_CHECKPOINTS = [
+    "stale-event-filtered",
+    "video2-recovered",
+    "recovery-pending",
+]
+CLEANUP_CHECKPOINTS = ["stopped", "post-stop"]
 ACTION_RE = re.compile(
     r"MWX DEBUG RUNTIME SWITCH: action=(?P<action>[a-z0-9-]+) "
     r"elapsedMs=(?P<elapsed>\d+)"
@@ -60,7 +94,7 @@ ZERO_WEB_FIELDS = (
     "watchTimer",
     "watchers",
 )
-MINIMUM_DURATION_SECONDS = 7.0
+MINIMUM_DURATION_SECONDS = 14.0
 MAX_SWITCH_INTERVAL_MILLISECONDS = 300
 
 
@@ -121,10 +155,14 @@ def validate_checkpoint_schema(
     failures: list[str],
 ) -> None:
     scalar_types = {
+        "crashCount": int,
         "elapsedMs": int,
         "kind": str,
         "path": str,
+        "playbackFailures": int,
         "playing": bool,
+        "staleFailureInjected": bool,
+        "staleHandlerCaptured": bool,
     }
     for field, expected_type in scalar_types.items():
         if type(state.get(field)) is not expected_type:
@@ -132,6 +170,8 @@ def validate_checkpoint_schema(
 
     for field in (
         "sessions",
+        "recoveredAlive",
+        "recoveredPids",
         "video1Alive",
         "video1Pids",
         "video2Alive",
@@ -215,23 +255,71 @@ def score_log(
     action_by_name = {entry["name"]: entry for entry in actions}
     checkpoint_by_name = {entry["name"]: entry for entry in checkpoints}
     states = {name: entry["state"] for name, entry in checkpoint_by_name.items()}
-    failures = list(parse_errors)
-    for name in EXPECTED_CHECKPOINTS:
+    switch_failures = list(parse_errors)
+    ownership_failures: list[str] = []
+    cleanup_failures: list[str] = []
+    for name in SWITCH_CHECKPOINTS:
         state = states.get(name)
         if state is not None:
-            validate_checkpoint_schema(name, state, failures)
+            validate_checkpoint_schema(name, state, switch_failures)
+    for name in OWNERSHIP_CHECKPOINTS:
+        state = states.get(name)
+        if state is not None:
+            validate_checkpoint_schema(name, state, ownership_failures)
+    for name in CLEANUP_CHECKPOINTS:
+        state = states.get(name)
+        if state is not None:
+            validate_checkpoint_schema(name, state, cleanup_failures)
 
     defaults_suite_confirmed = expected_defaults_suite in debug_defaults_suites(log_text)
     if not defaults_suite_confirmed:
-        failures.append("debug UserDefaults isolation suite was not confirmed in app logs")
+        switch_failures.append("debug UserDefaults isolation suite was not confirmed in app logs")
     precondition_failures = [match.group("reason") for line in lines if (match := PRECONDITION_RE.search(line))]
     if precondition_failures:
-        failures.append(f"runner preconditions failed: {precondition_failures}")
+        switch_failures.append(f"runner preconditions failed: {precondition_failures}")
+    switch_action_names = [name for name in action_names if name in SWITCH_ACTIONS]
+    ownership_action_names = [name for name in action_names if name in OWNERSHIP_ACTIONS]
+    cleanup_action_names = [name for name in action_names if name in CLEANUP_ACTIONS]
+    if switch_action_names != SWITCH_ACTIONS:
+        switch_failures.append(
+            f"switch action order {switch_action_names} did not match {SWITCH_ACTIONS}"
+        )
+    if ownership_action_names != OWNERSHIP_ACTIONS:
+        ownership_failures.append(
+            f"ownership action order {ownership_action_names} did not match {OWNERSHIP_ACTIONS}"
+        )
+    if cleanup_action_names != CLEANUP_ACTIONS:
+        cleanup_failures.append(
+            f"cleanup action order {cleanup_action_names} did not match {CLEANUP_ACTIONS}"
+        )
+    switch_checkpoint_names = [
+        name for name in checkpoint_names if name in SWITCH_CHECKPOINTS
+    ]
+    ownership_checkpoint_names = [
+        name for name in checkpoint_names if name in OWNERSHIP_CHECKPOINTS
+    ]
+    cleanup_checkpoint_names = [
+        name for name in checkpoint_names if name in CLEANUP_CHECKPOINTS
+    ]
+    if switch_checkpoint_names != SWITCH_CHECKPOINTS:
+        switch_failures.append(
+            f"switch checkpoint order {switch_checkpoint_names} did not match {SWITCH_CHECKPOINTS}"
+        )
+    if ownership_checkpoint_names != OWNERSHIP_CHECKPOINTS:
+        ownership_failures.append(
+            f"ownership checkpoint order {ownership_checkpoint_names} did not match {OWNERSHIP_CHECKPOINTS}"
+        )
+    if cleanup_checkpoint_names != CLEANUP_CHECKPOINTS:
+        cleanup_failures.append(
+            f"cleanup checkpoint order {cleanup_checkpoint_names} did not match {CLEANUP_CHECKPOINTS}"
+        )
     if action_names != EXPECTED_ACTIONS:
-        failures.append(f"debug action order {action_names} did not match {EXPECTED_ACTIONS}")
+        ownership_failures.append(
+            f"full action order {action_names} did not match {EXPECTED_ACTIONS}"
+        )
     if checkpoint_names != EXPECTED_CHECKPOINTS:
-        failures.append(
-            f"checkpoint order {checkpoint_names} did not match {EXPECTED_CHECKPOINTS}"
+        ownership_failures.append(
+            f"full checkpoint order {checkpoint_names} did not match {EXPECTED_CHECKPOINTS}"
         )
 
     switch_interval: int | None = None
@@ -241,14 +329,14 @@ def score_log(
         video2_elapsed = action_by_name["video2"]["elapsed_ms"]
         switch_interval = video2_elapsed - video1_elapsed
         if not video1_elapsed <= web_elapsed <= video2_elapsed:
-            failures.append("runtime request timestamps were not monotonic")
+            switch_failures.append("runtime request timestamps were not monotonic")
         if switch_interval < 0 or switch_interval >= MAX_SWITCH_INTERVAL_MILLISECONDS:
-            failures.append(
+            switch_failures.append(
                 f"Video1 -> Video2 requests took {switch_interval}ms; "
                 f"expected less than {MAX_SWITCH_INTERVAL_MILLISECONDS}ms"
             )
     else:
-        failures.append("runtime switch timing could not be measured")
+        switch_failures.append("runtime switch timing could not be measured")
 
     preflight = states.get("preflight")
     if preflight is not None and (
@@ -256,60 +344,60 @@ def score_log(
         or preflight.get("sessions") != []
         or not web_state_is_zero(preflight)
     ):
-        failures.append("preflight did not start from an idle zero-resource state")
+        switch_failures.append("preflight did not start from an idle zero-resource state")
 
     video1 = states.get("video1-requested")
     video1_session = (
-        validate_video_state(video1, "Video1.mp4", failures, "Video1")
+        validate_video_state(video1, "Video1.mp4", switch_failures, "Video1")
         if video1
         else None
     )
     if video1 is not None and video1_session:
         if video1.get("video1Pids") != [video1_session.get("pid")]:
-            failures.append("Video1 PID snapshot did not match its daemon session")
+            switch_failures.append("Video1 PID snapshot did not match its daemon session")
 
     web = states.get("web-requested")
     if web is not None:
         web_details = web.get("web") if isinstance(web.get("web"), dict) else {}
         if web.get("kind") != "web" or web.get("sessions") != []:
-            failures.append("Web request did not replace the Video1 engine/session state")
+            switch_failures.append("Web request did not replace the Video1 engine/session state")
         if web_details.get("phase") not in ("launching", "ready"):
-            failures.append("Web host did not enter launching or ready phase")
+            switch_failures.append("Web host did not enter launching or ready phase")
         if web_details.get("surfaces") != 1 or web_details.get("currentRequest") != 1:
-            failures.append("Web request did not create exactly one owned surface")
+            switch_failures.append("Web request did not create exactly one owned surface")
 
     video2_requested = states.get("video2-requested")
     requested_session = (
         validate_video_state(
-            video2_requested, "Video2.mp4", failures, "Video2 requested"
+            video2_requested, "Video2.mp4", switch_failures, "Video2 requested"
         )
         if video2_requested
         else None
     )
     if video2_requested is not None and not web_state_is_zero(video2_requested):
-        failures.append("Web resources were not zero immediately after the Video2 request")
+        switch_failures.append("Web resources were not zero immediately after the Video2 request")
 
     stable = states.get("video2-stable")
     stable_session = (
-        validate_video_state(stable, "Video2.mp4", failures, "Video2 stable")
+        validate_video_state(stable, "Video2.mp4", switch_failures, "Video2 stable")
         if stable
         else None
     )
     if stable is not None:
         if stable.get("playing") is not True:
-            failures.append("Video2 was not playing at the stable checkpoint")
+            switch_failures.append("Video2 was not playing at the stable checkpoint")
         if not web_state_is_zero(stable):
-            failures.append("Web resources were not zero at the Video2 stable checkpoint")
+            switch_failures.append("Web resources were not zero at the Video2 stable checkpoint")
         if stable.get("video1Alive") != []:
-            failures.append("a Video1 daemon PID remained alive after Video2 became stable")
+            switch_failures.append("a Video1 daemon PID remained alive after Video2 became stable")
     if requested_session and stable_session:
         requested_pid = requested_session.get("pid")
         stable_pid = stable_session.get("pid")
         video1_pid = video1_session.get("pid") if video1_session else None
         if requested_pid != stable_pid:
-            failures.append("Video2 daemon PID changed before reaching stable playback")
+            switch_failures.append("Video2 daemon PID changed before reaching stable playback")
         if requested_pid == video1_pid:
-            failures.append("Video2 reused the terminated Video1 daemon PID")
+            switch_failures.append("Video2 reused the terminated Video1 daemon PID")
         request_id = stable_session.get("requested")
         if (
             not stable_session.get("launched")
@@ -317,24 +405,92 @@ def score_log(
             or stable_session.get("accepted") != request_id
             or stable_session.get("ready") != request_id
         ):
-            failures.append("Video2 daemon did not launch, accept, and ready the latest request")
+            switch_failures.append("Video2 daemon did not launch, accept, and ready the latest request")
         if stable.get("video2Pids") != [stable_pid] or stable.get("video2Alive") != [stable_pid]:
-            failures.append("Video2 PID ownership snapshot was inconsistent at stable playback")
+            switch_failures.append("Video2 PID ownership snapshot was inconsistent at stable playback")
 
-    cleanup_failures: list[str] = []
-    stopped = states.get("stopped")
-    if stopped is not None and (
-        stopped.get("kind") != "-"
-        or stopped.get("path") != "-"
-        or stopped.get("playing") is not False
-        or stopped.get("sessions") != []
-        or stopped.get("video1Alive") != []
-        or stopped.get("video2Alive") != []
-        or not web_state_is_zero(stopped)
-    ):
-        cleanup_failures.append(
-            "final stop did not release all engine, daemon, and Web resources"
+    stale_filtered = states.get("stale-event-filtered")
+    if stale_filtered is not None:
+        if stale_filtered.get("staleHandlerCaptured") is not True:
+            ownership_failures.append("Video1 stale reader callback was not captured")
+        if stale_filtered.get("staleFailureInjected") is not True:
+            ownership_failures.append("stale Video1 failure event was not injected")
+        if stale_filtered.get("playbackFailures") != 0:
+            ownership_failures.append("stale Video1 output reached the current Video2 session")
+        if (
+            stale_filtered.get("kind") != "video"
+            or stale_filtered.get("path") != "Video2.mp4"
+            or not web_state_is_zero(stale_filtered)
+        ):
+            ownership_failures.append("stale reader check did not preserve Video2 ownership")
+
+    recovered = states.get("video2-recovered")
+    recovered_session = (
+        validate_video_state(
+            recovered, "Video2.mp4", ownership_failures, "Video2 recovered"
         )
+        if recovered
+        else None
+    )
+    if recovered is not None:
+        if recovered.get("playbackFailures") != 0:
+            ownership_failures.append("playback failure notification escaped during recovery")
+        if recovered.get("video2Alive") != []:
+            ownership_failures.append("terminated Video2 daemon remained alive after recovery")
+        if not web_state_is_zero(recovered):
+            ownership_failures.append("Web resources reappeared during Video2 recovery")
+    if stable_session and recovered_session:
+        stable_pid = stable_session.get("pid")
+        recovered_pid = recovered_session.get("pid")
+        if recovered_pid == stable_pid:
+            ownership_failures.append("Video2 crash recovery did not create a new daemon PID")
+        request_id = recovered_session.get("requested")
+        if (
+            not recovered_session.get("launched")
+            or not isinstance(request_id, int)
+            or recovered_session.get("accepted") != request_id
+            or recovered_session.get("ready") != request_id
+        ):
+            ownership_failures.append(
+                "recovered Video2 daemon did not launch, accept, and ready its request"
+            )
+        if (
+            recovered.get("recoveredPids") != [recovered_pid]
+            or recovered.get("recoveredAlive") != [recovered_pid]
+        ):
+            ownership_failures.append("recovered Video2 PID ownership snapshot was inconsistent")
+
+    recovery_pending = states.get("recovery-pending")
+    if recovery_pending is not None and (
+        recovery_pending.get("kind") != "video"
+        or recovery_pending.get("path") != "Video2.mp4"
+        or recovery_pending.get("playing") is not False
+        or recovery_pending.get("sessions") != []
+        or recovery_pending.get("recoveredAlive") != []
+        or recovery_pending.get("crashCount", 0) < 2
+        or recovery_pending.get("playbackFailures") != 0
+        or not web_state_is_zero(recovery_pending)
+    ):
+        ownership_failures.append(
+            "nonzero-backoff recovery was not pending before the stop intent"
+        )
+
+    for checkpoint in ("stopped", "post-stop"):
+        stopped = states.get(checkpoint)
+        if stopped is not None and (
+            stopped.get("kind") != "-"
+            or stopped.get("path") != "-"
+            or stopped.get("playing") is not False
+            or stopped.get("sessions") != []
+            or stopped.get("video1Alive") != []
+            or stopped.get("video2Alive") != []
+            or stopped.get("recoveredAlive") != []
+            or stopped.get("playbackFailures") != 0
+            or not web_state_is_zero(stopped)
+        ):
+            cleanup_failures.append(
+                f"{checkpoint} did not release all engine, daemon, and Web resources"
+            )
 
     diagnostic_entries: list[tuple[int, dict[str, str]]] = []
     for index, line in enumerate(lines, 1):
@@ -375,27 +531,29 @@ def score_log(
         entry[1]["type"] == "loopback.stopped" for entry in diagnostic_entries
     )
     if len(profile_entries) != 1:
-        failures.append("Web request did not emit exactly one runtime.profile before Video2")
+        switch_failures.append("Web request did not emit exactly one runtime.profile before Video2")
     if len(stop_entries) != 1 or not all(
         token in stop_entries[0][1]["message"] for token in FINAL_STOP_TOKENS
     ):
-        failures.append("Video2 did not stop Web with one idle zero-resource lifecycle event")
+        switch_failures.append("Video2 did not stop Web with one idle zero-resource lifecycle event")
     if not release_entries:
-        failures.append("the replaced Web surface was not released before Video2 stabilized")
+        switch_failures.append("the replaced Web surface was not released before Video2 stabilized")
     if retained_entries:
-        failures.append(f"{len(retained_entries)} Web surface(s) remained retained")
+        switch_failures.append(f"{len(retained_entries)} Web surface(s) remained retained")
     if ready_after_video2:
-        failures.append("a stale Web host became ready after the Video2 request")
+        switch_failures.append("a stale Web host became ready after the Video2 request")
     if origin_errors:
-        failures.append("Web runtime origin setup failed during the switch sequence")
+        switch_failures.append("Web runtime origin setup failed during the switch sequence")
     if loopback_stops < loopback_starts:
-        failures.append(
+        switch_failures.append(
             f"stopped {loopback_stops} loopback server(s), expected at least {loopback_starts}"
         )
 
+    failures = switch_failures + ownership_failures + cleanup_failures
     return {
-        "passed": not failures and not cleanup_failures,
-        "switch_passed": not failures,
+        "passed": not failures,
+        "switch_passed": not switch_failures,
+        "ownership_passed": not ownership_failures,
         "cleanup_passed": not cleanup_failures,
         "sample_id": sample_id,
         "debug_defaults_suite": expected_defaults_suite if defaults_suite_confirmed else None,
@@ -406,15 +564,17 @@ def score_log(
         "switch_interval_ms": switch_interval,
         "video1_pids": video1.get("video1Pids", []) if video1 is not None else [],
         "video2_pids": stable.get("video2Pids", []) if stable is not None else [],
+        "recovered_pids": recovered.get("recoveredPids", []) if recovered is not None else [],
         "lifecycle_stop_count": len(stop_entries),
         "released_surface_count": len(release_entries),
         "retained_surface_count": len(retained_entries),
         "loopback_start_count": loopback_starts,
         "loopback_stop_count": loopback_stops,
         "precondition_failures": precondition_failures,
-        "switch_failures": failures,
+        "switch_failures": switch_failures,
+        "ownership_failures": ownership_failures,
         "cleanup_failures": cleanup_failures,
-        "failures": failures + cleanup_failures,
+        "failures": failures,
     }
 
 
@@ -459,12 +619,14 @@ def write_reports(output_dir: Path, report: dict[str, Any]) -> tuple[Path, Path]
         "",
         f"- Result: {'PASS' if report['scope_passed'] else 'FAIL'} (scope: {report['requested_scope']})",
         f"- Switch gate: {'PASS' if report['switch_passed'] else 'FAIL'}",
+        f"- Ownership gate: {'PASS' if report['ownership_passed'] else 'FAIL'}",
         f"- Cleanup gate: {'PASS' if report['cleanup_passed'] else 'FAIL'}",
         f"- Sample: `{report['sample_id']}`",
         f"- UserDefaults suite: `{report['debug_defaults_suite'] or '-'}`",
         f"- Actions: {' -> '.join(report['observed_actions']) or '-'}",
         f"- Switch interval: {report['switch_interval_ms']} ms (<300 ms required)",
         f"- Video1/Video2 PIDs: {report['video1_pids']} / {report['video2_pids']}",
+        f"- Recovered Video2 PIDs: {report['recovered_pids']}",
         f"- Web lifecycle stop: {report['lifecycle_stop_count']}",
         f"- Released/retained surfaces: {report['released_surface_count']}/{report['retained_surface_count']}",
         f"- Loopback start/stop: {report['loopback_start_count']}/{report['loopback_stop_count']}",
@@ -573,7 +735,7 @@ def run_benchmark(args: argparse.Namespace) -> int:
     )
     report.update(
         {
-            "schema_version": 1,
+            "schema_version": 2,
             "generated_at": datetime.now().isoformat(timespec="seconds"),
             "duration_seconds": round(time.monotonic() - started, 2),
             "requested_duration_seconds": args.duration,
@@ -609,7 +771,7 @@ def make_parser() -> argparse.ArgumentParser:
     parser.add_argument("--runtime-workshop-root")
     parser.add_argument("--runtime-home")
     parser.add_argument("--id", default="1509243786")
-    parser.add_argument("--duration", type=float, default=8.0)
+    parser.add_argument("--duration", type=float, default=14.0)
     parser.add_argument("--output-dir")
     parser.add_argument("--scope", choices=("full", "switch"), default="full")
     parser.add_argument("--kill-existing", action="store_true")

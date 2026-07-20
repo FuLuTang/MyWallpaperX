@@ -36,16 +36,24 @@ extension WallpaperEngine {
         process.terminationHandler = { [weak self] _ in
             DispatchQueue.main.async {
                 guard let self else { return }
-                let previousSession = self.displaySessions[displayID]
-                if previousSession === session {
+                let wasCurrentSession = self.displaySessions[displayID] === session
+                if wasCurrentSession {
                     self.displaySessions.removeValue(forKey: displayID)
                 }
                 self.cleanupSessionIO(session)
 
-                guard self.shouldMaintainSession(for: displayID),
-                      let currentWallpaper = self.currentWallpaper else {
+                guard wasCurrentSession,
+                      self.currentPlaybackContentKind == .video,
+                      self.shouldMaintainSession(for: displayID),
+                      let currentWallpaper = self.currentWallpaper,
+                      let currentContentPath = self.currentContentPath else {
                     return
                 }
+                let recoveryEpoch = self.playbackIntentEpoch
+                let recoveryPath = URL(fileURLWithPath: currentWallpaper.path)
+                    .resolvingSymlinksInPath()
+                    .standardizedFileURL.path
+                guard recoveryPath == currentContentPath else { return }
 
                 let crashCount = self.displayCrashCounts[displayID, default: 0]
                 self.displayCrashCounts[displayID] = crashCount + 1
@@ -54,7 +62,14 @@ extension WallpaperEngine {
                     : min(pow(2.0, Double(crashCount - 1)), 30.0)
 
                 let rebuild = { [weak self] in
-                    guard let self else { return }
+                    guard let self,
+                          self.playbackIntentEpoch == recoveryEpoch,
+                          self.currentPlaybackContentKind == .video,
+                          self.currentContentPath == recoveryPath,
+                          self.displaySessions[displayID] == nil,
+                          self.shouldMaintainSession(for: displayID) else {
+                        return
+                    }
                     self.applyWallpaper(
                         currentWallpaper,
                         multiDisplayEnabled: self.currentMultiDisplayEnabled,
@@ -102,12 +117,13 @@ extension WallpaperEngine {
     private func attachReaders(for session: DisplayDaemonSession) {
         session.inputPipe.fileHandleForWriting.readabilityHandler = nil
         let displayID = session.displayID
-        session.outputPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
+        session.outputPipe.fileHandleForReading.readabilityHandler = { [weak self, weak session] handle in
             let data = handle.availableData
             guard !data.isEmpty else { return }
             DispatchQueue.main.async {
                 guard let self,
-                      let session = self.displaySessions[displayID] else { return }
+                      let session,
+                      self.displaySessions[displayID] === session else { return }
                 self.consumeDaemonEvents(from: data, for: session)
             }
         }

@@ -59,6 +59,7 @@ public final class WallpaperEngine: NSObject {
     var currentWebRecordID: String?
     var currentWebHostStrategy: WebWallpaperHostStrategy = .dedicatedHostPlaceholder
     var currentWebLaunchSource: WebWallpaperLaunchSource?
+    var playbackIntentEpoch: UInt64 = 0
     lazy var dedicatedWebHostAdapter: WebWallpaperHostAdapter = DedicatedWebWallpaperHostPlaceholderAdapter()
     var displayIDs: [CGDirectDisplayID] = []
     var screenLocked = false
@@ -140,6 +141,7 @@ public final class WallpaperEngine: NSObject {
         idleTimeoutMinutes: Int
     ) {
         // 对外统一入口接收每个合法切换；交互去抖由调用层负责。
+        beginPlaybackIntent()
         applyWallpaper(
             wallpaper,
             multiDisplayEnabled: multiDisplayEnabled,
@@ -240,6 +242,10 @@ public final class WallpaperEngine: NSObject {
         URL(fileURLWithPath: path).resolvingSymlinksInPath().standardizedFileURL.path
     }
 
+    func beginPlaybackIntent() {
+        playbackIntentEpoch &+= 1
+    }
+
     public func updateSettings(
         pauseWhenOtherAppFocused: Bool,
         pauseWhenOtherAppFullscreen: Bool,
@@ -260,6 +266,7 @@ public final class WallpaperEngine: NSObject {
     }
 
     public func stopPlayback() {
+        beginPlaybackIntent()
         if currentPlaybackContentKind == .web {
             setWebAudioSpectrumRequested(false)
             dispatchWebRuntimeCommand(.stop)

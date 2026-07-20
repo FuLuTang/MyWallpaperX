@@ -3,19 +3,21 @@
 import copy
 import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from web_runtime_switch_benchmark import apply_process_outcome, score_log
+from web_runtime_switch_benchmark import apply_process_outcome, score_log, write_reports
 
 
 SAMPLE_ID = "1509243786"
 DEFAULTS_SUITE = "com.songziqiang.MyWallpaperX.Debug.runtime-switch-test"
 VIDEO1_PID = 101
 VIDEO2_PID = 202
+RECOVERED_PID = 303
 
 
 def action(name: str, elapsed_ms: int) -> str:
@@ -64,22 +66,34 @@ def session(pid: int, accepted=None, ready=None) -> dict:
 
 def state(
     *,
+    crash_count: int = 0,
     kind: str = "-",
     path: str = "-",
     playing: bool = False,
     sessions: list | None = None,
     web: dict | None = None,
+    playback_failures: int = 0,
+    recovered_alive: list | None = None,
+    recovered_pids: list | None = None,
+    stale_failure_injected: bool = False,
+    stale_handler_captured: bool = False,
     video1_alive: list | None = None,
     video1_pids: list | None = None,
     video2_alive: list | None = None,
     video2_pids: list | None = None,
 ) -> dict:
     return {
+        "crashCount": crash_count,
         "elapsedMs": 0,
         "kind": kind,
         "path": path,
+        "playbackFailures": playback_failures,
         "playing": playing,
+        "recoveredAlive": recovered_alive or [],
+        "recoveredPids": recovered_pids or [],
         "sessions": sessions or [],
+        "staleFailureInjected": stale_failure_injected,
+        "staleHandlerCaptured": stale_handler_captured,
         "video1Alive": video1_alive or [],
         "video1Pids": video1_pids or [],
         "video2Alive": video2_alive or [],
@@ -96,6 +110,7 @@ def passing_lines() -> list[str]:
         sessions=[session(VIDEO1_PID)],
         video1_alive=[VIDEO1_PID],
         video1_pids=[VIDEO1_PID],
+        stale_handler_captured=True,
     )
     web = state(
         kind="web",
@@ -104,6 +119,7 @@ def passing_lines() -> list[str]:
         web=web_state("launching", surfaces=1, current_request=1),
         video1_alive=[VIDEO1_PID],
         video1_pids=[VIDEO1_PID],
+        stale_handler_captured=True,
     )
     requested = state(
         kind="video",
@@ -113,9 +129,33 @@ def passing_lines() -> list[str]:
         video1_pids=[VIDEO1_PID],
         video2_alive=[VIDEO2_PID],
         video2_pids=[VIDEO2_PID],
+        stale_handler_captured=True,
     )
     stable = copy.deepcopy(requested)
     stable["sessions"] = [session(VIDEO2_PID, accepted=1, ready=1)]
+    stable["staleFailureInjected"] = True
+    stale_filtered = copy.deepcopy(requested)
+    stale_filtered["staleFailureInjected"] = True
+    recovered = state(
+        kind="video",
+        path="Video2.mp4",
+        playing=True,
+        sessions=[session(RECOVERED_PID, accepted=1, ready=1)],
+        recovered_alive=[RECOVERED_PID],
+        recovered_pids=[RECOVERED_PID],
+        stale_failure_injected=True,
+        stale_handler_captured=True,
+        video1_pids=[VIDEO1_PID],
+        video2_pids=[VIDEO2_PID],
+    )
+    stopped = state(
+        crash_count=2,
+        recovered_pids=[RECOVERED_PID],
+        stale_failure_injected=True,
+        stale_handler_captured=True,
+        video1_pids=[VIDEO1_PID],
+        video2_pids=[VIDEO2_PID],
+    )
     return [
         f"MWX DEBUG DEFAULTS: suite={DEFAULTS_SUITE}",
         action("preflight", 0),
@@ -129,14 +169,30 @@ def passing_lines() -> list[str]:
         diag("lifecycle.teardown", "surfaces=0 loopbacks=0 watchers=0 monitors=0 pointerTimer=0"),
         diag("lifecycle.stop", "phase=idle surfaces=0 loopbacks=0 observers=0"),
         checkpoint("video2-requested", requested),
+        action("inject-stale-failure", 106),
+        checkpoint("stale-event-filtered", stale_filtered),
         diag("lifecycle.surface.released", "screen=1", record="-"),
         checkpoint("video2-stable", stable),
-        action("stop", 3500),
+        action("crash-video2", 3100),
+        checkpoint("video2-recovered", recovered),
+        action("crash-video2-delayed", 6100),
         checkpoint(
-            "stopped",
-            state(video1_pids=[VIDEO1_PID], video2_pids=[VIDEO2_PID]),
+            "recovery-pending",
+            state(
+                crash_count=2,
+                kind="video",
+                path="Video2.mp4",
+                recovered_pids=[RECOVERED_PID],
+                stale_failure_injected=True,
+                stale_handler_captured=True,
+                video1_pids=[VIDEO1_PID],
+                video2_pids=[VIDEO2_PID],
+            ),
         ),
-        action("completed", 4900),
+        action("stop", 6500),
+        checkpoint("stopped", stopped),
+        checkpoint("post-stop", stopped),
+        action("completed", 10100),
     ]
 
 
@@ -159,10 +215,12 @@ class WebRuntimeSwitchBenchmarkTests(unittest.TestCase):
         result = score(passing_lines())
         self.assertTrue(result["passed"], result["failures"])
         self.assertTrue(result["switch_passed"])
+        self.assertTrue(result["ownership_passed"])
         self.assertTrue(result["cleanup_passed"])
         self.assertEqual(result["switch_interval_ms"], 105)
         self.assertEqual(result["video1_pids"], [VIDEO1_PID])
         self.assertEqual(result["video2_pids"], [VIDEO2_PID])
+        self.assertEqual(result["recovered_pids"], [RECOVERED_PID])
 
     def test_rejects_missing_defaults_suite(self) -> None:
         result = score(passing_lines()[1:])
@@ -250,7 +308,83 @@ class WebRuntimeSwitchBenchmarkTests(unittest.TestCase):
         self.assertFalse(result["passed"])
         self.assertTrue(result["switch_passed"])
         self.assertFalse(result["cleanup_passed"])
-        self.assertTrue(any("final stop" in failure for failure in result["failures"]))
+        self.assertTrue(any("stopped" in failure for failure in result["failures"]))
+
+    def test_rejects_stale_reader_failure_notification(self) -> None:
+        lines = replace_checkpoint(
+            passing_lines(),
+            "stale-event-filtered",
+            lambda payload: payload.update(playbackFailures=1),
+        )
+        result = score(lines)
+        self.assertFalse(result["ownership_passed"])
+        self.assertTrue(
+            any("stale Video1 output" in failure for failure in result["ownership_failures"])
+        )
+
+    def test_rejects_recovery_that_reuses_terminated_pid(self) -> None:
+        def mutate(payload: dict) -> None:
+            payload["sessions"][0]["pid"] = VIDEO2_PID
+            payload["recoveredAlive"] = [VIDEO2_PID]
+            payload["recoveredPids"] = [VIDEO2_PID]
+
+        result = score(
+            replace_checkpoint(passing_lines(), "video2-recovered", mutate)
+        )
+        self.assertFalse(result["ownership_passed"])
+        self.assertTrue(
+            any("new daemon PID" in failure for failure in result["ownership_failures"])
+        )
+
+    def test_rejects_recovered_daemon_without_ready_acknowledgement(self) -> None:
+        result = score(
+            replace_checkpoint(
+                passing_lines(),
+                "video2-recovered",
+                lambda payload: payload["sessions"][0].update(ready=None),
+            )
+        )
+        self.assertFalse(result["ownership_passed"])
+        self.assertTrue(
+            any("recovered Video2 daemon" in failure for failure in result["ownership_failures"])
+        )
+
+    def test_rejects_delayed_post_stop_revival(self) -> None:
+        def mutate(payload: dict) -> None:
+            payload.update(kind="video", path="Video2.mp4", playing=True)
+            payload["sessions"] = [session(404, accepted=1, ready=1)]
+            payload["recoveredAlive"] = [404]
+
+        result = score(replace_checkpoint(passing_lines(), "post-stop", mutate))
+        self.assertFalse(result["cleanup_passed"])
+        self.assertTrue(
+            any("post-stop" in failure for failure in result["cleanup_failures"])
+        )
+
+    def test_rejects_missing_nonzero_backoff_window(self) -> None:
+        result = score(
+            replace_checkpoint(
+                passing_lines(),
+                "recovery-pending",
+                lambda payload: payload.update(crashCount=1),
+            )
+        )
+        self.assertFalse(result["ownership_passed"])
+        self.assertTrue(
+            any("nonzero-backoff" in failure for failure in result["ownership_failures"])
+        )
+
+    def test_report_writer_accepts_complete_score(self) -> None:
+        report = score(passing_lines())
+        report.update(
+            requested_scope="full",
+            scope_passed=True,
+            log_path="/tmp/runtime-switch-test.log",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            json_path, markdown_path = write_reports(Path(directory), report)
+            self.assertTrue(json_path.is_file())
+            self.assertIn("Ownership gate: PASS", markdown_path.read_text())
 
     def test_rejects_empty_checkpoint_states(self) -> None:
         lines = [

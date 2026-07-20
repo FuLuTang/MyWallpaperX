@@ -75,6 +75,7 @@ extension WallpaperEngine {
     }
 
     func consumeDaemonEvents(from data: Data, for session: DisplayDaemonSession) {
+        guard displaySessions[session.displayID] === session else { return }
         session.outputBuffer.append(data)
 
         while let newlineIndex = session.outputBuffer.firstIndex(of: 0x0A) {
@@ -95,8 +96,12 @@ extension WallpaperEngine {
         case "launched":
             session.launched = true
         case "accepted":
+            guard event.requestID == nil
+                    || event.requestID == session.latestRequestedPlayRequestID else { return }
             session.latestAcceptedPlayRequestID = event.requestID
         case "ready":
+            guard event.requestID == nil
+                    || event.requestID == session.latestRequestedPlayRequestID else { return }
             session.latestReadyPlayRequestID = event.requestID
             if event.videoPath == currentContentPath {
                 lastFailureVideoPath = nil

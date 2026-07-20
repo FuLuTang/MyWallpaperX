@@ -14,6 +14,12 @@ enum DebugWebRuntimeSwitchRunner {
     private static var sequenceStartedAt: CFTimeInterval?
     private static var video1PIDs: [Int] = []
     private static var video2PIDs: [Int] = []
+    private static var recoveredPIDs: [Int] = []
+    private static var staleVideo1ReadabilityHandler: ((FileHandle) -> Void)?
+    private static var staleHandlerCaptured = false
+    private static var staleFailureInjected = false
+    private static var playbackFailureCount = 0
+    private static var playbackFailureObserver: NSObjectProtocol?
 
     static func scheduleIfRequested() -> Bool {
         let arguments = ProcessInfo.processInfo.arguments
@@ -58,11 +64,15 @@ enum DebugWebRuntimeSwitchRunner {
 
             logAction("preflight", elapsedMilliseconds: 0)
             logCheckpoint("preflight")
+            installPlaybackFailureObserver()
             sequenceStartedAt = CACurrentMediaTime()
 
             logAction("video1")
             setVideo(video1URL, title: "Debug Video 1", on: engine)
             video1PIDs = sessionPIDs(engine)
+            staleVideo1ReadabilityHandler = engine.displaySessions.values.first?
+                .outputPipe.fileHandleForReading.readabilityHandler
+            staleHandlerCaptured = staleVideo1ReadabilityHandler != nil
             logCheckpoint("video1-requested")
 
             logAction("web")
@@ -82,17 +92,46 @@ enum DebugWebRuntimeSwitchRunner {
             setVideo(video2URL, title: "Debug Video 2", on: engine)
             video2PIDs = sessionPIDs(engine)
             logCheckpoint("video2-requested")
+            logAction("inject-stale-failure")
+            injectStaleVideo1Failure(displayID: engine.displayIDs.first, video2URL: video2URL)
 
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                logCheckpoint("stale-event-filtered")
+            }
             DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
                 logCheckpoint("video2-stable")
+                logAction("crash-video2")
+                guard let session = engine.displaySessions.values.first else {
+                    logPreconditionFailure("video2-session-missing-before-crash")
+                    return
+                }
+                session.process.terminate()
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 3.4) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 6.0) {
+                recoveredPIDs = sessionPIDs(engine)
+                logCheckpoint("video2-recovered")
+                guard let session = engine.displaySessions.values.first else {
+                    logPreconditionFailure("recovered-session-missing-before-delayed-crash")
+                    return
+                }
+                engine.displayCrashCounts[session.displayID] = 1
+                logAction("crash-video2-delayed")
+                session.process.terminate()
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 6.3) {
+                logCheckpoint("recovery-pending")
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 6.5) {
                 logAction("stop")
                 engine.stopPlayback()
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 4.8) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 7.8) {
                 logCheckpoint("stopped")
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 10.0) {
+                logCheckpoint("post-stop")
                 logAction("completed")
+                removePlaybackFailureObserver()
             }
         }
     }
@@ -124,6 +163,58 @@ enum DebugWebRuntimeSwitchRunner {
         NSLog("MWX DEBUG RUNTIME SWITCH: precondition=%@", reason)
     }
 
+    private static func installPlaybackFailureObserver() {
+        playbackFailureCount = 0
+        playbackFailureObserver = NotificationCenter.default.addObserver(
+            forName: WallpaperEngine.playbackFailedNotification,
+            object: nil,
+            queue: .main
+        ) { _ in
+            Task { @MainActor in
+                playbackFailureCount += 1
+            }
+        }
+    }
+
+    private static func removePlaybackFailureObserver() {
+        if let playbackFailureObserver {
+            NotificationCenter.default.removeObserver(playbackFailureObserver)
+        }
+        playbackFailureObserver = nil
+    }
+
+    private static func injectStaleVideo1Failure(
+        displayID: CGDirectDisplayID?,
+        video2URL: URL
+    ) {
+        guard let staleVideo1ReadabilityHandler, let displayID else {
+            logPreconditionFailure("stale-video1-handler-missing")
+            return
+        }
+        let event = DaemonEvent(
+            type: "failed",
+            displayID: displayID,
+            requestID: 1,
+            message: "debug_stale_session_injection",
+            videoPath: video2URL.path,
+            contentKind: "video"
+        )
+        guard let data = try? JSONEncoder().encode(event) + Data([0x0A]) else {
+            logPreconditionFailure("stale-event-encoding-failed")
+            return
+        }
+        let pipe = Pipe()
+        do {
+            try pipe.fileHandleForWriting.write(contentsOf: data)
+            try pipe.fileHandleForWriting.close()
+            staleFailureInjected = true
+            staleVideo1ReadabilityHandler(pipe.fileHandleForReading)
+            try? pipe.fileHandleForReading.close()
+        } catch {
+            logPreconditionFailure("stale-event-injection-failed")
+        }
+    }
+
     private static func logAction(_ action: String, elapsedMilliseconds: Int? = nil) {
         let elapsed = elapsedMilliseconds ?? currentElapsedMilliseconds()
         NSLog("MWX DEBUG RUNTIME SWITCH: action=%@ elapsedMs=%ld", action, elapsed)
@@ -150,10 +241,16 @@ enum DebugWebRuntimeSwitchRunner {
         } ?? "-"
         let payload: [String: Any] = [
             "elapsedMs": currentElapsedMilliseconds(),
+            "crashCount": engine.displayCrashCounts.values.max() ?? 0,
             "kind": engine.currentPlaybackContentKind?.rawValue ?? "-",
             "path": path,
+            "playbackFailures": playbackFailureCount,
             "playing": engine.isPlaying(),
+            "recoveredAlive": recoveredPIDs.filter(processIsAlive),
+            "recoveredPids": recoveredPIDs,
             "sessions": sessions,
+            "staleFailureInjected": staleFailureInjected,
+            "staleHandlerCaptured": staleHandlerCaptured,
             "video1Alive": video1PIDs.filter(processIsAlive),
             "video1Pids": video1PIDs,
             "video2Alive": video2PIDs.filter(processIsAlive),

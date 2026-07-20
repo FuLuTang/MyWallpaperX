@@ -114,6 +114,7 @@ extension WallpaperEngine {
     func setWebHostStrategy(_ strategy: WebWallpaperHostStrategy) {
         guard currentWebHostStrategy != strategy else { return }
         if currentPlaybackContentKind == .web {
+            beginPlaybackIntent()
             setWebAudioSpectrumRequested(false)
             dispatchWebRuntimeCommand(.stop)
             currentContentPath = nil
@@ -128,6 +129,7 @@ extension WallpaperEngine {
     }
 
     func launchWebWallpaper(_ request: WebWallpaperLaunchRequest) {
+        beginPlaybackIntent()
         if currentPlaybackContentKind == .web {
             setWebAudioSpectrumRequested(false)
         }
