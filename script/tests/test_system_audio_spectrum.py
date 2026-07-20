@@ -13,6 +13,7 @@ SPECTRUM_SOURCES = [
     ROOT / "MyWallpaperX/Core/Playback/SystemAudioCaptureBuffer.swift",
     ROOT / "MyWallpaperX/Core/Playback/SystemAudioOverlaySpectrumAnalyzer.swift",
     ROOT / "MyWallpaperX/Core/Playback/SystemAudioWebSpectrumAnalyzer.swift",
+    ROOT / "MyWallpaperX/Core/SteamWorkshopWeb/Engine/WallpaperEngine+WebAudioSpectrum.swift",
 ]
 
 
@@ -37,6 +38,28 @@ class SystemAudioSpectrumTests(unittest.TestCase):
                 case soft
                 case normal
                 case lively
+            }
+
+            enum PlaybackContentKind {
+                case web
+            }
+
+            enum WebRuntimeCommand {
+                case pushAudioSpectrum([Float])
+            }
+
+            final class WallpaperEngine {
+                var currentPlaybackContentKind: PlaybackContentKind = .web
+                var currentWebAudioSpectrumRequested = true
+                var lastWebSpectrumPushAt: CFTimeInterval = 0
+                var webSpectrumPushMinInterval: CFTimeInterval = 0
+                var lastWebSpectrumLevels: [Float] = []
+                var dispatchedWebLevels: [Float] = []
+
+                func dispatchWebRuntimeCommand(_ command: WebRuntimeCommand) {
+                    guard case let .pushAudioSpectrum(levels) = command else { return }
+                    dispatchedWebLevels = levels
+                }
             }
 
             func expect(_ condition: @autoclosure () -> Bool, _ message: String) {
@@ -313,6 +336,39 @@ class SystemAudioSpectrumTests(unittest.TestCase):
             }
             expect(amplitudeLevels[0] < amplitudeLevels[1], "fixed dBFS scale must retain 0.05 < 0.2")
             expect(amplitudeLevels[1] < amplitudeLevels[2], "fixed dBFS scale must retain 0.2 < 0.8")
+
+            let compatibilityEngine = WallpaperEngine()
+            expect(
+                compatibilityEngine.dispatchWebAudioSpectrumIfNeeded(
+                    Array(repeating: amplitudeLevels[2], count: 128)
+                ),
+                "Web spectrum should dispatch when requested"
+            )
+            let expectedCompatibilityPeak = pow(amplitudeLevels[2], 1.35) * 0.18
+            expectNear(
+                compatibilityEngine.dispatchedWebLevels.max()!,
+                expectedCompatibilityPeak,
+                tolerance: 0.000_001,
+                "Web compatibility response"
+            )
+            expect(
+                compatibilityEngine.dispatchedWebLevels.allSatisfy { $0 >= 0 && $0 <= 0.18 },
+                "Web compatibility response must prevent overdriven sample visuals"
+            )
+
+            let stereoCompatibilityEngine = WallpaperEngine()
+            let stereoInput = Array(repeating: Float(0.2), count: 64)
+                + Array(repeating: Float(0.8), count: 64)
+            expect(
+                stereoCompatibilityEngine.dispatchWebAudioSpectrumIfNeeded(stereoInput),
+                "Stereo Web spectrum should dispatch"
+            )
+            let deliveredStereo = stereoCompatibilityEngine.dispatchedWebLevels
+            expect(deliveredStereo.count == 128, "Web compatibility response must retain 128 levels")
+            expect(
+                deliveredStereo[0] < deliveredStereo[64],
+                "Web compatibility response must preserve independent stereo channels"
+            )
 
             var nonFiniteTone = sine(frequency: 500)
             nonFiniteTone[10] = .nan

@@ -8,6 +8,8 @@ import QuartzCore
 
 extension WallpaperEngine {
     private static let webSpectrumSampleCount = 128
+    private static let webSpectrumCompatibilityGain: Float = 0.18
+    private static let webSpectrumCompatibilityPower: Float = 1.35
     private static let webSpectrumRiseBlend: Float = 0.58
     private static let webSpectrumFallBlend: Float = 0.28
 
@@ -27,11 +29,13 @@ extension WallpaperEngine {
         guard now - lastWebSpectrumPushAt >= webSpectrumPushMinInterval else { return true }
         lastWebSpectrumPushAt = now
 
-        let normalizedLevels = levels.map { level -> Float in
+        let compatibilityLevels = levels.map { level -> Float in
             guard level.isFinite else { return 0 }
-            return min(max(level, 0), 1)
+            let clamped = min(max(level, 0), 1)
+            return pow(clamped, Self.webSpectrumCompatibilityPower)
+                * Self.webSpectrumCompatibilityGain
         }
-        let smoothedLevels = smoothedWebSpectrumLevels(normalizedLevels)
+        let smoothedLevels = smoothedWebSpectrumLevels(compatibilityLevels)
         dispatchWebRuntimeCommand(.pushAudioSpectrum(smoothedLevels))
         return true
     }
