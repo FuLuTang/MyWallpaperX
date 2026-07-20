@@ -20,6 +20,7 @@ enum DebugWebPlaybackRunner {
             || arguments.contains("--mwx-debug-web-audio-restart-sequence")
             || arguments.contains("--mwx-debug-web-property-persistence-stage")
             || arguments.contains("--mwx-debug-web-space-lifecycle-sequence")
+            || arguments.contains("--mwx-debug-web-runtime-switch-sequence")
     }
 
     private static var arguments: [String] {
@@ -60,6 +61,10 @@ enum DebugWebPlaybackRunner {
     }
 
     static func scheduleWebWorkshopRuntimeIfRequested() {
+        if DebugWebRuntimeSwitchRunner.scheduleIfRequested() {
+            return
+        }
+
         if DebugWebSpaceLifecycleRunner.scheduleIfRequested() {
             return
         }

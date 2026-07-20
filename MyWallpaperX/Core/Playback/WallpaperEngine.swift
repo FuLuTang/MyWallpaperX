@@ -94,8 +94,6 @@ public final class WallpaperEngine: NSObject {
     var systemSleeping = false
     var displaysSleeping = false
     var activeSystemInterruptions: Set<PlaybackSystemInterruption> = []
-    var lastClickTime: TimeInterval = 0
-    let clickDebounceInterval: TimeInterval = 0.3
     var lastFailureVideoPath: String?
     var lastFailureAt: TimeInterval = 0
     var lastEndedVideoPath: String?
@@ -141,7 +139,7 @@ public final class WallpaperEngine: NSObject {
         pauseWhenIdle: Bool,
         idleTimeoutMinutes: Int
     ) {
-        // 对外统一入口只做节流后的切换，避免上层绕开状态机直接改 daemon。
+        // 对外统一入口接收每个合法切换；交互去抖由调用层负责。
         applyWallpaper(
             wallpaper,
             multiDisplayEnabled: multiDisplayEnabled,
@@ -151,8 +149,7 @@ public final class WallpaperEngine: NSObject {
             pauseWhenOtherAppFullscreen: pauseWhenOtherAppFullscreen,
             pauseWhenUnplugged: pauseWhenUnplugged,
             pauseWhenIdle: pauseWhenIdle,
-            idleTimeoutMinutes: idleTimeoutMinutes,
-            shouldDebounce: true
+            idleTimeoutMinutes: idleTimeoutMinutes
         )
     }
 
@@ -165,15 +162,8 @@ public final class WallpaperEngine: NSObject {
         pauseWhenOtherAppFullscreen: Bool,
         pauseWhenUnplugged: Bool,
         pauseWhenIdle: Bool,
-        idleTimeoutMinutes: Int,
-        shouldDebounce: Bool
+        idleTimeoutMinutes: Int
     ) {
-        let currentTime = CACurrentMediaTime()
-        if shouldDebounce, currentTime - lastClickTime <= clickDebounceInterval {
-            return
-        }
-        lastClickTime = currentTime
-
         let previousNormalizedPath = currentWallpaper.map { normalizedPath($0.path) }
         let incomingNormalizedPath = normalizedPath(wallpaper.path)
         let previousVideoFillMode = currentVideoFillMode

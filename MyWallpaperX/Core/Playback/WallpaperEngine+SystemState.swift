@@ -105,8 +105,7 @@ extension WallpaperEngine {
             pauseWhenOtherAppFullscreen: pauseWhenOtherAppFullscreen,
             pauseWhenUnplugged: pauseWhenUnplugged,
             pauseWhenIdle: pauseWhenIdle,
-            idleTimeoutMinutes: idleTimeoutMinutes,
-            shouldDebounce: false
+            idleTimeoutMinutes: idleTimeoutMinutes
         )
     }
 
