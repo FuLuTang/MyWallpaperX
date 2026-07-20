@@ -227,7 +227,7 @@ final class DedicatedWebWallpaperHostPlaceholderAdapter: NSObject, WallpaperEngi
     var currentSpectrumLevels: [Float]?
     var paused = false
     var hostActivityToken: NSObjectProtocol?
-    var lifecycleObservers: [NSObjectProtocol] = []
+    var lifecycleObservers: [(center: NotificationCenter, token: NSObjectProtocol)] = []
     var screenReconciliationWorkItem: DispatchWorkItem?
     var webContentRecoveryAttemptsByScreen: [CGDirectDisplayID: Int] = [:]
     var recoveringWebContentScreenIDs = Set<CGDirectDisplayID>()
