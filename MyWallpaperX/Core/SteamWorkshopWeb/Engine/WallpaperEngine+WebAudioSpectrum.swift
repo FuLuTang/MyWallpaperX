@@ -7,52 +7,48 @@ import Foundation
 import QuartzCore
 
 extension WallpaperEngine {
-    private static let legacyWebSpectrumSampleCount = 128
-    private static let legacyWebSpectrumChannelSampleCount = legacyWebSpectrumSampleCount / 2
-    private static let legacyWebSpectrumGain: Float = 0.18
-    private static let legacyWebSpectrumResponsePower: Float = 1.35
+    private static let webSpectrumSampleCount = 128
     private static let webSpectrumRiseBlend: Float = 0.58
     private static let webSpectrumFallBlend: Float = 0.28
 
+    func updateWebAudioSpectrumLevels(_ levels: [Float]) {
+        _ = dispatchWebAudioSpectrumIfNeeded(levels)
+    }
+
+    @discardableResult
     func dispatchWebAudioSpectrumIfNeeded(_ levels: [Float]) -> Bool {
-        guard currentPlaybackContentKind == .web else { return false }
+        guard currentPlaybackContentKind == .web,
+              currentWebAudioSpectrumRequested,
+              levels.count == Self.webSpectrumSampleCount else {
+            return false
+        }
 
         let now = CACurrentMediaTime()
         guard now - lastWebSpectrumPushAt >= webSpectrumPushMinInterval else { return true }
         lastWebSpectrumPushAt = now
 
-        let webLevels = legacyWebSpectrumLevels(levels, count: Self.legacyWebSpectrumSampleCount)
-        let smoothedWebLevels = smoothedWebSpectrumLevels(webLevels)
-        dispatchWebRuntimeCommand(.pushAudioSpectrum(smoothedWebLevels))
+        let normalizedLevels = levels.map { level -> Float in
+            guard level.isFinite else { return 0 }
+            return min(max(level, 0), 1)
+        }
+        let smoothedLevels = smoothedWebSpectrumLevels(normalizedLevels)
+        dispatchWebRuntimeCommand(.pushAudioSpectrum(smoothedLevels))
         return true
     }
 
     func currentWebSpectrumSnapshot() -> [Float]? {
-        guard currentSystemAudioSpectrumEnabled else { return nil }
-        let webLevels = legacyWebSpectrumLevels(currentSpectrumLevels, count: Self.legacyWebSpectrumSampleCount)
-        lastWebSpectrumLevels = webLevels
-        return webLevels
+        guard currentWebAudioSpectrumRequested else { return nil }
+        guard lastWebSpectrumLevels.count == Self.webSpectrumSampleCount else {
+            return clearedWebSpectrumLevels()
+        }
+        return lastWebSpectrumLevels
     }
 
     func clearedWebSpectrumLevels() -> [Float] {
-        Array(repeating: 0, count: Self.legacyWebSpectrumSampleCount)
-    }
-
-    private func legacyWebSpectrumLevels(_ levels: [Float], count: Int) -> [Float] {
-        let channelSampleCount = min(count, Self.legacyWebSpectrumChannelSampleCount)
-        let monoChannel = interpolatedWebSpectrumLevels(levels, count: channelSampleCount).map { level in
-            let clamped = min(max(level, 0), 1)
-            return min(1, pow(clamped, Self.legacyWebSpectrumResponsePower) * Self.legacyWebSpectrumGain)
-        }
-        return Array((monoChannel + monoChannel).prefix(count))
+        Array(repeating: 0, count: Self.webSpectrumSampleCount)
     }
 
     private func smoothedWebSpectrumLevels(_ levels: [Float]) -> [Float] {
-        guard levels.isEmpty == false else {
-            lastWebSpectrumLevels = []
-            return []
-        }
-
         guard lastWebSpectrumLevels.count == levels.count else {
             lastWebSpectrumLevels = levels
             return levels
@@ -64,26 +60,5 @@ extension WallpaperEngine {
         }
         lastWebSpectrumLevels = nextLevels
         return nextLevels
-    }
-
-    private func interpolatedWebSpectrumLevels(_ levels: [Float], count: Int) -> [Float] {
-        guard count > 0 else { return [] }
-        guard levels.isEmpty == false else { return Array(repeating: 0, count: count) }
-        guard levels.count > 1 else { return Array(repeating: min(max(levels[0], 0), 1), count: count) }
-        if levels.count == count {
-            return levels.map { min(max($0, 0), 1) }
-        }
-
-        let lastSourceIndex = levels.count - 1
-        let lastTargetIndex = max(count - 1, 1)
-        return (0..<count).map { index in
-            let position = Double(index) * Double(lastSourceIndex) / Double(lastTargetIndex)
-            let lowerIndex = Int(position.rounded(.down))
-            let upperIndex = min(lastSourceIndex, lowerIndex + 1)
-            let fraction = Float(position - Double(lowerIndex))
-            let lowerValue = min(max(levels[lowerIndex], 0), 1)
-            let upperValue = min(max(levels[upperIndex], 0), 1)
-            return lowerValue + (upperValue - lowerValue) * fraction
-        }
     }
 }

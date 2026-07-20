@@ -107,6 +107,7 @@ extension WallpaperEngine {
     enum WebWallpaperHostEvent {
         case accepted
         case ready
+        case audioSpectrumDemandChanged(Bool)
         case failed(message: String)
         case stopped
     }
@@ -151,6 +152,7 @@ final class DedicatedWebWallpaperHostPlaceholderAdapter: NSObject, WallpaperEngi
         let window: NSWindow
         let contentView: HostContentView
         let webView: WKWebView
+        let audioDemandMessageHandler: WebAudioDemandMessageHandler
         let schemeHandler: WebWallpaperLocalSchemeHandler
         let originMode: WallpaperEngine.WebRuntimeOriginMode
         let dataStoreIdentity: String
@@ -232,6 +234,7 @@ final class DedicatedWebWallpaperHostPlaceholderAdapter: NSObject, WallpaperEngi
     var webContentRecoveryReloadStartedScreenIDs = Set<CGDirectDisplayID>()
     var webContentRecoveryWorkItems: [CGDirectDisplayID: DispatchWorkItem] = [:]
     var readyScreenIDs = Set<CGDirectDisplayID>()
+    var audioSpectrumDemandScreenIDs = Set<CGDirectDisplayID>()
     var surfaces: [CGDirectDisplayID: HostSurface] = [:]
     var loopbackServers: [CGDirectDisplayID: WebWallpaperLoopbackServer] = [:]
     var directorySnapshotsByProperty: [String: DirectorySnapshot] = [:]

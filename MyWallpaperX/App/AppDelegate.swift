@@ -332,8 +332,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
  NSLog("MWX DEBUG PLAY: workshop item %@ precondition=missing-playback-context", itemID)
  return
  }
-
  NSLog("MWX DEBUG PLAY: launching workshop item %@ type=%@ isolatedRoot=%@", itemID, String(describing: record.contentType), service.libraryRootURL.path)
+ WallpaperEngine.shared.setSystemAudioSpectrumEnabled(false)
  WallpaperEngine.shared.setWebWallpaper(
  entryURL: playbackContext.effectiveEntryURL,
  rootURL: playbackContext.effectiveRootURL,
@@ -353,11 +353,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
  for frame in 0..<80 {
  DispatchQueue.main.asyncAfter(deadline: .now() + 1.0 + Double(frame) * 0.1) {
  let phase = Float(frame % 20) / 20
- let levels = (0..<32).map { index -> Float in
- let position = Float(index) / 31
+ let monoLevels = (0..<64).map { index -> Float in
+ let position = Float(index) / 63
  return 0.12 + 0.72 * abs(sin((position + phase) * .pi * 4))
  }
- _ = WallpaperEngine.shared.dispatchWebAudioSpectrumIfNeeded(levels)
+ _ = WallpaperEngine.shared.dispatchWebAudioSpectrumIfNeeded(monoLevels + monoLevels)
  }
  }
  }

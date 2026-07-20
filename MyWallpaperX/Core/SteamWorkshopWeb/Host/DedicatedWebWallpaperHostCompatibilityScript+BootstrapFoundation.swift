@@ -228,10 +228,10 @@ let webCompatibilityScriptBootstrapFoundation = #"""
   };
   window.wallpaperRegisterAudio = window.wallpaperRegisterAudioStream;
   window.wallpaperRegisterAudioListener = function(listener) {
-    if (typeof listener === 'function') {
-      audioListeners.push(listener);
-      hostLogger.post('audio.listener.registered', `count=${audioListeners.length}`);
-    }
+    if (typeof listener !== 'function') return;
+    audioListeners.push(listener);
+    if (audioListeners.length === 1) { try { window.webkit.messageHandlers.wallpaperHostAudioDemand.postMessage({ active: true }); } catch (_) {} }
+    hostLogger.post('audio.listener.registered', `count=${audioListeners.length}`);
   };
   window.wallpaperRegisterVolumeListener = function(listener) {
     if (typeof listener === 'function') {

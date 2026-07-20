@@ -36,7 +36,9 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
         window.contentView = contentView
 
         let controller = WKUserContentController()
+        let audioDemandMessageHandler = WebAudioDemandMessageHandler(adapter: self, screenID: screenID)
         controller.add(self, name: "wallpaperHostLog")
+        controller.add(audioDemandMessageHandler, name: "wallpaperHostAudioDemand")
         controller.add(self, name: "wallpaperHostRandomFile")
         controller.add(self, name: "wallpaperHostInteractiveRegions")
         controller.add(self, name: "wallpaperHostNetworkRequest")
@@ -91,6 +93,7 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
             window: window,
             contentView: contentView,
             webView: webView,
+            audioDemandMessageHandler: audioDemandMessageHandler,
             schemeHandler: schemeHandler,
             originMode: request?.runtimeProfile.originMode ?? .customScheme,
             dataStoreIdentity: dataStoreIdentity
@@ -113,6 +116,7 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
         for screenID in Array(surfaces.keys) {
             removeSurface(for: screenID)
         }
+        clearAudioSpectrumDemand()
         for server in loopbackServers.values {
             server.stop()
         }
@@ -128,6 +132,7 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
     }
 
     func removeSurface(for screenID: CGDirectDisplayID) {
+        setAudioSpectrumDemand(false, for: screenID)
         guard let surface = surfaces[screenID] else { return }
         resetWebContentRecoveryState(for: screenID)
         resetInteractionState(for: screenID)
@@ -149,6 +154,7 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
         surface.webView.navigationDelegate = nil
         surface.webView.stopLoading()
         surface.webView.configuration.userContentController.removeScriptMessageHandler(forName: "wallpaperHostLog")
+        surface.webView.configuration.userContentController.removeScriptMessageHandler(forName: "wallpaperHostAudioDemand")
         surface.webView.configuration.userContentController.removeScriptMessageHandler(forName: "wallpaperHostRandomFile")
         surface.webView.configuration.userContentController.removeScriptMessageHandler(forName: "wallpaperHostInteractiveRegions")
         surface.webView.configuration.userContentController.removeScriptMessageHandler(forName: "wallpaperHostNetworkRequest")

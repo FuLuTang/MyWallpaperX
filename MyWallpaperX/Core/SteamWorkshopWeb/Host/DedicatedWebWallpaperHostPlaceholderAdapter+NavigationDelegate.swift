@@ -6,7 +6,10 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
         [NSURLErrorCancelled]
     }
 
-    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {}
+    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        guard let screenID = screenID(for: webView) else { return }
+        setAudioSpectrumDemand(false, for: screenID)
+    }
 
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {}
 
@@ -31,6 +34,7 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
               currentRequest != nil else {
             return
         }
+        setAudioSpectrumDemand(false, for: screenID)
 
         recordDiagnostic(
             type: "webcontent.terminated",

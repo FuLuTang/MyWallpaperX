@@ -77,20 +77,12 @@ public final class WallpaperEngine: NSObject {
     var currentSystemAudioSpectrumOffsetY: Float = 0
     var currentSystemAudioSpectrumBarCount = WallpaperEngine.defaultSpectrumBarCount
     var currentSystemAudioSpectrumPeakCapsEnabled = true
+    var currentWebAudioSpectrumRequested = false
     var currentSpectrumLevels: [Float]
     var lastSpectrumPushAt: CFTimeInterval = 0
     var lastWebSpectrumPushAt: CFTimeInterval = 0
     var lastWebSpectrumLevels: [Float] = []
-    private var systemAudioSpectrumService: SystemAudioSpectrumService
-    private func makeSystemAudioSpectrumService(barCount: Int) -> SystemAudioSpectrumService {
-        let service = SystemAudioSpectrumService(barCount: barCount)
-        service.onLevels = { [weak self] levels in
-            DispatchQueue.main.async {
-                self?.updateSystemAudioSpectrumLevels(levels)
-            }
-        }
-        return service
-    }
+    var systemAudioSpectrumService: SystemAudioSpectrumService
 
     var pauseWhenOtherAppFocused = true
     var pauseWhenOtherAppFullscreen = true
@@ -191,6 +183,7 @@ public final class WallpaperEngine: NSObject {
         let previousShouldLoopCurrentItem = currentShouldLoopCurrentItem
 
         if currentPlaybackContentKind == .web {
+            setWebAudioSpectrumRequested(false)
             dispatchWebRuntimeCommand(.stop)
             currentContentPath = nil
             currentWebLaunchSource = nil
@@ -280,6 +273,7 @@ public final class WallpaperEngine: NSObject {
 
     public func stopPlayback() {
         if currentPlaybackContentKind == .web {
+            setWebAudioSpectrumRequested(false)
             dispatchWebRuntimeCommand(.stop)
         } else {
             for displayID in Array(displaySessions.keys) {
@@ -302,8 +296,8 @@ public final class WallpaperEngine: NSObject {
         pendingPlaybackStateRefreshWorkItem?.cancel()
         pendingPlaybackStateRefreshWorkItem = nil
         pendingPlaybackStateRefreshDeadline = nil
-        systemAudioSpectrumService.setEnabled(false)
         stopPlayback()
+        systemAudioSpectrumService.setConsumers(overlayEnabled: false, webEnabled: false)
         NotificationCenter.default.removeObserver(self)
         DistributedNotificationCenter.default.removeObserver(self)
         NSWorkspace.shared.notificationCenter.removeObserver(self)
@@ -386,123 +380,6 @@ public final class WallpaperEngine: NSObject {
         guard !playbackPaused else { return }
         for session in displaySessions.values where session.process.isRunning {
             send(DaemonCommand(action: "resume", videoPath: nil, framePath: nil, webRootPath: nil, propertiesJSON: nil, fillMode: nil, shouldLoopCurrentItem: nil, volume: nil, playbackRate: clampedRate, spectrumEnabled: nil, spectrumLevels: nil, spectrumBarCount: nil, spectrumColorHex: nil, spectrumOffsetX: nil, spectrumOffsetY: nil, spectrumPeakCapsEnabled: nil, requestID: nil), to: session)
-        }
-    }
-
-    public func setSystemAudioSpectrumEnabled(_ enabled: Bool) {
-        configureSystemAudioSpectrum(
-            enabled: enabled,
-            style: .balanced,
-            sensitivity: .normal,
-            colorHex: currentSystemAudioSpectrumColorHex,
-            offsetX: currentSystemAudioSpectrumOffsetX,
-            offsetY: currentSystemAudioSpectrumOffsetY,
-            barCount: currentSystemAudioSpectrumBarCount,
-            peakCapsEnabled: currentSystemAudioSpectrumPeakCapsEnabled
-        )
-    }
-
-    public func configureSystemAudioSpectrum(
-        enabled: Bool,
-        style: SystemAudioSpectrumStyle,
-        sensitivity: SystemAudioSpectrumSensitivity,
-        colorHex: String,
-        offsetX: Float,
-        offsetY: Float,
-        barCount: Int,
-        peakCapsEnabled: Bool
-    ) {
-        let normalizedBarCount = max(12, min(48, barCount))
-        let previousBarCount = currentSystemAudioSpectrumBarCount
-        currentSystemAudioSpectrumEnabled = enabled
-        currentSystemAudioSpectrumColorHex = colorHex
-        currentSystemAudioSpectrumOffsetX = max(-0.35, min(0.35, offsetX))
-        currentSystemAudioSpectrumOffsetY = max(-0.35, min(0.35, offsetY))
-        currentSystemAudioSpectrumBarCount = normalizedBarCount
-        currentSystemAudioSpectrumPeakCapsEnabled = peakCapsEnabled
-        currentSpectrumLevels = Array(repeating: 0, count: normalizedBarCount)
-        lastSpectrumPushAt = 0
-        lastWebSpectrumPushAt = 0
-        lastWebSpectrumLevels = []
-
-        if normalizedBarCount != previousBarCount {
-            systemAudioSpectrumService.setEnabled(false)
-            systemAudioSpectrumService = makeSystemAudioSpectrumService(barCount: normalizedBarCount)
-        }
-        systemAudioSpectrumService.setEnabled(enabled)
-        systemAudioSpectrumService.updateConfiguration(style: style, sensitivity: sensitivity)
-
-        if currentPlaybackContentKind == .web {
-            let webLevels = enabled
-                ? (currentWebSpectrumSnapshot() ?? clearedWebSpectrumLevels())
-                : clearedWebSpectrumLevels()
-            lastWebSpectrumLevels = webLevels
-            dispatchWebRuntimeCommand(.pushAudioSpectrum(webLevels))
-        }
-
-        for session in displaySessions.values where session.process.isRunning {
-            send(
-                DaemonCommand(
-                    action: "setSpectrumEnabled",
-                    videoPath: nil,
-                    framePath: nil,
-                    webRootPath: nil,
-                    propertiesJSON: nil,
-                    fillMode: nil,
-                    shouldLoopCurrentItem: nil,
-                    volume: nil,
-                    playbackRate: nil,
-                    spectrumEnabled: enabled,
-                    spectrumLevels: currentSpectrumLevels,
-                    spectrumBarCount: normalizedBarCount,
-                    spectrumColorHex: colorHex,
-                    spectrumOffsetX: currentSystemAudioSpectrumOffsetX,
-                    spectrumOffsetY: currentSystemAudioSpectrumOffsetY,
-                    spectrumPeakCapsEnabled: peakCapsEnabled,
-                    requestID: nil
-                ),
-                to: session
-            )
-        }
-    }
-
-    public func updateSystemAudioSpectrumLevels(_ levels: [Float]) {
-        guard currentSystemAudioSpectrumEnabled else { return }
-
-        let now = CACurrentMediaTime()
-        guard now - lastSpectrumPushAt >= spectrumPushMinInterval else { return }
-        lastSpectrumPushAt = now
-
-        let resizedLevels = resizedSpectrumLevels(levels, count: currentSystemAudioSpectrumBarCount)
-        currentSpectrumLevels = resizedLevels
-
-        if dispatchWebAudioSpectrumIfNeeded(resizedLevels) {
-            return
-        }
-
-        for session in displaySessions.values where session.process.isRunning {
-            send(
-                DaemonCommand(
-                    action: "setSpectrumLevels",
-                    videoPath: nil,
-                    framePath: nil,
-                    webRootPath: nil,
-                    propertiesJSON: nil,
-                    fillMode: nil,
-                    shouldLoopCurrentItem: nil,
-                    volume: nil,
-                    playbackRate: nil,
-                    spectrumEnabled: nil,
-                    spectrumLevels: resizedLevels,
-                    spectrumBarCount: nil,
-                    spectrumColorHex: nil,
-                    spectrumOffsetX: nil,
-                    spectrumOffsetY: nil,
-                    spectrumPeakCapsEnabled: nil,
-                    requestID: nil
-                ),
-                to: session
-            )
         }
     }
 

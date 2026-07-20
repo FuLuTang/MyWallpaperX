@@ -8,9 +8,8 @@
   "legacyFiles": {
     "MyWallpaperX/App/AppDelegate.swift": 448,
     "MyWallpaperX/App/MainWindowCoordinator.swift": 661,
-    "MyWallpaperX/Core/Playback/SystemAudioSpectrumService.swift": 658,
     "MyWallpaperX/Core/Playback/WallpaperEngine+SystemState.swift": 422,
-    "MyWallpaperX/Core/Playback/WallpaperEngine.swift": 541,
+    "MyWallpaperX/Core/Playback/WallpaperEngine.swift": 418,
     "MyWallpaperX/Core/SteamWorkshopScene/SceneMetalRenderer.swift": 698,
     "MyWallpaperX/Core/SteamWorkshopScene/SceneMetalView.swift": 423,
     "MyWallpaperX/Core/SteamWorkshopScene/SceneTextureLoader.swift": 436,

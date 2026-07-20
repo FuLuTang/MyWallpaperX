@@ -114,6 +114,7 @@ extension WallpaperEngine {
     func setWebHostStrategy(_ strategy: WebWallpaperHostStrategy) {
         guard currentWebHostStrategy != strategy else { return }
         if currentPlaybackContentKind == .web {
+            setWebAudioSpectrumRequested(false)
             dispatchWebRuntimeCommand(.stop)
             currentContentPath = nil
             currentPlaybackContentKind = nil
@@ -127,6 +128,9 @@ extension WallpaperEngine {
     }
 
     func launchWebWallpaper(_ request: WebWallpaperLaunchRequest) {
+        if currentPlaybackContentKind == .web {
+            setWebAudioSpectrumRequested(false)
+        }
         if ProcessInfo.processInfo.isLowPowerModeEnabled {
             playbackPaused = true
         }
@@ -169,7 +173,10 @@ extension WallpaperEngine {
         case .ready:
             lastFailureVideoPath = nil
             lastFailureAt = 0
+        case let .audioSpectrumDemandChanged(active):
+            setWebAudioSpectrumRequested(active)
         case let .failed(message):
+            setWebAudioSpectrumRequested(false)
             lastFailureVideoPath = currentContentPath
             lastFailureAt = Date().timeIntervalSinceReferenceDate
             NotificationCenter.default.post(
@@ -183,7 +190,7 @@ extension WallpaperEngine {
                 ]
             )
         case .stopped:
-            break
+            setWebAudioSpectrumRequested(false)
         }
     }
 
