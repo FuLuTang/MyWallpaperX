@@ -106,6 +106,7 @@ private final class InspectorHostCardView: NSView {
     private let headerRow = NSStackView()
     private let titleContainer = NSStackView()
     private let iconView = NSImageView()
+    private let infoTitleLabel = NSTextField(labelWithString: "详情")
     private let titleLabel = NSTextField(labelWithString: "")
     private let subtitleLabel = NSTextField(labelWithString: "")
     private let closeButton = NSButton()
@@ -131,12 +132,15 @@ private final class InspectorHostCardView: NSView {
             return
         }
 
-        titleLabel.stringValue = request.chromeStyle == .infoPanel ? "详情" : request.title
-        subtitleLabel.stringValue = request.chromeStyle == .infoPanel ? "" : (request.subtitle ?? "")
+        let isInfoPanel = request.chromeStyle == .infoPanel
+        titleLabel.stringValue = request.title
+        subtitleLabel.stringValue = request.subtitle ?? ""
         subtitleLabel.isHidden = subtitleLabel.stringValue.isEmpty
-        iconView.isHidden = request.chromeStyle != .infoPanel
+        iconView.isHidden = !isInfoPanel
+        infoTitleLabel.isHidden = !isInfoPanel
+        titleContainer.isHidden = isInfoPanel
 
-        let closeSymbolName = request.chromeStyle == .infoPanel ? "xmark" : "xmark.circle.fill"
+        let closeSymbolName = isInfoPanel ? "xmark" : "xmark.circle.fill"
         closeButton.image = NSImage(systemSymbolName: closeSymbolName, accessibilityDescription: "关闭详情")
         closeButton.toolTip = "关闭详情"
 
@@ -166,6 +170,7 @@ private final class InspectorHostCardView: NSView {
         layer?.shadowRadius = 25
         layer?.shadowOffset = CGSize(width: 0, height: -16)
 
+        infoTitleLabel.textColor = .labelColor
         titleLabel.textColor = .labelColor
         subtitleLabel.textColor = .secondaryLabelColor
         iconView.contentTintColor = .labelColor
@@ -238,6 +243,7 @@ private final class InspectorHostCardView: NSView {
         headerRow.orientation = .horizontal
         headerRow.alignment = .centerY
         headerRow.spacing = 12
+        headerRow.detachesHiddenViews = true
         headerRow.translatesAutoresizingMaskIntoConstraints = false
 
         iconView.image = NSImage(systemSymbolName: "info.circle.fill", accessibilityDescription: "详情")
@@ -248,6 +254,8 @@ private final class InspectorHostCardView: NSView {
             iconView.heightAnchor.constraint(equalToConstant: 18)
         ])
 
+        infoTitleLabel.font = .systemFont(ofSize: 18, weight: .semibold)
+        infoTitleLabel.lineBreakMode = .byTruncatingTail
         titleLabel.font = .systemFont(ofSize: 18, weight: .semibold)
         titleLabel.lineBreakMode = .byTruncatingTail
         subtitleLabel.font = .systemFont(ofSize: 12)
@@ -256,6 +264,7 @@ private final class InspectorHostCardView: NSView {
         titleContainer.orientation = .vertical
         titleContainer.alignment = .leading
         titleContainer.spacing = 4
+        titleContainer.detachesHiddenViews = true
         titleContainer.addArrangedSubview(titleLabel)
         titleContainer.addArrangedSubview(subtitleLabel)
 
@@ -275,6 +284,7 @@ private final class InspectorHostCardView: NSView {
         spacer.translatesAutoresizingMaskIntoConstraints = false
 
         headerRow.addArrangedSubview(iconView)
+        headerRow.addArrangedSubview(infoTitleLabel)
         headerRow.addArrangedSubview(titleContainer)
         headerRow.addArrangedSubview(spacer)
         headerRow.addArrangedSubview(closeButton)
