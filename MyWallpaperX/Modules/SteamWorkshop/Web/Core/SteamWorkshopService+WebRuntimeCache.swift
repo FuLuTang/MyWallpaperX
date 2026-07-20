@@ -105,7 +105,12 @@ extension SteamWorkshopService {
             guard let self else { return }
             for record in webRecords {
                 guard !Task.isCancelled else { break }
-                if self.loadCachedWebPlaybackContext(for: record) == nil {
+                let requiresLiveResolution = self.webRuntimeRequiresLiveResourceResolution(for: record)
+                guard !requiresLiveResolution else { continue }
+                if self.loadCachedWebPlaybackContext(
+                    for: record,
+                    liveResourceResolutionRequired: requiresLiveResolution
+                ) == nil {
                     _ = self.resolvedWebPlaybackContext(for: record)
                 }
                 try? await Task.sleep(for: .milliseconds(40))
@@ -114,7 +119,16 @@ extension SteamWorkshopService {
         }
     }
 
-    func loadCachedWebPlaybackContext(for record: SteamWorkshopDownloadRecord) -> ResolvedWebPlaybackContext? {
+    func loadCachedWebPlaybackContext(
+        for record: SteamWorkshopDownloadRecord,
+        liveResourceResolutionRequired: Bool? = nil
+    ) -> ResolvedWebPlaybackContext? {
+        let requiresLiveResolution = liveResourceResolutionRequired
+            ?? webRuntimeRequiresLiveResourceResolution(for: record)
+        guard !requiresLiveResolution else {
+            NSLog("MWX WEB RUNTIME CACHE: live resource resolution record=%@", record.id)
+            return nil
+        }
         let fileURL = webRuntimeCacheFileURL(for: record)
         guard let data = try? Data(contentsOf: fileURL),
               let manifest = try? JSONDecoder().decode(SteamWorkshopWebRuntimeCacheManifest.self, from: data),
@@ -230,6 +244,11 @@ extension SteamWorkshopService {
         propertyPayloadJSON: String?,
         for record: SteamWorkshopDownloadRecord
     ) {
+        let fileURL = webRuntimeCacheFileURL(for: record)
+        guard !webRuntimeRequiresLiveResourceResolution(for: record) else {
+            try? FileManager.default.removeItem(at: fileURL)
+            return
+        }
         let resourceSignature = webRuntimeResourceSignature(for: record)
         saveWebAnalysisCache(
             descriptor: descriptor,
@@ -255,7 +274,6 @@ extension SteamWorkshopService {
         )
 
         guard let data = try? JSONEncoder().encode(manifest) else { return }
-        let fileURL = webRuntimeCacheFileURL(for: record)
         try? FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         try? data.write(to: fileURL, options: [.atomic])
     }

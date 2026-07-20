@@ -1,6 +1,22 @@
 import Foundation
 
 extension SteamWorkshopService {
+    func webRuntimeRequiresLiveResourceResolution(for record: SteamWorkshopDownloadRecord) -> Bool {
+        let overrides = webPropertyOverrides(for: record)
+        guard !overrides.isEmpty else { return false }
+        return webPropertyDefinitions(for: record).contains { definition in
+            guard definition.kind == .file || definition.kind == .directory else {
+                return false
+            }
+            if hasWebPropertyBookmark(forKey: definition.key, record: record) {
+                return true
+            }
+            let path = overrides[definition.key]?.stringValue?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return path.hasPrefix("/")
+        }
+    }
+
     func isWebAnalysisCacheManifestValid(
         _ manifest: SteamWorkshopWebAnalysisCacheManifest,
         for record: SteamWorkshopDownloadRecord

@@ -8,13 +8,13 @@
 
 ### Web
 
-Web 已经具备可持续回归的正式运行主链。文件属性类型推断、强 DOM/视觉/交互证据、纹理 WebGL 的 loopback 路由、旧式颜色数组兼容、空 `file:///` 占位符处理、境外远程样式降级恢复、真实 64+64 双声道频谱及 Wallpaper Engine 兼容幅度响应、固定样本矩阵、切换/停止释放门禁、重叠系统中断恢复门和 CoreAudio 配置失效重建均已落地。
+Web 已经具备可持续回归的正式运行主链。文件属性类型推断与跨重启恢复、强 DOM/视觉/交互证据、纹理 WebGL 的 loopback 路由、旧式颜色数组兼容、空 `file:///` 占位符处理、境外远程样式降级恢复、真实 64+64 双声道频谱及 Wallpaper Engine 兼容幅度响应、固定样本矩阵、切换/停止释放门禁、重叠系统中断恢复门和 CoreAudio 配置失效重建均已落地。
 
-当前固定矩阵包含 10 个真实 Workshop 样本，覆盖 file/directory、dependency、媒体、Canvas、WebGL/WebGL2、Live2D、WASM、iframe、持久化存储、音频、指针输入和动态画面。最新隔离运行结果为 **10 个 A，平均 97.9，证据覆盖 94.3%，矩阵门禁通过**。另外 5 个作者公开源码样本的独立门覆盖属性密集、Worker、音频频谱、约 33 MB 生成脚本和复杂 WebGL 动画；其中 `1396475780` 的大型脚本还验证了 Service Worker 静态识别，结果为 **5 个 A，平均 98.8，证据覆盖 94.3%**；3 个 Steam CDN 代表样本覆盖响应式 Canvas、手工三视口 WebGL 和 CoinGecko 实时数据，结果为 **3 个 A，平均 98.0，证据覆盖 90.3%**。
+当前固定矩阵包含 10 个真实 Workshop 样本，覆盖 file/directory、dependency、媒体、Canvas、WebGL/WebGL2、Live2D、WASM、iframe、持久化存储、音频、指针输入和动态画面。最新隔离运行结果为 **10 个 A，平均 98.2，证据覆盖 94.3%，矩阵门禁通过**。每个 App 进程使用唯一 Debug UserDefaults suite，日志必须确认 suite，结束后必须删除；因此结果不再继承用户在产品 UI 中保存的样本属性。另外 5 个作者公开源码样本的独立门覆盖属性密集、Worker、音频频谱、约 33 MB 生成脚本和复杂 WebGL 动画；其中 `1396475780` 的大型脚本还验证了 Service Worker 静态识别，结果为 **5 个 A，平均 98.8，证据覆盖 94.3%**；3 个 Steam CDN 代表样本覆盖响应式 Canvas、手工三视口 WebGL 和 CoinGecko 实时数据，结果为 **3 个 A，平均 98.0，证据覆盖 90.3%**。
 
-当前本机 34 个 Web 样本已固化为完整基线。采用本轮最终 Debug 构建运行的最新长批次为 **34 个 A，平均 98.2，证据覆盖 93.3%，完整门通过**。此前 `3763370103` 的失败已纠正归因：根因是 Google Fonts 在境外网络不可达或代理失效时同步阻塞启动，不是 `mwx-local` scheme task 未交接；现在远程样式会先降级、再限界重试，本轮同一长批次中该样本为 98 / A。音频生命周期序列 `audio -> non-audio -> audio -> stop` 也通过：监听需求分别触发采集启动、停止、重启和最终释放，3/3 `host.ready`、3/3 旧 `WKWebView` 释放，最终宿主状态为 0。系统状态门使用 `1509243786` 和循环 `afplay`，按 `system sleep -> display sleep -> system wake -> display wake -> lock -> unlock -> stop` 验证重叠原因锁存；`host.ready` 后 3 次采集均取得非静音 PCM，部分唤醒未提前重启，最终资源归零。CoreAudio 配置失效门还验证了三次突发失效只合并为一次重建、随后单次失效触发第二次重建；三代采集均有真实 PCM，监听安装/移除、采集启动/数据/停止均为 3/3/3，最终资源为 0。
+当前本机 34 个 Web 样本已固化为完整基线。采用本轮最终 Debug 构建运行的最新长批次为 **34 个 A，平均 98.2，证据覆盖 93.3%，完整门通过**。此前 `3763370103` 的失败已纠正归因：根因是 Google Fonts 在境外网络不可达或代理失效时同步阻塞启动，不是 `mwx-local` scheme task 未交接；现在远程样式会先降级、再限界重试，本轮同一长批次中该样本为 98 / A。音频生命周期序列 `audio -> non-audio -> audio -> stop` 也通过：监听需求分别触发采集启动、停止、重启和最终释放，3/3 `host.ready`、3/3 旧 `WKWebView` 释放，最终宿主状态为 0。系统状态门使用 `1509243786` 和循环 `afplay`，按 `system sleep -> display sleep -> system wake -> display wake -> lock -> unlock -> stop` 验证重叠原因锁存；`host.ready` 后 3 次采集均取得非静音 PCM，部分唤醒未提前重启，最终资源归零。CoreAudio 配置失效门还验证了三次突发失效只合并为一次重建、随后单次失效触发第二次重建；三代采集均有真实 PCM，监听安装/移除、采集启动/数据/停止均为 3/3/3，最终资源为 0。文件属性门通过生产 `updateWebPropertyValue` 跑 `1509243786 -> 923576681 -> 1509243786`，跨两个进程重启并在中途实际移动 file 和 directory；bookmark 跟随新路径，清除及再次重启后两项为空、目录模式回到 1，5/5 旧 Web surface 释放。
 
-Web 目前没有已确认的宿主 P0 阻断，当前 34+5+3 已知样本的功能兼容主链和系统音频到 JS 主链可以视为闭环，但仍不能称为发布级“最终完全闭环”。确定性锁屏、重叠休眠和采集配置失效恢复已关闭；尚缺真实 OS 电源周期、物理音频设备变化及其真实通知投递、其余系统状态、性能和长期运行预算、真实文件授权 UI 回归，以及 CI/发布流程接入。按本文八项能力门重算，当前工程成熟度约为 **90/100**。剩余 10 分不是 10% 兼容代码或剩余工时；工作主要集中在 3 个验证和产品化工作包，而不是继续堆兼容脚本。
+Web 目前没有已确认的宿主 P0 阻断，当前 34+5+3 已知样本的功能兼容主链和系统音频到 JS 主链可以视为闭环，但仍不能称为发布级“最终完全闭环”。确定性锁屏、重叠休眠、采集配置失效恢复和当前非沙盒发行链的 file/directory 服务持久化已关闭；尚缺真实 OS 电源周期、物理音频设备变化及其真实通知投递、其余系统状态、性能和长期运行预算、真实文件选择器 UI 与签名沙盒授权回归，以及 CI/发布流程接入。按本文八项能力门重算，当前工程成熟度约为 **90/100**。剩余 10 分不是 10% 兼容代码或剩余工时；工作主要集中在 3 个验证和产品化工作包，而不是继续堆兼容脚本。
 
 ### Scene
 
@@ -38,8 +38,10 @@ Scene 已建立清晰的独立模块、PKGV 读取、受控缓存、typed interp
 10. 2026-07-21 的 Web 音频幅度回归测试：`884307090` 圆环/直线两种属性模式分别为 96 / A，`1509243786` 确定性频谱和真实 `afplay` 两次均为 100 / A；报告保存在 `.codex/web-audio-calibration-20260721/`。
 11. 2026-07-21 的系统中断恢复门：`1509243786` 在系统睡眠与显示器休眠重叠、部分唤醒、最终唤醒、锁屏/解锁后均按需停止和恢复采集；最终通过报告保存在 `.codex/web-system-state-final-20260721/results-pass2/`，首次失败口径报告也保留在同目录的 `results/` 供复核。
 12. 2026-07-21 的 CoreAudio 配置失效恢复门：突发三次失效合并为一次重建，单次失效触发第二次重建，三代监听与真实 PCM 均恢复且最终资源归零；最终报告保存在 `.codex/web-audio-restart-final-20260721/results-pass/`。首次立即重建触发 CoreAudio `!obj` 的失败报告保存在同目录的 `results/`，用于证明 1 秒 teardown settle window 的根因，而不是删除失败证据。
+13. 2026-07-21 的 file/directory 持久化门：生产更新、A/B/A 切换、外部 file/directory 实际改名、跨进程 bookmark 恢复、reset 和再次重启均通过；最终独立偏好域报告保存在 `.codex/web-property-persistence-final-20260721/results-suite-pass/`。
+14. 2026-07-21 的 Debug 偏好隔离门：`HOME/CFFIXED_USER_HOME` 不能隔离进程外 `cfprefsd`，现改为每次 App 启动显式传唯一 Debug suite 并由 scorer 校验、结束后删除；最新 10 项矩阵为 10A / 98.2 / 94.3%，报告保存在 `.codex/web-defaults-isolation-final-20260721/matrix-regression/`，10/10 suite 均已删除且标准偏好摘要未变化。
 
-前序专项报告保存在 `.codex/web-closure-final-20260720/`；本轮最终作者源码、Steam CDN、34 项完整门、系统中断门和音频配置失效门报告分别保存在 `.codex/web-external-final-20260720/results/`、`.codex/web-steam-final-20260720/results/`、`.codex/web-full-final-20260720/results/`、`.codex/web-system-state-final-20260721/results-pass2/` 和 `.codex/web-audio-restart-final-20260721/results-pass/`，Steam 样本副本保存在 `.codex/web-steam-representative-samples-20260720/`。这些目录被 Git 忽略，只作为本地复核证据保留到分支合并，不替代仓库内的矩阵定义和生产测试。
+前序专项报告保存在 `.codex/web-closure-final-20260720/`；本轮最终作者源码、Steam CDN、34 项完整门、系统中断门、音频配置失效门、文件持久化门和偏好隔离矩阵报告分别保存在 `.codex/web-external-final-20260720/results/`、`.codex/web-steam-final-20260720/results/`、`.codex/web-full-final-20260720/results/`、`.codex/web-system-state-final-20260721/results-pass2/`、`.codex/web-audio-restart-final-20260721/results-pass/`、`.codex/web-property-persistence-final-20260721/results-suite-pass/` 和 `.codex/web-defaults-isolation-final-20260721/matrix-regression/`，Steam 样本副本保存在 `.codex/web-steam-representative-samples-20260720/`。这些目录被 Git 忽略，只作为本地复核证据保留到分支合并，不替代仓库内的矩阵定义和生产测试。
 
 本次 Web 固定矩阵结果：
 
@@ -91,6 +93,7 @@ Scene 已建立清晰的独立模块、PKGV 读取、受控缓存、typed interp
 - 外部 5 项来自作者公开源码的固定 revision，不是 Steam CDN 原始归档；第三方构建产物没有提交到仓库，因此它们是可选独立门，不是默认门的隐式依赖。
 - Debug 音频 fixture 只用于确定性桥接门。受控 `afplay` 已证明系统采集到 JS 的主频、幅度和左右声道相关性，但本机当时仍有其他后台声音，未形成“系统绝对静音”实机证据，也未自动判定最终画面的逐帧音频相关性。
 - 配置失效门通过生产调试入口触发与 CoreAudio 属性监听回调相同的重建路径，证明 debounce、teardown、重建和资源回收，不证明 AirPods、HDMI 等物理设备变化的系统通知一定到达；当前机器只有一个可用输出端点，无法完成该实机矩阵。
+- 当前 Debug、Release 和已安装 App 均未启用 App Sandbox。文件门证明普通 bookmark 与当前非沙盒读取链，不等同于签名沙盒构建中的 security extension 授权；真实 NSOpenPanel 点击路径和重新启用 Sandbox 后仍需单独回归。
 - 当前 `~/Movies/MyWallpaperX/创意工坊/Scene` 为空，没有 Scene 真实样本渲染对照。
 - 没有 30 分钟以上交互运行、2 小时 soak、休眠唤醒、屏幕热插拔、内存压力或发布包回归。
 - 因而本文能说明当前已知样本的结果，但不能给出整个 Workshop Web 或 Scene 的总体成功率。
@@ -132,6 +135,7 @@ Scene 已建立清晰的独立模块、PKGV 读取、受控缓存、typed interp
 
 - Web 属性定义、默认值、preset、用户覆盖、显示条件和本地化已经形成完整链路。
 - 属性面板覆盖 slider、color、toggle、text、combo、file、directory、label、group 等主要类型。
+- 外部 file/directory 用户覆盖不会读取或写入 execution payload cache；每次播放重新解析 bookmark 并恢复授权，静态 descriptor cache 仍可复用。非沙盒构建在 security-scoped bookmark 不可创建时保存普通 bookmark，文件或目录改名后仍可跟随。
 - 输入层支持 pointer、wheel、点击、拖动和临时捕获，不依赖壁纸窗口直接抢占桌面事件。
 - 代码入口：[SteamWorkshopService+WebPropertyParsing.swift](../../MyWallpaperX/Modules/SteamWorkshop/Web/Core/SteamWorkshopService+WebPropertyParsing.swift)、[DedicatedWebWallpaperHostPlaceholderAdapter+InputForwarding.swift](../../MyWallpaperX/Core/SteamWorkshopWeb/Host/DedicatedWebWallpaperHostPlaceholderAdapter+InputForwarding.swift)。
 
@@ -147,11 +151,19 @@ Scene 已建立清晰的独立模块、PKGV 读取、受控缓存、typed interp
 #### 已关闭：文件属性类型与资源路径闭环
 
 - 属性解析会按定义和实际资源推断 file/directory 类型，类型不匹配的旧持久化值会被清理。
-- benchmark 可在隔离 HOME 和隔离 Workshop 根中注入文件属性 fixture，不接触真实用户 bookmark。
+- benchmark 在隔离 Workshop 根之外创建文件属性 fixture，并使用唯一 Debug UserDefaults suite；仅设置 `HOME/CFFIXED_USER_HOME` 不再视为 bookmark/偏好隔离。
 - `923576681` 已取得属性注入、DOM、资源、交互和非空快照证据。
 - 空 `file:///` 不再被重写成无意义的 `mwx-local://wallpaper/__absolute__/` 请求。
+- 持久化 gate 对 `1509243786` 的 file、directory 和目录模式调用生产更新，连续运行 A/B/A；首进程退出后把两类 fixture 改名，第二进程以旧 raw value 通过 bookmark 恢复到新 resolved/payload，随后 reset，第三进程确认 bookmark 不复活、值为空且模式回到 1。存在外部覆盖时不生成 execution cache，清除后普通 cache 恢复。
 
-仍需保留一项产品 UI 回归：真实文件选择器的“选择、立即生效、切换回来、重启恢复、清除授权”目前不是自动门禁。它不再是已确认宿主缺陷，但必须在发布 checklist 中执行，直到可以自动化。
+```bash
+python3 script/web_property_persistence_gate.py \
+  --app .codex/DerivedData/Build/Products/Debug/MyWallpaperX.app/Contents/MacOS/MyWallpaperX \
+  --runtime-workshop-root <isolated-workshop-root> \
+  --runtime-home <empty-temporary-home>
+```
+
+仍需保留一项产品 UI/签名回归：真实 NSOpenPanel 的点击选择，以及未来若重新启用 App Sandbox 后的 security-scoped 授权恢复，目前不是自动门禁。服务层的“选择值、立即生效、切换回来、重启恢复、清除授权”已经自动化，不再是已确认宿主缺陷。
 
 #### 已关闭：视觉与交互强证据
 
@@ -210,7 +222,7 @@ benchmark 现在要求像素统计、DOM 状态和 pointer/click/drag/wheel 注�
 | 能力门 | 权重 | 当前得分 | 说明 |
 | --- | ---: | ---: | --- |
 | 启动、分类与资源主链 | 20 | 20 | 34+5+3 已知样本可运行；双 origin、资源隔离、HTTP 语义、纹理 WebGL 和远程字体失败恢复已验证 |
-| 属性与持久化 | 15 | 14 | file/directory、颜色和错误隔离已闭环；真实选择器跨重启仍是人工回归 |
+| 属性与持久化 | 15 | 14 | file/directory 服务持久化、颜色和错误隔离已闭环；真实选择器和签名沙盒授权仍是发布回归 |
 | 媒体与音频 | 10 | 9 | signed stereo 64+64、真实声音相关性、按需生命周期、确定性中断和配置失效恢复已验证；物理设备切换、系统静音和真实 OS 睡眠未完成 |
 | 输入与交互 | 10 | 9 | 原生指针转发和自动 pointer/click/drag/wheel 证据已进入门禁 |
 | 多屏与生命周期 | 15 | 14 | 切换/stop/释放、音频需求启停、重叠睡眠/锁屏状态机和 34 项长批次通过；真实 OS 事件、runtime 互切和屏幕热插拔未闭环 |
@@ -225,14 +237,14 @@ benchmark 现在要求像素统计、DOM 状态和 pointer/click/drag/wheel 注�
 
 1. **系统生命周期与异常恢复**：确定性睡眠/锁屏和 CoreAudio 配置失效重建已完成；继续覆盖真实 OS 电源周期、Space、屏幕热插拔、runtime 互切、一般网络/系统代理变化、物理音频设备变化和连续崩溃；不得以静默重试掩盖首轮失败。
 2. **性能与长期运行门禁**：首帧、CPU/GPU、内存、功耗、缓存增长、30 分钟交互与 2 小时 soak。
-3. **产品与发布闭环**：维护 34+5+3 样本、revision 和允许例外；完成真实文件授权的选择、切换、重启和清除；收口 placeholder/harness 边界，把矩阵、生命周期、性能和 UI 回归纳入发布验收。
+3. **产品与发布闭环**：维护 34+5+3 样本、revision 和允许例外；完成真实 NSOpenPanel 与签名沙盒授权回归；收口 placeholder/harness 边界，把矩阵、生命周期、性能和 UI 回归纳入发布验收。
 
 工作包 1、2 完成前，不能称为系统稳定性闭环；工作包 3 完成前，文件授权产品链、样本扩展机制和发布流程仍不是持续兼容承诺。
 
 ### 4.3 推荐完成顺序
 
 ```text
-已完成：文件属性 -> 三源视觉/动态证据 -> 远程字体失败恢复 -> signed stereo 真实音频 -> 固定/作者源码/Steam CDN/34 项完整门 -> 按需采集与 stop 释放 -> 重叠睡眠/锁屏确定性恢复门 -> CoreAudio 配置失效重建门
+已完成：文件属性与跨重启/reset -> Debug 偏好隔离 -> 三源视觉/动态证据 -> 远程字体失败恢复 -> signed stereo 真实音频 -> 固定/作者源码/Steam CDN/34 项完整门 -> 按需采集与 stop 释放 -> 重叠睡眠/锁屏确定性恢复门 -> CoreAudio 配置失效重建门
 下一步：真实 OS/设备变化、Space/屏幕和 runtime 互切矩阵
   -> 性能、泄漏和功耗预算
   -> 基线维护、文件授权回归、正式宿主与发布门禁
@@ -409,7 +421,7 @@ descriptor 能识别 image、particle、text、container，但 renderer 当前�
 
 - 已固定 10 个代表样本并加入能力标签、最低等级、最低 coverage 和批次禁用短板。
 - benchmark 已增加 WebView/Canvas/当前进程窗口视觉像素、同源运动、DOM、主动音频和自动 pointer/click/drag/wheel 断言。
-- 当前固定门结果：平均 97.9、coverage 94.3%、10A；作者源码能力门结果：平均 98.8、coverage 94.3%、5A；Steam CDN 代表门结果：平均 98.0、coverage 90.3%、3A；完整门结果：平均 98.2、coverage 93.3%、34A。
+- 当前独立偏好域固定门结果：平均 98.2、coverage 94.3%、10A；作者源码能力门结果：平均 98.8、coverage 94.3%、5A；Steam CDN 代表门结果：平均 98.0、coverage 90.3%、3A；完整门结果：平均 98.2、coverage 93.3%、34A。
 - 音频生产链已按 Wallpaper Engine 契约输出 signed stereo 64+64 布局，并在分发边界应用兼容幅度响应；受控系统音源验证频率、幅度和声道，Debug fixture 只用于确定性桥接和样本视觉回归证据。
 - coverage 未设为 95% 的原因是部分样本没有媒体节点或特定能力事件，不能用伪造事件抬高覆盖率；单样本关键门禁优先于平均 coverage。
 
@@ -424,7 +436,7 @@ descriptor 能识别 image、particle、text、container，但 renderer 当前�
 
 - 已建立当前 34 样本完整基线、5 样本作者源码能力门和 3 样本 Steam CDN 代表门；后续维护样本、源码 revision/CDN 更新时间与例外复审。
 - 已完成可控双声道真实音频到 JS bin 的频率、幅度、声道、确定性睡眠/锁屏和配置失效重建回归；后续补物理设备切换的真实通知、真正系统静音、实际 OS 睡眠及最终画面时间对齐。
-- 自动化或固定执行真实文件授权的选择/恢复/清除 UI 回归。
+- 已完成当前非沙盒发行链的 file/directory 更新、A/B/A、跨重启移动恢复、reset 和偏好隔离门；后续固定执行 NSOpenPanel 与签名沙盒授权 UI 回归。
 - 将固定矩阵、生命周期和性能报告接入发布 checklist/CI。
 - 正式收口 `dedicatedHostPlaceholder` 和 daemon diagnostics harness 的边界。
 
@@ -436,6 +448,6 @@ descriptor 能识别 image、particle、text、container，但 renderer 当前�
 
 ## 8. 最终判断
 
-Web 的运行主链已从“基本可用”推进到“有固定、作者源码、Steam CDN、完整四层兼容门、远程网络降级门、真实音频证据、确定性系统中断恢复门、配置失效重建门和释放门”。10 项固定门、5 项作者源码门、3 项 Steam CDN 门和 34 项完整门当前全绿；Google Fonts 在国内无直连或代理失效时不再阻塞启动，Web 音频也已从重复的桌面假波形改为按需 signed stereo FFT，并补回旧样本依赖的兼容幅度响应。因此现在可以声明“当前 34+5+3 已知样本功能兼容闭环，Web 音频宿主主链及确定性睡眠/锁屏与配置失效恢复闭环”，仍不能声明“发布级最终完全闭环”或“以后所有样本都会成功”。后续不应继续以新增样本特判为主，而应集中完成物理设备与真实 OS 状态、runtime 互切、长期资源预算、文件授权产品回归和发布流程接入。当前专用 WKWebView 宿主、受控资源协议、按需 loopback 和结构化诊断路线应继续保留，不应改回宽权限 `file://` 或引入重复宿主。
+Web 的运行主链已从“基本可用”推进到“有固定、作者源码、Steam CDN、完整四层兼容门、远程网络降级门、真实音频证据、文件跨重启恢复门、确定性系统中断恢复门、配置失效重建门和释放门”。10 项独立偏好域固定门、5 项作者源码门、3 项 Steam CDN 门和 34 项完整门当前全绿；Google Fonts 在国内无直连或代理失效时不再阻塞启动，Web 音频也已从重复的桌面假波形改为按需 signed stereo FFT，并补回旧样本依赖的兼容幅度响应。因此现在可以声明“当前 34+5+3 已知样本功能兼容闭环，当前非沙盒发行链的 Web 文件服务持久化闭环，Web 音频宿主主链及确定性睡眠/锁屏与配置失效恢复闭环”，仍不能声明“发布级最终完全闭环”或“以后所有样本都会成功”。后续不应继续以新增样本特判为主，而应集中完成物理设备与真实 OS 状态、runtime 互切、长期资源预算、真实 UI/签名沙盒授权回归和发布流程接入。当前专用 WKWebView 宿主、受控资源协议、按需 loopback 和结构化诊断路线应继续保留，不应改回宽权限 `file://` 或引入重复宿主。
 
 Scene 的情况相反：基础架构成立，但运行能力仍是明确子集。要么把 Scene Lite 的范围、体验和质量做好，要么投入一个来源清晰、可测试的兼容渲染运行时；继续增加样本硬编码和手写视觉替身不会形成最终兼容闭环。

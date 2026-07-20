@@ -55,6 +55,10 @@ extension SteamWorkshopService {
         }
     }
 
+    func hasWebPropertyBookmark(forKey key: String, record: SteamWorkshopDownloadRecord) -> Bool {
+        defaults.data(forKey: webPropertyBookmarkKey(forKey: key, record: record)) != nil
+    }
+
     func resolvedBookmarkedWebPropertyURL(forKey key: String, record: SteamWorkshopDownloadRecord) -> URL? {
         let bookmarkKey = webPropertyBookmarkKey(forKey: key, record: record)
         guard let bookmarkData = defaults.data(forKey: bookmarkKey) else {
@@ -87,7 +91,14 @@ extension SteamWorkshopService {
     }
 
     private func makeWebPropertyBookmarkData(for url: URL) -> Data? {
-        try? url.bookmarkData(options: [.withSecurityScope], includingResourceValuesForKeys: nil, relativeTo: nil)
+        if let bookmark = try? url.bookmarkData(
+            options: [.withSecurityScope],
+            includingResourceValuesForKeys: nil,
+            relativeTo: nil
+        ) {
+            return bookmark
+        }
+        return try? url.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
     }
 
     private func resolveWebPropertyBookmarkData(_ data: Data, bookmarkDataIsStale isStale: inout Bool) -> URL? {

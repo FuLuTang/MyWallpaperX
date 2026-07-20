@@ -18,13 +18,14 @@ enum DebugWebPlaybackRunner {
             || arguments.contains("--mwx-debug-web-lifecycle-sequence")
             || arguments.contains("--mwx-debug-web-system-state-sequence")
             || arguments.contains("--mwx-debug-web-audio-restart-sequence")
+            || arguments.contains("--mwx-debug-web-property-persistence-stage")
     }
 
     private static var arguments: [String] {
         ProcessInfo.processInfo.arguments
     }
 
-    private static var hasUsableWorkshopRoot: Bool {
+    static var hasUsableWorkshopRoot: Bool {
         guard let flagIndex = arguments.firstIndex(of: "--mwx-debug-workshop-root"),
               arguments.indices.contains(flagIndex + 1) else {
             return false
@@ -58,6 +59,10 @@ enum DebugWebPlaybackRunner {
     }
 
     static func scheduleWebWorkshopRuntimeIfRequested() {
+        if DebugWebPropertyPersistenceRunner.scheduleIfRequested() {
+            return
+        }
+
         if let restartIndex = arguments.firstIndex(of: "--mwx-debug-web-audio-restart-sequence"),
            arguments.indices.contains(restartIndex + 1) {
             scheduleAudioRestartSequence(itemID: arguments[restartIndex + 1])
@@ -200,7 +205,7 @@ enum DebugWebPlaybackRunner {
         }
     }
 
-    private static func launchWebWorkshopItem(
+    static func launchWebWorkshopItem(
         _ itemID: String,
         using service: SteamWorkshopService
     ) {
