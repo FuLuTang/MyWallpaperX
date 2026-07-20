@@ -35,6 +35,17 @@
 5. 修改文件时必须使用 diff patch 输出
 6. 遇到 bug 修复类整理时，必须先看根因，不把拆分当成掩盖问题的补丁
 
+## 机械门禁
+
+- Swift 新文件和未列入历史基线的文件上限为 400 个物理行。
+- `script/code_health_baseline.json` 是现有超限文件的唯一额度来源；额度只能降低或删除，不能新增或提高。
+- 开工和提交前运行 `python3 script/check_code_health.py --check --base-ref HEAD`；文件缩短后先运行 `python3 script/check_code_health.py --ratchet-baseline`。
+- 对比分支历史时运行 `python3 script/check_code_health.py --check --base-ref <base-ref>`，确保没有通过修改基线绕过门禁。
+- 禁止压缩排版规避行数；是否拆分仍按职责、依赖和访问边界判断。
+- 触达历史超限文件时不得净增长。无法在不破坏行为或 `private` 边界的情况下拆分，应停止并先补对应 smoke/test 证据，而不是强拆。
+- 新增抽象前必须能指出真实复用点或被隔离的独立职责；单次使用逻辑、转发壳和预留层级默认拒绝。
+- 新增 Tests、helper target 或其他 Swift 源码根目录时必须加入 `sourceRoots`；任何未纳管 Swift 文件都应由门禁拒绝。
+
 ## 角色职责
 - 识别代码结构失衡点
 - 给出更清晰的文件职责划分
@@ -128,6 +139,7 @@ Code Health Split Agent 接收输入时，至少应包含：
 3. 先做最小拆分
 4. 再检查命名、引用、扩展分布是否清楚
 5. 最后给出是否还需要继续整理的建议
+6. 运行代码健康门禁并把下降后的额度同步写回基线
 
 ## 常见输出类型
 - 超长 Swift 文件拆分

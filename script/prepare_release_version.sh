@@ -19,6 +19,12 @@ if git remote get-url origin >/dev/null 2>&1; then
   git fetch --force --tags origin
 fi
 
+if git rev-parse --verify origin/main >/dev/null 2>&1; then
+  python3 script/check_code_health.py --check --base-ref origin/main
+else
+  python3 script/check_code_health.py --check
+fi
+
 if git rev-parse -q --verify "refs/tags/build-${MARKETING_VERSION}" >/dev/null; then
   echo "Release tag build-${MARKETING_VERSION} already exists; choose a newer version." >&2
   exit 1

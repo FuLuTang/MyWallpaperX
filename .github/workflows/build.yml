@@ -32,6 +32,19 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Check Swift file health
+        env:
+          BASE_REF: ${{ github.event.before }}
+        run: |
+          python3 -B -m unittest script/tests/test_check_code_health.py
+          if [ -z "${BASE_REF}" ] || [[ "${BASE_REF}" =~ ^0+$ ]]; then
+            BASE_REF="$(git tag --merged HEAD --list 'build-*' --sort=-version:refname | head -n 1)"
+          fi
+          if [ -z "${BASE_REF}" ]; then
+            BASE_REF="$(git rev-list --max-parents=0 HEAD | head -n 1)"
+          fi
+          python3 script/check_code_health.py --check --base-ref "${BASE_REF}" --format github
+
       - name: Resolve build version
         run: |
           SHORT_SHA="${GITHUB_SHA::7}"
