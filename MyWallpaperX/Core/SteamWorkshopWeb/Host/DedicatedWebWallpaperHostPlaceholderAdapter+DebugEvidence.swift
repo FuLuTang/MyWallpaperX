@@ -61,64 +61,6 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
         }
     }
 
-    private func collectDebugDOMEvidence(from webView: WKWebView, screenID: CGDirectDisplayID) {
-        let script = #"""
-        (() => {
-          const elements = Array.from(document.querySelectorAll('body *')).slice(0, 10000);
-          const isVisible = (element) => {
-            const style = getComputedStyle(element);
-            if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity || 1) === 0) return false;
-            const rect = element.getBoundingClientRect();
-            return rect.width > 1 && rect.height > 1 && rect.bottom > 0 && rect.right > 0 && rect.top < innerHeight && rect.left < innerWidth;
-          };
-          const visible = elements.filter(isVisible);
-          const images = Array.from(document.images);
-          const canvases = Array.from(document.querySelectorAll('canvas'));
-          const media = Array.from(document.querySelectorAll('video, audio'));
-          const backgroundCount = visible.filter((element) => {
-            const value = getComputedStyle(element).backgroundImage;
-            return value && value !== 'none';
-          }).length;
-          return JSON.stringify({
-            readyState: document.readyState,
-            titleLength: String(document.title || '').length,
-            bodyChildCount: document.body ? document.body.children.length : 0,
-            visibleElementCount: visible.length,
-            textLength: document.body ? String(document.body.innerText || '').trim().length : 0,
-            imageCount: images.length,
-            loadedImageCount: images.filter((image) => image.complete && image.naturalWidth > 0).length,
-            canvasCount: canvases.length,
-            drawableCanvasCount: canvases.filter((canvas) => canvas.width > 1 && canvas.height > 1).length,
-            mediaCount: media.length,
-            iframeCount: document.querySelectorAll('iframe').length,
-            backgroundCount,
-            viewport: `${innerWidth}x${innerHeight}`,
-            scrollSize: `${document.documentElement.scrollWidth}x${document.documentElement.scrollHeight}`
-          });
-        })();
-        """#
-        webView.evaluateJavaScript(script) { [weak self, weak webView] result, error in
-            guard let self, let webView else { return }
-            if let error {
-                self.recordDiagnostic(
-                    type: "evidence.dom.error",
-                    severity: .error,
-                    message: error.localizedDescription,
-                    screenID: screenID,
-                    url: webView.url?.absoluteString
-                )
-                return
-            }
-            self.recordDiagnostic(
-                type: "evidence.dom",
-                severity: .info,
-                message: result as? String ?? "{}",
-                screenID: screenID,
-                url: webView.url?.absoluteString
-            )
-        }
-    }
-
     private func dispatchDebugInteractionEvidence(to webView: WKWebView, screenID: CGDirectDisplayID) {
         let script = #"""
         (() => {

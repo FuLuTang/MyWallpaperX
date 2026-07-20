@@ -33,6 +33,10 @@ extension SteamWorkshopService {
         return (content, true)
     }
 
+    static func webFileContainsServiceWorkerRegistration(_ fileURL: URL) -> Bool {
+        WebStaticFileSignalScanner.containsServiceWorkerRegistration(in: fileURL)
+    }
+
     static func webContentUsesWebMResource(_ content: String) -> Bool {
         let lowered = content.lowercased()
         return lowered.contains(".webm")

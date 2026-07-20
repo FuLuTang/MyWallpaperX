@@ -79,6 +79,7 @@ extension SteamWorkshopService {
         var usesIframeCrossFrameAccess = staticContentSummary?.usesIframeCrossFrameAccess ?? false
         var scannedRiskFlags = Set<ResolvedWebRuntimeRiskFlag>()
         var truncatedScanFileCount = 0
+        let needsServiceWorkerFallbackScan = staticContentSummary == nil
 
         func appendIssue(_ severity: SteamWorkshopWebValidationSeverity, _ level: SteamWorkshopWebValidationLevel, _ message: String) {
             let issue = SteamWorkshopWebValidationIssue(severity: severity, level: level, message: message)
@@ -168,7 +169,11 @@ extension SteamWorkshopService {
             if Self.webContentUsesPersistentBrowserStorage(content) {
                 usesPersistentBrowserStorage = true
             }
-            if Self.webContentUsesServiceWorkerRegistration(content) {
+            if !usesServiceWorkerRegistration,
+               Self.webContentUsesServiceWorkerRegistration(content)
+                || (scan.isTruncated
+                    && needsServiceWorkerFallbackScan
+                    && Self.webFileContainsServiceWorkerRegistration(fileURL)) {
                 usesServiceWorkerRegistration = true
             }
             if Self.webContentUsesESModuleDependency(content) {

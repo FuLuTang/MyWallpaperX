@@ -89,7 +89,9 @@ extension SteamWorkshopService {
             if Self.webContentUsesPersistentBrowserStorage(content) {
                 usesPersistentBrowserStorage = true
             }
-            if Self.webContentUsesServiceWorkerRegistration(content) {
+            if !usesServiceWorkerRegistration,
+               Self.webContentUsesServiceWorkerRegistration(content)
+                || (scan.isTruncated && Self.webFileContainsServiceWorkerRegistration(fileURL)) {
                 usesServiceWorkerRegistration = true
             }
             if Self.webContentUsesESModuleDependency(content) {
