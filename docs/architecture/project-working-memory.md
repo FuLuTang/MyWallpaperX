@@ -2,6 +2,7 @@
 
 > 最后更新：2026-05-17
 > 维护范围：当前项目事实、用户偏好、重要路径、AppKit 迁移状态与 Steam Workshop 现状
+> 状态边界：本文是 2026-05-17 的协作快照，不是整个项目的持续现役真相；Web / Scene 当前状态以 [现状评估与演进路线](../reviews/web-scene-current-state-roadmap-2026-07-19.md) 和当前代码、运行门禁为准。
 
 ## Product Context
 - `MyWallpaperX` 是一个 macOS 动态壁纸软件。

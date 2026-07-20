@@ -46,7 +46,7 @@
   <tr>
     <td width="33%"><img src="Screenshot/截屏2026-05-12%2006.03.56.png" width="100%" alt="Steam Workshop"><p align="center"><b>Steam Workshop</b><br><sub>原生网格浏览、下载和管理创意工坊</sub></p></td>
     <td width="33%"><img src="Screenshot/截屏2026-05-12%2006.05.39.png" width="100%" alt="下载与详情"><p align="center"><b>下载与详情面板</b><br><sub>集中查看下载状态、文件位置和素材信息</sub></p></td>
-    <td width="33%"><img src="Screenshot/截屏2026-05-12%2006.00.16.png" width="100%" alt="桌面播放"><p align="center"><b>桌面播放</b><br><sub>独立守护进程承载视频 / Web / Scene 渲染</sub></p></td>
+    <td width="33%"><img src="Screenshot/截屏2026-05-12%2006.00.16.png" width="100%" alt="桌面播放"><p align="center"><b>桌面播放</b><br><sub>视频守护进程与 Web / Scene 专用宿主协同播放</sub></p></td>
   </tr>
 </table>
 
@@ -63,12 +63,14 @@ MyWallpaperX 深度利用 macOS 原生能力，围绕**素材管理 → 资源�
 | **Pixabay 在线库** | ✅ | 浏览 Pixabay 在线资源，异步下载并纳入本地库管理，支持下载状态追踪 |
 | **Steam Workshop 浏览** | ✅ | 完全原生的 AppKit NSCollectionView 网格浏览 Wallpaper Engine 创意工坊，内置 SteamCMD Runtime |
 | **视频壁纸播放** | ✅ | 独立守护进程承载视频播放，支持切换、音量、播放速率、音量控制，DaemonProtocol 跨进程通信 |
-| **Web 壁纸支持** | ✅ | `project.json → descriptor → runtime model → playback context` 四层解析管线，本地 scheme 资源加载、属性系统、音频桥接与兼容脚本注入 |
+| **Web 壁纸支持** | ✅ | `project.json → descriptor → runtime model → playback context` 四层解析管线；已知样本功能主链通过门禁，发布级生命周期和长期稳定性仍在验收 |
 | **Scene 壁纸渲染** | 🚧 | Metal 驱动的一阶段渲染器已实现图像层合成与基础变换；effect / material / shader / 粒子 / SceneScript / puppet 等高级特性仍在开发中 |
-| **系统音频频谱** | ✅ | 面向音频响应类壁纸的系统音频采集，支持均衡跳动与频带起伏两种风格 |
+| **系统音频频谱** | 🚧 | 已接入系统音频采集并修正 Wallpaper Engine 128-bin 布局；真实音源相关性、设备切换和恢复仍待发布验收 |
 | **菜单栏控制** | ✅ | 状态栏入口，GPU 占用实时显示，快速访问播放控制与模块切换 |
 
 > **Scene 壁纸说明**：Scene 渲染器已完成 `scene.json` 解析、`scene.pkg` 资源包解包、TEX 纹理加载、Metal 管线搭建和桌面宿主窗口。当前可渲染基础图像层，但效果通道（effect passes）、材质着色器编译、DirectX shader 转译、粒子系统、SceneScript 脚本执行和 puppet warp 等能力尚未实现，这些特性会在后续版本逐步补齐。
+
+> Web / Scene 的当前验证数据、明确边界和后续路线见 [现状评估与演进路线](docs/reviews/web-scene-current-state-roadmap-2026-07-19.md)。
 
 ---
 
@@ -98,7 +100,7 @@ MyWallpaperX.app
 ├─ Models                      ← VideoWallpaper 数据模型、播放设置
 └─ Resources                   ← SteamCMD Runtime、内置视频素材
 
-WallpaperDaemonSources         ← 独立守护进程，承载视频 / Web 播放与频谱采集
+WallpaperDaemonSources         ← 独立守护进程，承载视频播放与频谱呈现；Web daemon 仅保留诊断 harness
 ```
 
 ---

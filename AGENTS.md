@@ -3,7 +3,11 @@ Agents 开发与问题修复流程规范
 1. 问题来源
 
 当检查 Web 样本后产生报错时，Agent 必须基于实际运行结果进行分析，不得仅凭表面错误信息进行猜测式修改。
-样本路径～/Movies/MyWallpaperX/创意工坊/Web
+样本源路径：`~/Movies/MyWallpaperX/创意工坊/Web`
+
+真实创意工坊目录只作为只读样本来源。运行 benchmark、注入属性、清缓存或修改样本前，必须复制到隔离目录，并同时使用隔离的 Workshop root 和临时 HOME；不得直接修改、删除或清理真实样本。
+
+Web / Scene 当前能力、验证结果和剩余缺口以 `docs/reviews/web-scene-current-state-roadmap-2026-07-19.md` 为状态入口；历史 review、handoff 和 regression 记录不能反向覆盖当前代码与最新运行证据。
 
 2. 修复前分析
 

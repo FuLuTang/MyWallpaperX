@@ -4,8 +4,9 @@
 
 ## 当前优先看
 
-- [architecture/framework-architecture-memo.md](architecture/framework-architecture-memo.md)：当前架构、公共协议和模块边界。
-- [architecture/project-working-memory.md](architecture/project-working-memory.md)：当前项目事实、重要路径和仍需同步的协作信息。
+- [architecture/framework-architecture-memo.md](architecture/framework-architecture-memo.md)：截至 2026-05-05 的框架结构、公共协议和模块边界基线；使用前需与当前代码核对。
+- [reviews/web-scene-current-state-roadmap-2026-07-19.md](reviews/web-scene-current-state-roadmap-2026-07-19.md)：Web / Scene 当前能力、验证结果、闭环边界和后续路线。
+- [architecture/project-working-memory.md](architecture/project-working-memory.md)：截至 2026-05-17 的 AppKit / Steam 协作快照；使用前需与当前代码核对。
 - [web/README.md](web/README.md)：Web 壁纸专题入口。
 - [agents/README.md](agents/README.md)：多 Agent 协作与角色入口。
 - [release/release-signing.md](release/release-signing.md)：发布签名与 notarization 流程。
@@ -22,7 +23,8 @@
 
 ## 使用规则
 
-- 判断当前实现边界，优先看 `architecture/` 和对应专题目录的 `README.md`。
-- `archive/`、`regression/`、`reviews/` 下的文件主要用于查历史原因和证据，不反向覆盖当前规范。
+- 判断框架结构时先看 `architecture/` 并与当前代码核对；判断 Web / Scene 能力和闭环状态时看对应专题入口与现役状态文档。
+- `archive/`、`regression/`、`reviews/` 下的文件主要用于查历史原因和证据，不反向覆盖当前规范；其中 `reviews/web-scene-current-state-roadmap-2026-07-19.md` 是 Web / Scene 的现役状态入口。
 - 新增长期规范时放入对应专题目录；新增一次性排障记录时放入专题下的 `regression/` 或 `archive/`。
 - 脚本统一放在仓库根目录的 `script/`，不要再新增 `scripts/`。
+- 文档描述与当前代码或运行门禁冲突时，以当前代码和最新可复现证据为准，并回补对应现役文档，不能只在旧 review 中追加新结论。
