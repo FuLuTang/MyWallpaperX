@@ -424,7 +424,7 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
         if lowered.contains("error") || lowered.contains("rejection") {
             return .error
         }
-        if lowered.contains("warn") || lowered.contains("stalled") || lowered.contains("waiting") {
+        if ["warn", "stalled", "waiting", "degraded", "failed"].contains(where: lowered.contains) {
             return .warning
         }
         return .info

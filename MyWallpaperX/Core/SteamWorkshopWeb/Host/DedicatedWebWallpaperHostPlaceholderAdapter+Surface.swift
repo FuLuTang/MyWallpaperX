@@ -53,6 +53,13 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
                 forMainFrameOnly: true
             )
         )
+        controller.addUserScript(
+            WKUserScript(
+                source: webRemoteStylesheetCompatibilityScript,
+                injectionTime: .atDocumentStart,
+                forMainFrameOnly: false
+            )
+        )
         let schemeHandler = WebWallpaperLocalSchemeHandler(
             rootURL: request?.rootURL ?? URL(fileURLWithPath: "/"),
             strictSymlinkPolicy: request?.runtimeProfile.strictLocalResourcePolicy ?? false

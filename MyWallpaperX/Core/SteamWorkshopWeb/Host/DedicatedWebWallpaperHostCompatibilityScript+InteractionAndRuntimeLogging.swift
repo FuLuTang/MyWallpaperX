@@ -60,6 +60,11 @@ let webCompatibilityScriptInteractionAndRuntimeLogging = #"""
       try {
         const normalizedTagName = String(tagName || '').toUpperCase();
         const sourceURL = source ? new URL(String(source), document.location.href) : null;
+        if (normalizedTagName === 'LINK' && target.hasAttribute &&
+            (target.hasAttribute('data-mwx-deferred-stylesheet') ||
+             target.hasAttribute('data-mwx-remote-stylesheet-probe'))) {
+          return;
+        }
         const rawSource =
           target.getAttribute && ['IMG', 'SOURCE', 'AUDIO', 'VIDEO'].includes(normalizedTagName)
             ? String(target.getAttribute('src') || '').trim()

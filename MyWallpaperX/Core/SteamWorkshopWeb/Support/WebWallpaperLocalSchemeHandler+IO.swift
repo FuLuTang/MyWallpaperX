@@ -108,18 +108,27 @@ extension WebWallpaperLocalSchemeHandler {
         return try fileHandle.readToEnd() ?? Data()
     }
 
+    static func readResponseData(from fileURL: URL, range: ClosedRange<Int64>?) throws -> Data {
+        let data = try readFileData(from: fileURL, range: range)
+        guard range == nil else { return data }
+        return WebWallpaperResponseTransformer.transform(data, fileURL: fileURL)
+    }
+
     static func makeResponse(
         for requestURL: URL,
         mimeType: String,
         totalSize: Int64,
         range: ClosedRange<Int64>?,
-        deliveredLength: Int
+        deliveredLength: Int,
+        acceptsRanges: Bool = true
     ) throws -> HTTPURLResponse {
         var headers: [String: String] = [
             "Content-Type": mimeType,
-            "Accept-Ranges": "bytes",
             "Cache-Control": "no-cache"
         ]
+        if acceptsRanges {
+            headers["Accept-Ranges"] = "bytes"
+        }
         let statusCode: Int
         if let range {
             statusCode = 206

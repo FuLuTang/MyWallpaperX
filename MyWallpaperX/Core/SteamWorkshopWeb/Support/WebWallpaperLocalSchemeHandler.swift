@@ -78,16 +78,32 @@ final class WebWallpaperLocalSchemeHandler: NSObject, WKURLSchemeHandler {
                     requestURL
                 )
             }
+            let request = urlSchemeTask.request
+            let isHeadRequest = request.httpMethod?.caseInsensitiveCompare("HEAD") == .orderedSame
             let fileSize = try Self.fileSize(for: resource.fileURL)
-            let range = try Self.byteRange(for: urlSchemeTask.request, totalSize: fileSize)
-            let data = try Self.readFileData(from: resource.fileURL, range: range)
+            let transformsResponse = WebWallpaperResponseTransformer.supportsTransformation(for: resource.fileURL)
+            let range = transformsResponse ? nil : try Self.byteRange(for: request, totalSize: fileSize)
+            let data: Data
+            let responseSize: Int64
+            let deliveredLength: Int
+            if isHeadRequest, !transformsResponse {
+                data = Data()
+                responseSize = fileSize
+                deliveredLength = range.map { Int($0.upperBound - $0.lowerBound + 1) } ?? Int(fileSize)
+            } else {
+                let responseData = try Self.readResponseData(from: resource.fileURL, range: range)
+                data = isHeadRequest ? Data() : responseData
+                responseSize = range == nil ? Int64(responseData.count) : fileSize
+                deliveredLength = responseData.count
+            }
             let mimeType = Self.mimeType(for: resource.fileURL)
             let response = try Self.makeResponse(
                 for: requestURL,
                 mimeType: mimeType,
-                totalSize: fileSize,
+                totalSize: responseSize,
                 range: range,
-                deliveredLength: data.count
+                deliveredLength: deliveredLength,
+                acceptsRanges: !transformsResponse
             )
             if resource.fileURL.pathExtension.lowercased() == "css",
                shouldRecordServedDiagnostic(for: requestURL) {
@@ -95,12 +111,14 @@ final class WebWallpaperLocalSchemeHandler: NSObject, WKURLSchemeHandler {
                 diagnosticHandler?(
                     "local-resource.served",
                     .info,
-                    "mime=\(mimeType) size=\(fileSize) delivered=\(data.count) range=\(rangeDescription) file=\(resource.fileURL.path)",
+                    "mime=\(mimeType) size=\(fileSize) delivered=\(deliveredLength) range=\(rangeDescription) file=\(resource.fileURL.path)",
                     requestURL
                 )
             }
             urlSchemeTask.didReceive(response)
-            urlSchemeTask.didReceive(data)
+            if !isHeadRequest {
+                urlSchemeTask.didReceive(data)
+            }
             urlSchemeTask.didFinish()
         } catch {
             silenceFailedMediaRequestIfNeeded(requestURL: requestURL, in: webView)

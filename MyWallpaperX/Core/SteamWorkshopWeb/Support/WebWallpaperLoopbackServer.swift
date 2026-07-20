@@ -135,15 +135,30 @@ final class WebWallpaperLoopbackServer {
             if let rangeHeader {
                 urlRequest.setValue(rangeHeader, forHTTPHeaderField: "Range")
             }
-            let range = try WebWallpaperLocalSchemeHandler.byteRange(for: urlRequest, totalSize: fileSize)
-            let data = method == "HEAD" ? Data() : try WebWallpaperLocalSchemeHandler.readFileData(from: fileURL, range: range)
+            let transformsResponse = WebWallpaperResponseTransformer.supportsTransformation(for: fileURL)
+            let range = transformsResponse ? nil : try WebWallpaperLocalSchemeHandler.byteRange(for: urlRequest, totalSize: fileSize)
+            let data: Data
+            let responseSize: Int64
+            let contentLength: Int64
+            if method == "HEAD", !transformsResponse {
+                data = Data()
+                responseSize = fileSize
+                contentLength = range.map { $0.upperBound - $0.lowerBound + 1 } ?? fileSize
+            } else {
+                let responseData = try WebWallpaperLocalSchemeHandler.readResponseData(from: fileURL, range: range)
+                data = method == "HEAD" ? Data() : responseData
+                responseSize = range == nil ? Int64(responseData.count) : fileSize
+                contentLength = Int64(responseData.count)
+            }
             let mimeType = WebWallpaperLocalSchemeHandler.mimeType(for: fileURL)
             sendHTTPResponse(
                 statusCode: range == nil ? 200 : 206,
                 mimeType: mimeType,
-                totalSize: fileSize,
+                totalSize: responseSize,
                 range: range,
                 body: data,
+                contentLength: contentLength,
+                acceptsRanges: !transformsResponse,
                 on: connection
             )
         } catch {
@@ -174,17 +189,21 @@ final class WebWallpaperLoopbackServer {
         totalSize: Int64,
         range: ClosedRange<Int64>?,
         body: Data,
+        contentLength: Int64,
+        acceptsRanges: Bool,
         on connection: NWConnection
     ) {
         var headers = [
             "HTTP/1.1 \(statusCode) \(statusText(statusCode))",
             "Content-Type: \(mimeType)",
-            "Content-Length: \(body.count)",
-            "Accept-Ranges: bytes",
+            "Content-Length: \(contentLength)",
             "Cache-Control: no-cache",
             "Access-Control-Allow-Origin: *",
             "Connection: close"
         ]
+        if acceptsRanges {
+            headers.append("Accept-Ranges: bytes")
+        }
         if let range {
             headers.append("Content-Range: bytes \(range.lowerBound)-\(range.upperBound)/\(totalSize)")
         }
