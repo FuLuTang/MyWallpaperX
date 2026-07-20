@@ -10,11 +10,11 @@
 
 Web 已经具备可持续回归的正式运行主链。文件属性类型推断、强 DOM/视觉/交互证据、纹理 WebGL 的 loopback 路由、旧式颜色数组兼容、空 `file:///` 占位符处理、境外远程样式降级恢复、真实 64+64 双声道频谱、固定样本矩阵和切换/停止释放门禁均已落地。
 
-当前固定矩阵包含 10 个真实 Workshop 样本，覆盖 file/directory、dependency、媒体、Canvas、WebGL/WebGL2、Live2D、WASM、iframe、持久化存储、音频、指针输入和动态画面。最新隔离运行结果为 **10 个 A，平均 97.9，证据覆盖 94.3%，矩阵门禁通过**。另外新增 5 个作者公开源码样本的独立门，覆盖属性密集、Worker、音频频谱、约 33 MB 生成脚本和复杂 WebGL 动画；结果为 **5 个 A，平均 98.8，证据覆盖 94.3%，外部矩阵门禁通过**。
+当前固定矩阵包含 10 个真实 Workshop 样本，覆盖 file/directory、dependency、媒体、Canvas、WebGL/WebGL2、Live2D、WASM、iframe、持久化存储、音频、指针输入和动态画面。最新隔离运行结果为 **10 个 A，平均 97.9，证据覆盖 94.3%，矩阵门禁通过**。另外 5 个作者公开源码样本的独立门覆盖属性密集、Worker、音频频谱、约 33 MB 生成脚本和复杂 WebGL 动画；其中 `1396475780` 的大型脚本还验证了 Service Worker 静态识别，结果为 **5 个 A，平均 98.8，证据覆盖 94.3%**；3 个 Steam CDN 代表样本覆盖响应式 Canvas、手工三视口 WebGL 和 CoinGecko 实时数据，结果为 **3 个 A，平均 98.0，证据覆盖 90.3%**。
 
-当前本机 34 个 Web 样本已固化为完整基线。采用提交 `3a5ef15` 与 `3b69614` 后最终 Debug 构建运行的最新长批次为 **34 个 A，平均 98.2，证据覆盖 93.3%，完整门通过**。此前 `3763370103` 的失败已纠正归因：根因是 Google Fonts 在境外网络不可达或代理失效时同步阻塞启动，不是 `mwx-local` scheme task 未交接；现在远程样式会先降级、再限界重试，本轮同一长批次中该样本为 98 / A。音频生命周期序列 `audio -> non-audio -> audio -> stop` 也通过：监听需求分别触发采集启动、停止、重启和最终释放，3/3 `host.ready`、3/3 旧 `WKWebView` 释放，最终宿主状态为 0。
+当前本机 34 个 Web 样本已固化为完整基线。采用本轮最终 Debug 构建运行的最新长批次为 **34 个 A，平均 98.2，证据覆盖 93.3%，完整门通过**。此前 `3763370103` 的失败已纠正归因：根因是 Google Fonts 在境外网络不可达或代理失效时同步阻塞启动，不是 `mwx-local` scheme task 未交接；现在远程样式会先降级、再限界重试，本轮同一长批次中该样本为 98 / A。音频生命周期序列 `audio -> non-audio -> audio -> stop` 也通过：监听需求分别触发采集启动、停止、重启和最终释放，3/3 `host.ready`、3/3 旧 `WKWebView` 释放，最终宿主状态为 0。
 
-Web 目前没有已确认的宿主 P0 阻断，当前 34+5 已知样本的功能兼容主链和系统音频到 JS 主链可以视为闭环，但仍不能称为发布级“最终完全闭环”。尚缺系统状态/设备变化矩阵、性能和长期运行预算、真实文件授权 UI 回归，以及 CI/发布流程接入。按本文八项能力门重算，当前工程成熟度约为 **89/100**。剩余 11 分不是 11% 兼容代码或剩余工时；工作主要集中在 3 个验证和产品化工作包，而不是继续堆兼容脚本。
+Web 目前没有已确认的宿主 P0 阻断，当前 34+5+3 已知样本的功能兼容主链和系统音频到 JS 主链可以视为闭环，但仍不能称为发布级“最终完全闭环”。尚缺系统状态/设备变化矩阵、性能和长期运行预算、真实文件授权 UI 回归，以及 CI/发布流程接入。按本文八项能力门重算，当前工程成熟度约为 **89/100**。剩余 11 分不是 11% 兼容代码或剩余工时；工作主要集中在 3 个验证和产品化工作包，而不是继续堆兼容脚本。
 
 ### Scene
 
@@ -30,12 +30,13 @@ Scene 已建立清晰的独立模块、PKGV 读取、受控缓存、typed interp
 2. [Web 壁纸运行能力评测标准](../web/web-wallpaper-benchmark-standard.md)。
 3. [Web 样本 handoff](../web/regression/WEB_SAMPLE_HANDOFF_2026-06-19.md) 中尚未关闭的问题。
 4. [Scene Runtime 技术设计](../scene/scene-runtime-design-2026-05-15.md) 中声明的当前实现边界。
-5. 2026-07-20 对当前 Debug App 的 10 项固定矩阵、5 项外部矩阵、34 项全量扫描和三段生命周期隔离运行结果。
+5. 2026-07-20 对当前 Debug App 的 10 项固定矩阵、5 项作者源码外部矩阵、3 项 Steam CDN 代表矩阵、34 项全量扫描和三段生命周期隔离运行结果。
 6. [Web 外部代表样本基线](../web/regression/WEB_EXTERNAL_SAMPLE_BASELINE_2026-07-20.md) 中的来源、revision、能力覆盖和证据边界。
-7. 提交 `3a5ef15` 的远程字体硬失败恢复、慢响应、iframe、HTTP HEAD/Range 和 34 项完整门报告。
-8. 提交 `3b69614` 的纯信号测试、受控 `afplay` 双声道频率测试、音频需求生命周期、10 项固定门和 34 项完整门报告。
+7. [Web Steam 代表样本基线](../web/regression/WEB_STEAM_REPRESENTATIVE_BASELINE_2026-07-20.md) 中的 Steam CDN 快照、响应式/多视口/联网能力和证据边界。
+8. 提交 `3a5ef15` 的远程字体硬失败恢复、慢响应、iframe、HTTP HEAD/Range 和 34 项完整门报告。
+9. 提交 `3b69614` 的纯信号测试、受控 `afplay` 双声道频率测试、音频需求生命周期、10 项固定门和 34 项完整门报告。
 
-本轮本机最终报告快照保存在 `.codex/web-closure-final-20260720/`，分为 `remote-font`、`audio-real`、`audio-lifecycle`、`fixed-matrix`、`external-matrix` 和 `full-matrix`。该目录被 Git 忽略，只作为本地复核证据保留到分支合并，不替代仓库内的矩阵定义和生产测试。
+前序专项报告保存在 `.codex/web-closure-final-20260720/`；本轮最终作者源码、Steam CDN 和 34 项完整门报告分别保存在 `.codex/web-external-final-20260720/results/`、`.codex/web-steam-final-20260720/results/` 和 `.codex/web-full-final-20260720/results/`，Steam 样本副本保存在 `.codex/web-steam-representative-samples-20260720/`。这些目录被 Git 忽略，只作为本地复核证据保留到分支合并，不替代仓库内的矩阵定义和生产测试。
 
 本次 Web 固定矩阵结果：
 
@@ -59,8 +60,16 @@ Scene 已建立清晰的独立模块、PKGV 读取、受控缓存、typed interp
 | `1748506393` | WebGL2、35 项属性、音频、指针 | 100 / A | 95.5% | 主动音频和持续流体动画通过 |
 | `1396475780` | 174 项属性、WASM、Worker、音频 | 100 / A | 95.5% | production 构建、粒子画面和动画通过 |
 | `2014502586` | WebGL 后处理、Worker、音频 | 100 / A | 95.5% | Canvas/窗口合成画面和运动证据通过 |
-| `2119347960` | Canvas、约 33 MB 脚本、FPS | 96 / A | 90.3% | 静态分析限界后 `runtime.profile` 到 `host.ready` 为 0.536 秒 |
+| `2119347960` | Canvas、约 33 MB 脚本、FPS | 96 / A | 90.3% | Service Worker 补扫去重并限制为单文件 1 MiB 后，进程口径 `host.ready` 为 6.5 秒；交互和动画通过 |
 | `2553306714` | 74 项属性、WebGL、指针 | 98 / A | 94.8% | 属性、指针和持续动画通过 |
+
+新增 Steam CDN 代表矩阵结果：
+
+| Workshop ID | 代表能力 | 得分/等级 | Evidence coverage | 结果说明 |
+| --- | --- | ---: | ---: | --- |
+| `3733483918` | Canvas、属性、DPR、响应式布局 | 98 / A | 90.3% | 三源画面、交互和持续动画通过；不把标题中的 Multimonitor 当作真实多屏证据 |
+| `3765959388` | WebGL、70 多项属性、三视口/三相机、FPS | 98 / A | 90.3% | loopback origin、复杂画面、交互和动画通过；仍需真实多屏验证 |
+| `3764966764` | Canvas、外部 fetch、实时数据 | 98 / A | 90.3% | CoinGecko 数据在当前网络/代理下成功显示；未验证断网/恢复 |
 
 当前 34 样本全量扫描的例外项：
 
@@ -74,7 +83,7 @@ Scene 已建立清晰的独立模块、PKGV 读取、受控缓存、typed interp
 
 本次没有得到以下证据：
 
-- 34 个本机样本和 5 个外部作者源码样本只代表 2026-07-20 当前快照，不代表所有公开 Workshop Web 壁纸，也不是未来新增样本的自动成功率。
+- 34 个本机样本、5 个外部作者源码样本和 3 个 Steam CDN 代表样本只代表 2026-07-20 当前快照，不代表所有公开 Workshop Web 壁纸，也不是未来新增样本的自动成功率。
 - 34 项完整基线已有固定清单、能力标签、允许例外和失败退出条件，但尚未接入 CI 或发布 checklist；新增本机样本也不会自动进入清单。
 - 外部 5 项来自作者公开源码的固定 revision，不是 Steam CDN 原始归档；第三方构建产物没有提交到仓库，因此它们是可选独立门，不是默认门的隐式依赖。
 - Debug 音频 fixture 只用于确定性桥接门。受控 `afplay` 已证明系统采集到 JS 的主频、幅度和左右声道相关性，但本机当时仍有其他后台声音，未形成“系统绝对静音”实机证据，也未自动判定最终画面的逐帧音频相关性。
@@ -158,7 +167,7 @@ benchmark 现在要求像素统计、DOM 状态和 pointer/click/drag/wheel 注�
 
 固定矩阵由 [web_wallpaper_sample_matrix.json](../../script/web_wallpaper_sample_matrix.json) 定义。每个样本有能力标签、最低等级和最低 coverage，批次还限制平均分、平均 coverage 和关键短板。矩阵自带 12 秒最低观察窗，避免 Live2D 等延迟首帧样本被过早终止。
 
-当前 34 样本已固化为 [web_wallpaper_full_baseline.json](../../script/web_wallpaper_full_baseline.json)，外部 5 样本由 [web_wallpaper_external_sample_matrix.json](../../script/web_wallpaper_external_sample_matrix.json) 定义。固定矩阵仍是公共 runtime 改动的快速门，完整基线用于高影响改动和发布候选，外部门用于扩展能力验证。剩余风险是门禁尚未接入 CI/发布流程，且 Service Worker、Shadow DOM、多屏 scale factor、外部网络变化等能力没有形成独立样本门。
+当前 34 样本已固化为 [web_wallpaper_full_baseline.json](../../script/web_wallpaper_full_baseline.json)，外部 5 样本由 [web_wallpaper_external_sample_matrix.json](../../script/web_wallpaper_external_sample_matrix.json) 定义，Steam CDN 3 样本由 [web_wallpaper_steam_representative_sample_matrix.json](../../script/web_wallpaper_steam_representative_sample_matrix.json) 定义。固定矩阵仍是公共 runtime 改动的快速门，完整基线用于高影响改动和发布候选，外部门用于扩展能力验证。大型脚本 Service Worker 静态识别已修复并由缓存版本 14 验证；补扫采用 64 KiB 分块匹配、单文件 1 MiB 上限，验证报告会复用描述符摘要，避免大批生成脚本重复拖慢冷启动。但 `1396475780` 在 Wallpaper Engine 分支实际注册数为 0；因此 Shadow DOM、Service Worker 真实注册、真实多屏 scale factor、外部网络失败/恢复等能力仍没有形成独立行为门。
 
 #### 部分关闭：切换、停止和资源释放
 
@@ -174,13 +183,13 @@ benchmark 现在要求像素统计、DOM 状态和 pointer/click/drag/wheel 注�
 
 #### P1：性能和长期稳定性预算尚未建立
 
-需要记录首个 `host.ready`、可视首帧、稳定 CPU/GPU、App 与 WebContent 内存、音频采集负载、暂停功耗和缓存增长。大体积静态分析已限制为每个文件最多 128 KiB 的首尾窗口，约 33 MB 生成脚本样本的宿主准备耗时已从约 63 秒降到 0.536 秒；但单次优化和释放证据仍没有证明 30 分钟交互运行和 2 小时 soak 不持续增长。
+需要记录首个 `host.ready`、可视首帧、稳定 CPU/GPU、App 与 WebContent 内存、音频采集负载、暂停功耗和缓存增长。常规大体积静态分析限制为每个文件最多 128 KiB 的首尾窗口；Service Worker 诊断补扫限制为单文件 1 MiB 并使用分块搜索。约 33 MB 生成脚本样本的最终进程口径 `host.ready` 为 6.5 秒，已通过 18 秒外部门，但仍有性能提醒；单次优化和释放证据也没有证明 30 分钟交互运行和 2 小时 soak 不持续增长。
 
 验收标准：建立单屏和双屏基线；暂停后 CPU/GPU 明显下降；30 分钟和 2 小时曲线无单调增长；运行中 WebContent 恢复次数受控；超预算报告必须包含样本、profile 和进程级数据。
 
 #### 部分关闭：全样本门禁已建立，尚未接入发布流程
 
-2026-07-20 已对当前 34 个本机样本建立固定清单、能力标签、已知样本例外和失败退出条件，并增加 5 个外部代表样本的独立门。固定矩阵用于每次公共 runtime 改动；涉及 parser、origin、资源、属性、缓存签名、音频或评分规则的改动，以及发布候选版本，再运行完整门。本轮最终 34 项长批次为 34A 且门禁通过。下一步是把三级门禁接入 CI/发布 checklist，并规定样本新增、删除和例外复审流程；仍不能用平均分或失败项单独重跑通过替代批次关键短板判断。
+2026-07-20 已对当前 34 个本机样本建立固定清单、能力标签、已知样本例外和失败退出条件，并增加 5 个作者源码样本和 3 个 Steam CDN 代表样本的独立门。固定矩阵用于每次公共 runtime 改动；涉及 parser、origin、资源、属性、缓存签名、音频或评分规则的改动，以及发布候选版本，再运行完整门。本轮最终结果为作者源码 5A、Steam CDN 3A、完整基线 34A，三个批次门均通过。下一步是把这些门禁接入发布 checklist，并规定样本新增、删除和例外复审流程；仍不能用平均分或失败项单独重跑通过替代批次关键短板判断。
 
 #### P2：正式宿主契约和发布流程尚未收口
 
@@ -194,7 +203,7 @@ benchmark 现在要求像素统计、DOM 状态和 pointer/click/drag/wheel 注�
 
 | 能力门 | 权重 | 当前得分 | 说明 |
 | --- | ---: | ---: | --- |
-| 启动、分类与资源主链 | 20 | 20 | 34+5 已知样本可运行；双 origin、资源隔离、HTTP 语义、纹理 WebGL 和远程字体失败恢复已验证 |
+| 启动、分类与资源主链 | 20 | 20 | 34+5+3 已知样本可运行；双 origin、资源隔离、HTTP 语义、纹理 WebGL 和远程字体失败恢复已验证 |
 | 属性与持久化 | 15 | 14 | file/directory、颜色和错误隔离已闭环；真实选择器跨重启仍是人工回归 |
 | 媒体与音频 | 10 | 9 | signed stereo 64+64、真实声音相关性和按需生命周期已验证；设备切换、系统静音和睡眠恢复未完成 |
 | 输入与交互 | 10 | 9 | 原生指针转发和自动 pointer/click/drag/wheel 证据已进入门禁 |
@@ -210,14 +219,14 @@ benchmark 现在要求像素统计、DOM 状态和 pointer/click/drag/wheel 注�
 
 1. **系统生命周期与异常恢复**：覆盖睡眠、锁屏、Space、屏幕热插拔、runtime 互切、一般网络/系统代理变化、音频设备变化和连续崩溃；不得以静默重试掩盖首轮失败。
 2. **性能与长期运行门禁**：首帧、CPU/GPU、内存、功耗、缓存增长、30 分钟交互与 2 小时 soak。
-3. **产品与发布闭环**：维护 34+5 样本、revision 和允许例外；完成真实文件授权的选择、切换、重启和清除；收口 placeholder/harness 边界，把矩阵、生命周期、性能和 UI 回归纳入发布验收。
+3. **产品与发布闭环**：维护 34+5+3 样本、revision 和允许例外；完成真实文件授权的选择、切换、重启和清除；收口 placeholder/harness 边界，把矩阵、生命周期、性能和 UI 回归纳入发布验收。
 
 工作包 1、2 完成前，不能称为系统稳定性闭环；工作包 3 完成前，文件授权产品链、样本扩展机制和发布流程仍不是持续兼容承诺。
 
 ### 4.3 推荐完成顺序
 
 ```text
-已完成：文件属性 -> 三源视觉/动态证据 -> 远程字体失败恢复 -> signed stereo 真实音频 -> 固定/外部/34 项完整门 -> 按需采集与 stop 释放
+已完成：文件属性 -> 三源视觉/动态证据 -> 远程字体失败恢复 -> signed stereo 真实音频 -> 固定/作者源码/Steam CDN/34 项完整门 -> 按需采集与 stop 释放
 下一步：系统状态、设备变化和 runtime 互切矩阵
   -> 性能、泄漏和功耗预算
   -> 基线维护、文件授权回归、正式宿主与发布门禁
@@ -276,7 +285,20 @@ python3 script/web_wallpaper_benchmark.py \
   --screenshot
 ```
 
-`<isolated-workshop-root>` 和 `<external-sample-root>` 必须是只用于测试的副本，包含 `Web/<id>` 和依赖目录；不得把真实 `~/Movies/MyWallpaperX/创意工坊` 直接作为 runtime root。外部样本的来源、revision 和准备方式见 [Web 外部代表样本基线](../web/regression/WEB_EXTERNAL_SAMPLE_BASELINE_2026-07-20.md)。
+Steam CDN 3 样本能力门：
+
+```bash
+python3 script/web_wallpaper_benchmark.py \
+  --app .codex/DerivedData/Build/Products/Debug/MyWallpaperX.app/Contents/MacOS/MyWallpaperX \
+  --workshop-root <steam-sample-root>/Web \
+  --runtime-workshop-root <steam-sample-root> \
+  --runtime-home <temporary-home> \
+  --matrix script/web_wallpaper_steam_representative_sample_matrix.json \
+  --duration 20 \
+  --screenshot
+```
+
+`<isolated-workshop-root>`、`<external-sample-root>` 和 `<steam-sample-root>` 必须是只用于测试的副本，包含 `Web/<id>` 和依赖目录；不得把真实 `~/Movies/MyWallpaperX/创意工坊` 直接作为 runtime root。外部样本的来源、revision 和准备方式见 [Web 外部代表样本基线](../web/regression/WEB_EXTERNAL_SAMPLE_BASELINE_2026-07-20.md)，Steam CDN 快照见 [Web Steam 代表样本基线](../web/regression/WEB_STEAM_REPRESENTATIVE_BASELINE_2026-07-20.md)。
 
 ## 5. Scene 当前实现状况
 
@@ -371,7 +393,7 @@ descriptor 能识别 image、particle、text、container，但 renderer 当前�
 
 - 已固定 10 个代表样本并加入能力标签、最低等级、最低 coverage 和批次禁用短板。
 - benchmark 已增加 WebView/Canvas/当前进程窗口视觉像素、同源运动、DOM、主动音频和自动 pointer/click/drag/wheel 断言。
-- 当前固定门结果：平均 97.9、coverage 94.3%、10A；外部能力门结果：平均 98.8、coverage 94.3%、5A；完整门结果：平均 98.2、coverage 93.3%、34A。
+- 当前固定门结果：平均 97.9、coverage 94.3%、10A；作者源码能力门结果：平均 98.8、coverage 94.3%、5A；Steam CDN 代表门结果：平均 98.0、coverage 90.3%、3A；完整门结果：平均 98.2、coverage 93.3%、34A。
 - 音频生产链已按 Wallpaper Engine 契约输出 signed stereo 64+64 布局，受控系统音源验证频率、幅度和声道，Debug fixture 只用于确定性桥接门。
 - coverage 未设为 95% 的原因是部分样本没有媒体节点或特定能力事件，不能用伪造事件抬高覆盖率；单样本关键门禁优先于平均 coverage。
 
@@ -384,7 +406,7 @@ descriptor 能识别 image、particle、text、container，但 renderer 当前�
 
 ### M4：Web 发布闭环（进行中）
 
-- 已建立当前 34 样本完整基线及 5 样本外部能力门；后续维护样本、源码 revision 与例外复审。
+- 已建立当前 34 样本完整基线、5 样本作者源码能力门和 3 样本 Steam CDN 代表门；后续维护样本、源码 revision/CDN 更新时间与例外复审。
 - 已完成可控双声道真实音频到 JS bin 的频率、幅度和声道回归；后续补设备切换、真正系统静音、睡眠恢复及最终画面时间对齐。
 - 自动化或固定执行真实文件授权的选择/恢复/清除 UI 回归。
 - 将固定矩阵、生命周期和性能报告接入发布 checklist/CI。
@@ -398,6 +420,6 @@ descriptor 能识别 image、particle、text、container，但 renderer 当前�
 
 ## 8. 最终判断
 
-Web 的运行主链已从“基本可用”推进到“有固定、外部、完整三层兼容门、远程网络降级门、真实音频证据和释放门”。10 项固定门、5 项外部门和 34 项完整门当前全绿；Google Fonts 在国内无直连或代理失效时不再阻塞启动，Web 音频也已从重复的桌面假波形改为按需 signed stereo FFT。因此现在可以声明“当前 34+5 已知样本功能兼容闭环，Web 音频宿主主链闭环”，仍不能声明“发布级最终完全闭环”或“以后所有样本都会成功”。后续不应继续以新增样本特判为主，而应集中完成系统状态/设备变化、长期资源预算、文件授权产品回归和发布流程接入。当前专用 WKWebView 宿主、受控资源协议、按需 loopback 和结构化诊断路线应继续保留，不应改回宽权限 `file://` 或引入重复宿主。
+Web 的运行主链已从“基本可用”推进到“有固定、作者源码、Steam CDN、完整四层兼容门、远程网络降级门、真实音频证据和释放门”。10 项固定门、5 项作者源码门、3 项 Steam CDN 门和 34 项完整门当前全绿；Google Fonts 在国内无直连或代理失效时不再阻塞启动，Web 音频也已从重复的桌面假波形改为按需 signed stereo FFT。因此现在可以声明“当前 34+5+3 已知样本功能兼容闭环，Web 音频宿主主链闭环”，仍不能声明“发布级最终完全闭环”或“以后所有样本都会成功”。后续不应继续以新增样本特判为主，而应集中完成系统状态/设备变化、长期资源预算、文件授权产品回归和发布流程接入。当前专用 WKWebView 宿主、受控资源协议、按需 loopback 和结构化诊断路线应继续保留，不应改回宽权限 `file://` 或引入重复宿主。
 
 Scene 的情况相反：基础架构成立，但运行能力仍是明确子集。要么把 Scene Lite 的范围、体验和质量做好，要么投入一个来源清晰、可测试的兼容渲染运行时；继续增加样本硬编码和手写视觉替身不会形成最终兼容闭环。

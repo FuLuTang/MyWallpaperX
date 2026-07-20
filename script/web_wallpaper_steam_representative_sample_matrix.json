@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "name": "web-runtime-steam-representative-v1",
+  "minimum_sample_duration_seconds": 20,
+  "gates": {
+    "minimum_average_score": 95,
+    "minimum_average_coverage": 90,
+    "forbidden_shortfalls": [
+      "launch",
+      "host_runtime",
+      "navigation",
+      "resource_mapping",
+      "properties",
+      "interaction",
+      "visual_output",
+      "performance",
+      "animation"
+    ]
+  },
+  "samples": [
+    {
+      "id": "3733483918",
+      "title": "Mindscape Minimalist - Customizable and Multimonitor",
+      "capabilities": [
+        "canvas",
+        "properties",
+        "device-pixel-ratio",
+        "responsive-layout",
+        "animation"
+      ],
+      "minimum_grade": "A",
+      "minimum_coverage": 90
+    },
+    {
+      "id": "3765959388",
+      "title": "Out There",
+      "capabilities": [
+        "webgl",
+        "property-dense",
+        "multi-viewport-layout",
+        "loopback-origin",
+        "general-fps",
+        "animation"
+      ],
+      "minimum_grade": "A",
+      "minimum_coverage": 90
+    },
+    {
+      "id": "3764966764",
+      "title": "ADA Cardano by SzaboBeatz",
+      "capabilities": [
+        "canvas",
+        "external-fetch",
+        "live-data",
+        "responsive-layout",
+        "animation"
+      ],
+      "minimum_grade": "A",
+      "minimum_coverage": 90
+    }
+  ]
+}

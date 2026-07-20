@@ -2,9 +2,9 @@
 
 ## 1. 目的与结论
 
-这组基线用于补充本机已有 10 项代表矩阵和 34 项完整基线，重点覆盖属性密集、WebGL2、WASM、Worker、音频频谱、大体积生成脚本和持续动画的组合场景。
+这组基线用于补充本机已有 10 项代表矩阵和 34 项完整基线，重点覆盖属性密集、WebGL2、WASM、Worker、音频频谱、大体积生成脚本和持续动画的组合场景；其中 `1396475780` 还包含一个浏览器独立运行分支的 Service Worker helper。
 
-2026-07-20 使用提交 `3b69614` 后的最终 Debug App 在隔离 Workshop 根重跑，结果为：
+2026-07-20 使用本轮最终 Debug App 在隔离 Workshop 根重跑，结果为：
 
 - 5/5 可运行，5 个 A；
 - 平均得分 98.8，平均 evidence coverage 94.3%；
@@ -34,7 +34,7 @@ AudiOrbits 的作者 production webpack 配置要求本地 HTTPS 证书，准备
 | ID | 主要能力组合 | 单项门 |
 | --- | --- | --- |
 | `1748506393` | WebGL2、35 项属性、音频频谱、指针、持续流体动画 | A，coverage >= 95% |
-| `1396475780` | 174 项属性、WASM、Worker、WebGL、音频频谱、持续粒子动画 | A，coverage >= 95% |
+| `1396475780` | 174 项属性、WASM、Worker、WebGL、音频频谱、持续粒子动画；另含独立浏览器 Service Worker helper | A，coverage >= 95% |
 | `2014502586` | WebGL 后处理、Worker、音频频谱、持续墨迹动画 | A，coverage >= 95% |
 | `2119347960` | Canvas、约 33 MB 生成脚本、general properties、FPS、调色板循环动画 | A，coverage >= 90% |
 | `2553306714` | 74 项属性、WebGL、指针、general properties、持续动画 | A，coverage >= 90% |
@@ -43,14 +43,14 @@ AudiOrbits 的作者 production webpack 配置要求本地 HTTPS 证书，准备
 
 ## 4. 最终结果
 
-本轮最终报告目录：`/private/tmp/mwx-web-audio-external-report`，并保留副本到 `.codex/web-closure-final-20260720/external-matrix/`。它们是本机证据，不属于版本控制资产。
+本轮最终报告目录：`.codex/web-external-final-20260720/results/`。它是被 Git 忽略的本机证据，保留到分支合并，不属于版本控制资产。
 
 | ID | 得分/等级 | Coverage | 视觉快照 | 结果 |
 | --- | ---: | ---: | ---: | --- |
 | `1748506393` | 100 / A | 95.5% | 6 | 音频监听、128-bin 分发、频谱变化、指针和三源动态证据通过 |
-| `1396475780` | 100 / A | 95.5% | 6 | WASM/Worker、174 项属性、音频和动态证据通过 |
+| `1396475780` | 100 / A | 95.5% | 6 | WASM/Worker、174 项属性、音频和动态证据通过；静态分析识别大脚本中的 `navigator.serviceWorker.register`，但 Wallpaper Engine 分支主动 Standby，运行时注册数为 0 |
 | `2014502586` | 100 / A | 95.5% | 6 | WebView 快照偶发黑屏时，Canvas 和 ScreenCaptureKit 窗口合成证据确认画面与运动 |
-| `2119347960` | 96 / A | 90.3% | 6 | 大脚本分析已限界；`runtime.profile` 到 `host.ready` 为 0.536 秒。进程冷启动口径 6.7 秒仍记 `performance` 提醒 |
+| `2119347960` | 96 / A | 90.3% | 6 | Service Worker 补扫去重并限制为单文件 1 MiB；进程口径 `host.ready` 为 6.5 秒，仍记 `performance` 提醒；交互和动画证据通过 |
 | `2553306714` | 98 / A | 94.8% | 6 | 属性、指针和动态通过；初始化前的 deferred side effect 被重放且未形成短板 |
 
 视觉门使用 WebView、页面 Canvas 和当前进程独立窗口三种来源。运动证据只比较同一来源的非空前后帧，避免 WebGL drawing buffer 被清空时把“变黑”误判为动画。
@@ -65,7 +65,11 @@ AudiOrbits 的作者 production webpack 配置要求本地 HTTPS 证书，准备
 
 这个 fixture 证明监听注册、64+64 布局、JS 桥接和样本消费链路，不单独证明系统音频采集相关性。生产链的 signed stereo FFT、受控系统音源和按需采集生命周期证据见 [Web 与 Scene 当前状况评估](../../reviews/web-scene-current-state-roadmap-2026-07-19.md)；设备切换、真正系统静音和睡眠恢复仍需单独验收，不能用本基线替代。
 
-## 6. 复现
+## 6. Service Worker 证据边界
+
+本轮修复了大型压缩脚本只扫描首尾窗口导致的漏检：`1396475780` 的分析缓存现在记录 `usesServiceWorkerRegistration=true`，缓存版本为 14。补扫使用 64 KiB 分块匹配、单文件 1 MiB 上限，并复用描述符摘要，既覆盖其 606 KiB 控制脚本中段信号，也避免 `2119347960` 的几十个生成脚本重复拖慢启动。实际 Debug 运行的 DOM 证据为 `serviceWorkerSupported=true`、`serviceWorkerRegistrationCount=0`；作者代码在检测到 Wallpaper Engine 宿主桥接后进入 Standby，Service Worker 注册只属于浏览器独立运行分支。因此当前结论是“静态识别正确、loopback 运行正确”，不是“宿主已通过 Service Worker 注册行为门”。后续要关闭这一项，应加入确定性 Web fixture 或找到在 Wallpaper Engine 分支确实执行注册的样本。
+
+## 7. 复现
 
 第三方测试包应准备到隔离目录 `<external-root>/Web/<id>`，不得直接使用或修改 `~/Movies/MyWallpaperX/创意工坊`。运行命令：
 
