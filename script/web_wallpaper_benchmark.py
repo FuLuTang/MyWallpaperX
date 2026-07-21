@@ -578,13 +578,18 @@ def score_sample(
     ]
     property_applied_events = [
         event
-        for event in property_events
+        for event in events
         if (
             event.type in {"properties.applied.compatible", "properties.applied.partial"}
             or (
                 event.type == "properties.applied"
                 and (match := re.search(r"\bcount=(\d+)\b", event.message)) is not None
                 and int(match.group(1)) > 0
+            )
+            or (
+                event.type == "evidence.dom"
+                and '"propertyAppliedToCurrentListener":true' in event.message
+                and '"propertyAppliedToCurrentPayload":true' in event.message
             )
         )
     ]
@@ -1694,6 +1699,40 @@ def run_self_test(args: argparse.Namespace) -> int:
         or "properties" not in missing_property_result.shortfall_categories
     ):
         print("Self-test failed: property evidence gate did not distinguish fixtures", file=sys.stderr)
+        return 1
+    dom_property_events = [
+        event for event in events if not event.type.startswith("properties.applied")
+    ] + [
+        DiagnosticEvent(
+            type="evidence.dom",
+            severity="info",
+            message=(
+                '{"propertyAppliedSignaturePresent":true,'
+                '"propertyAppliedToCurrentListener":true,'
+                '"propertyAppliedToCurrentPayload":true}'
+            ),
+            url=None,
+            line="fixture",
+        )
+    ]
+    dom_property_result = score_sample(
+        Sample(id="dom-property-fixture", capabilities=["properties"]),
+        dom_property_events,
+        metadata,
+        log_path,
+        screenshot_path=None,
+        web_snapshot_paths=[web_snapshot_path],
+        exit_code=-15,
+        duration_seconds=3.0,
+    )
+    dom_property_dimension = next(
+        dimension for dimension in dom_property_result.dimensions if dimension.name == "property_bridge"
+    )
+    if (
+        "properties" in dom_property_result.shortfall_categories
+        or dom_property_dimension.evidence != "strong"
+    ):
+        print("Self-test failed: applied DOM property signature was not accepted", file=sys.stderr)
         return 1
     non_property_result = score_sample(
         Sample(id="non-property-fixture"),
