@@ -153,7 +153,14 @@ final class DedicatedWebWallpaperHostPlaceholderAdapter: NSObject, WallpaperEngi
     }
 
     final class HostWindow: NSWindow {
-        override var canBecomeKey: Bool { false }
+        override var canBecomeKey: Bool {
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("--mwx-debug-web-evidence-dir") {
+                return true
+            }
+            #endif
+            return false
+        }
         override var canBecomeMain: Bool { false }
     }
 

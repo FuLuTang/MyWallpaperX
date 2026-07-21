@@ -18,7 +18,15 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
         let surface = makeSurface(for: screen, screenID: screenID)
         surfaces[screenID] = surface
         setTransientMouseCaptureEnabled(false, for: surface)
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--mwx-debug-web-evidence-dir") {
+            surface.window.makeKeyAndOrderFront(nil)
+        } else {
+            surface.window.orderFrontRegardless()
+        }
+        #else
         surface.window.orderFrontRegardless()
+        #endif
         surface.window.level = Self.webWindowLevel
         guard loadTrackedNavigation(
             on: surface,

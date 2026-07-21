@@ -110,7 +110,7 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
 
     func reassertSurfaceVisibilityAndRuntimeState(orderFront: Bool) {
         for surface in surfaces.values {
-            surface.window.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
+            surface.window.collectionBehavior = Self.webWindowCollectionBehavior
             surface.window.level = Self.webWindowLevel
             if orderFront || !surface.window.isVisible {
                 surface.window.orderFrontRegardless()

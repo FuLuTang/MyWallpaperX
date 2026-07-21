@@ -28,7 +28,7 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
         window.hasShadow = false
         window.hidesOnDeactivate = false
         window.level = Self.webWindowLevel
-        window.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
+        window.collectionBehavior = Self.webWindowCollectionBehavior
         let contentView = HostContentView(frame: window.frame)
         contentView.autoresizingMask = [.width, .height]
         contentView.wantsLayer = true
@@ -272,7 +272,23 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
     }
 
     static var webWindowLevel: NSWindow.Level {
-        NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopWindow)) + 1)
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--mwx-debug-web-evidence-dir") {
+            return .floating
+        }
+        #endif
+        return NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopWindow)) + 1)
+    }
+
+    static var webWindowCollectionBehavior: NSWindow.CollectionBehavior {
+        var behavior: NSWindow.CollectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--mwx-debug-web-evidence-dir") {
+            behavior.remove(.canJoinAllSpaces)
+            behavior.formUnion([.moveToActiveSpace, .fullScreenAuxiliary])
+        }
+        #endif
+        return behavior
     }
 
     func websiteDataStore(for request: WallpaperEngine.WebWallpaperLaunchRequest?, screenID: CGDirectDisplayID) -> WKWebsiteDataStore {

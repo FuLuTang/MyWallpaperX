@@ -104,6 +104,9 @@ enum DebugWebPlaybackRunner {
                 NSLog("MWX DEBUG PLAY: workshop item %@ precondition=isolated-root-required", itemID)
                 return
             }
+            if arguments.contains("--mwx-debug-web-evidence-dir") {
+                NSApp.activate(ignoringOtherApps: true)
+            }
             let service = SteamWorkshopService.shared
             NSLog("MWX DEBUG PLAY: using workshop root %@", service.libraryRootURL.path)
             service.reloadInstalledItems()

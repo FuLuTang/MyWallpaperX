@@ -185,7 +185,7 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
         setTransientMouseCaptureEnabled(false, for: surface)
         surface.schemeHandler.updateAdditionalReadableRoots(accessibleResourceURLs(from: request.propertiesJSON))
         surface.window.setFrame(screen.frame, display: true)
-        surface.window.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
+        surface.window.collectionBehavior = Self.webWindowCollectionBehavior
         surface.window.level = Self.webWindowLevel
         surface.window.orderFrontRegardless()
         applyGeneralProperties(to: surface.webView)
