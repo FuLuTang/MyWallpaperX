@@ -61,7 +61,7 @@
     {
       "id": "3696478440",
       "title": "Rio Tsukatsuki",
-      "capabilities": ["properties", "remote-font", "canvas"],
+      "capabilities": ["remote-font", "canvas"],
       "minimum_grade": "A",
       "minimum_coverage": 88
     },
@@ -127,7 +127,7 @@
     {
       "id": "3749492163",
       "title": "DubVisual",
-      "capabilities": ["webgl", "properties", "audio-spectrum"],
+      "capabilities": ["webgl", "audio-spectrum"],
       "minimum_grade": "A",
       "minimum_coverage": 88
     },
@@ -198,7 +198,7 @@
     {
       "id": "3761112434",
       "title": "YK7 Hero",
-      "capabilities": ["properties", "canvas", "pointer-input"],
+      "capabilities": ["canvas", "pointer-input"],
       "minimum_grade": "A",
       "minimum_coverage": 88
     },
@@ -233,7 +233,7 @@
     {
       "id": "3765121260",
       "title": "Fosters PC World of Tanks",
-      "capabilities": ["properties", "canvas"],
+      "capabilities": ["canvas"],
       "minimum_grade": "A",
       "minimum_coverage": 88
     },

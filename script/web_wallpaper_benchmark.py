@@ -624,7 +624,13 @@ def score_sample(
             score=max(0, property_score),
             weight=15,
             status="pass" if property_score >= 13 else "warn" if property_score >= 8 else "fail",
-            evidence="strong" if property_applied_events else "medium" if property_events else "weak",
+            evidence=(
+                "strong"
+                if property_applied_events
+                else "medium"
+                if property_events or not requires_user_properties
+                else "weak"
+            ),
             findings=property_findings,
         )
     )
@@ -1688,6 +1694,25 @@ def run_self_test(args: argparse.Namespace) -> int:
         or "properties" not in missing_property_result.shortfall_categories
     ):
         print("Self-test failed: property evidence gate did not distinguish fixtures", file=sys.stderr)
+        return 1
+    non_property_result = score_sample(
+        Sample(id="non-property-fixture"),
+        [event for event in events if not event.type.startswith("properties.applied")],
+        metadata,
+        log_path,
+        screenshot_path=None,
+        web_snapshot_paths=[web_snapshot_path],
+        exit_code=-15,
+        duration_seconds=3.0,
+    )
+    non_property_dimension = next(
+        dimension for dimension in non_property_result.dimensions if dimension.name == "property_bridge"
+    )
+    if (
+        "properties" in non_property_result.shortfall_categories
+        or non_property_dimension.evidence != "medium"
+    ):
+        print("Self-test failed: non-property fixture was penalized for missing application evidence", file=sys.stderr)
         return 1
     zero_property_events = [
         event for event in events if event.type != "properties.applied"
