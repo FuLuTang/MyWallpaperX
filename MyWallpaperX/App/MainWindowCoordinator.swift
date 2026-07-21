@@ -408,47 +408,16 @@ enum MainWindowCoordinator {
     static func configure(with wallpaperManager: WallpaperManager) {
         self.wallpaperManager = wallpaperManager
         guard observerTokens.isEmpty else { return }
-        observeOnlineVideoReadyToPlay()
-        observeSteamWorkshopVideoReadyToPlay()
+        observerTokens.append(ImportedVideoPlaybackObserver.make(
+            name: .onlineVideoReadyToPlay, context: .onlinePlayback, wallpaperManager: wallpaperManager
+        ))
+        observerTokens.append(ImportedVideoPlaybackObserver.make(
+            name: .steamWorkshopVideoReadyToPlay, context: .steamPlayback, wallpaperManager: wallpaperManager
+        ))
         observeSteamWorkshopWebWallpaperReadyToPlay()
         observeSteamWorkshopSceneReadyToRender()
         observeStaticImageWallpaperReadyToApply()
         observeSteamWorkshopModeChanges()
-    }
-
-    /// 监听在线库下载完成通知，中转给视频库执行静默导入并播放。
-    /// 在线库模块自身不依赖 WallpaperManager，通过此中转保持模块间零耦合。
-    private static func observeOnlineVideoReadyToPlay() {
-        let observer = NotificationCenter.default.addObserver(
-            forName: .onlineVideoReadyToPlay,
-            object: nil,
-            queue: .main
-        ) { notification in
-            guard let localURL = notification.userInfo?["localURL"] as? URL else { return }
-            wallpaperManager.processImportedVideos(
-                from: [localURL],
-                presentingIn: nil,
-                context: .onlinePlayback
-            )
-        }
-        observerTokens.append(observer)
-    }
-
-    /// 监听 Steam 下载页发出的本地视频播放请求，中转给视频库静默导入并播放。
-    private static func observeSteamWorkshopVideoReadyToPlay() {
-        let observer = NotificationCenter.default.addObserver(
-            forName: .steamWorkshopVideoReadyToPlay,
-            object: nil,
-            queue: .main
-        ) { notification in
-            guard let localURL = notification.userInfo?["localURL"] as? URL else { return }
-            wallpaperManager.processImportedVideos(
-                from: [localURL],
-                presentingIn: nil,
-                context: .steamPlayback
-            )
-        }
-        observerTokens.append(observer)
     }
 
     /// 监听 Steam 下载页发出的 HTML 网页壁纸播放请求，中转到实验性的 Web 壁纸宿主。
@@ -465,21 +434,19 @@ enum MainWindowCoordinator {
             let recordID = notification.userInfo?["recordID"] as? String
             let language = notification.userInfo?["language"] as? String ?? "en-us"
             let runtimeProfile = notification.userInfo?["runtimeProfile"] as? WallpaperEngine.WebRuntimeProfile ?? .standard
-            DispatchQueue.main.async {
-                wallpaperManager.clearCurrentWallpaperReference()
-                wallpaperManager.activeWallpaperRuntime = .web
-                wallpaperManager.isPlaying = false
-                wallpaperManager.stopAutoSwitchTimer()
-                WallpaperEngine.shared.setWebWallpaper(
-                    entryURL: entryURL,
-                    rootURL: rootURL,
-                    propertiesJSON: propertiesJSON,
-                    recordID: recordID,
-                    language: language,
-                    runtimeProfile: runtimeProfile,
-                    multiDisplayEnabled: wallpaperManager.settings.multiDisplayEnabled
-                )
-            }
+            wallpaperManager.clearCurrentWallpaperReference()
+            wallpaperManager.activeWallpaperRuntime = .web
+            wallpaperManager.isPlaying = false
+            wallpaperManager.stopAutoSwitchTimer()
+            WallpaperEngine.shared.setWebWallpaper(
+                entryURL: entryURL,
+                rootURL: rootURL,
+                propertiesJSON: propertiesJSON,
+                recordID: recordID,
+                language: language,
+                runtimeProfile: runtimeProfile,
+                multiDisplayEnabled: wallpaperManager.settings.multiDisplayEnabled
+            )
         }
         observerTokens.append(observer)
     }

@@ -71,11 +71,11 @@ extension WallpaperManager {
             }
         }
     }
-
-    func processImportedVideos(from urls: [URL], presentingIn window: NSWindow?, context: ImportContext) {
+    func processImportedVideos(from urls: [URL], presentingIn window: NSWindow?, context: ImportContext,
+                               autoplayToken: ImportedVideoAutoplayGate.Token? = nil) {
         guard !urls.isEmpty else { return }
         let existingPathsSnapshot = Set(wallpapers.map { normalizedPath($0.path) })
-        let generation = beginImportPreparationRequest()
+        let generation = autoplayToken == nil ? beginImportPreparationRequest() : nil
 
         // 导入先做后台预处理，再回主线程应用结果，避免导入大批量文件时阻塞前台交互。
         let workItem = DispatchWorkItem { [weak self] in
@@ -89,11 +89,11 @@ extension WallpaperManager {
             }
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
-                guard self.isImportPreparationRequestCurrent(generation) else { return }
-                self.applyPreparedImportResult(prepared, presentingIn: window, context: context)
+                if let generation, !self.isImportPreparationRequestCurrent(generation) { return }
+                self.applyPreparedImportResult(prepared, presentingIn: window, context: context, autoplayToken: autoplayToken)
             }
         }
-        setImportPreparationWorkItem(workItem)
+        if autoplayToken == nil { setImportPreparationWorkItem(workItem) }
         importPreparationQueue.async(execute: workItem)
     }
 
@@ -211,7 +211,7 @@ extension WallpaperManager {
     private func prepareImportEntries(
         _ urls: [URL],
         existingPaths: Set<String>,
-        requestGeneration: UInt64
+        requestGeneration: UInt64?
     ) -> ImportPreparationResult? {
         // 分块 + 取消检查点：大批次导入要可中断，不能在单轮扫描里长时间占住后台队列。
         let chunkSize = 96
@@ -224,7 +224,7 @@ extension WallpaperManager {
 
         var start = 0
         while start < urls.count {
-            guard isImportPreparationRequestCurrent(requestGeneration) else { return nil }
+            if let requestGeneration, !isImportPreparationRequestCurrent(requestGeneration) { return nil }
             let end = min(start + chunkSize, urls.count)
             autoreleasepool {
                 for url in urls[start..<end] {
@@ -293,21 +293,20 @@ extension WallpaperManager {
     private func applyPreparedImportResult(
         _ prepared: ImportPreparationResult,
         presentingIn window: NSWindow?,
-        context: ImportContext
+        context: ImportContext, autoplayToken: ImportedVideoAutoplayGate.Token?
     ) {
         // 应用阶段只在主线程改模型，后台预处理结果不直接碰 @Published 属性。
         var counters = prepared.counters
+        var playableExistingPaths = prepared.existingPathsToLink
         var indexByPath: [String: Int] = [:]
         indexByPath.reserveCapacity(wallpapers.count + prepared.preparedImports.count)
         for index in wallpapers.indices {
             indexByPath[normalizedPath(wallpapers[index].path)] = index
         }
-
         var newWallpapers: [VideoWallpaper] = []
         newWallpapers.reserveCapacity(prepared.preparedImports.count)
         var insertedURLs: [URL] = []
         insertedURLs.reserveCapacity(prepared.preparedImports.count)
-
         for path in prepared.existingPathsToLink {
             guard let index = indexByPath[path] else {
                 counters.duplicate += 1
@@ -327,6 +326,7 @@ extension WallpaperManager {
                 } else {
                     counters.duplicate += 1
                 }
+                playableExistingPaths.append(entry.normalizedPath)
                 continue
             }
 
@@ -354,10 +354,10 @@ extension WallpaperManager {
         appendWallpapersInBatches(newWallpapers)
 
         // 在线库静默导入后立即播放：优先播放新导入的，已存在则从库中找
-        if context == .onlinePlayback || context == .steamPlayback {
+        if let autoplayToken, ImportedVideoAutoplayGate.shared.isCurrent(autoplayToken) {
             if let first = newWallpapers.first {
                 setAsWallpaper(first, userInitiated: true)
-            } else if let path = prepared.existingPathsToLink.first,
+            } else if let path = playableExistingPaths.first,
                       let existing = wallpapers.first(where: { normalizedPath($0.path) == path }) {
                 setAsWallpaper(existing, userInitiated: true)
             }

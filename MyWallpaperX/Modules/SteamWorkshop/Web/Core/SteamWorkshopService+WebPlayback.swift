@@ -79,11 +79,9 @@ extension SteamWorkshopService {
             downloadError = "没有找到可播放的视频文件。"
             return
         }
-        NotificationCenter.default.post(
-            name: .steamWorkshopVideoReadyToPlay,
-            object: nil,
-            userInfo: ["localURL": videoURL]
-        )
+        let autoplayToken = ImportedVideoAutoplayGate.shared.claim()
+        ImportedVideoPlaybackRequest(localURL: videoURL, autoplayToken: autoplayToken)
+            .post(name: .steamWorkshopVideoReadyToPlay)
         statusMessage = "已将 \(record.title) 发送到视频库并准备播放"
     }
 

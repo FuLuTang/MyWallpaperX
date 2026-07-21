@@ -6,7 +6,7 @@
     "WallpaperDaemonSources"
   ],
   "legacyFiles": {
-    "MyWallpaperX/App/MainWindowCoordinator.swift": 661,
+    "MyWallpaperX/App/MainWindowCoordinator.swift": 628,
     "MyWallpaperX/Core/SteamWorkshopScene/SceneMetalRenderer.swift": 698,
     "MyWallpaperX/Core/SteamWorkshopScene/SceneMetalView.swift": 423,
     "MyWallpaperX/Core/SteamWorkshopScene/SceneTextureLoader.swift": 436,
@@ -18,7 +18,7 @@
     "MyWallpaperX/Core/SteamWorkshopWeb/Host/DedicatedWebWallpaperHostPlaceholderAdapter+Lifecycle.swift": 481,
     "MyWallpaperX/Core/SteamWorkshopWeb/Host/DedicatedWebWallpaperHostPlaceholderAdapter+RuntimeBridge.swift": 687,
     "MyWallpaperX/Core/System/SystemMonitor.swift": 405,
-    "MyWallpaperX/Modules/OnlineLibrary/Core/OnlineLibraryService.swift": 538,
+    "MyWallpaperX/Modules/OnlineLibrary/Core/OnlineLibraryService.swift": 528,
     "MyWallpaperX/Modules/OnlineLibrary/Toolbar/OnlineLibraryToolbarController.swift": 866,
     "MyWallpaperX/Modules/OnlineLibrary/UI/AppKitOLBrowserItem.swift": 840,
     "MyWallpaperX/Modules/OnlineLibrary/UI/AppKitOLDownloadsGridView.swift": 884,

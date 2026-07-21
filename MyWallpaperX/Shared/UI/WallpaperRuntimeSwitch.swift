@@ -13,6 +13,7 @@ extension Notification.Name {
 
 @inline(__always)
 func postWallpaperRuntimeWillSwitch(to kind: WallpaperRuntimeKind) {
+    ImportedVideoAutoplayGate.shared.invalidate()
     NotificationCenter.default.post(
         name: .wallpaperRuntimeWillSwitch,
         object: nil,

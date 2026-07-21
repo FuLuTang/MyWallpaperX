@@ -237,8 +237,8 @@ final class OnlineLibraryService: ObservableObject {
     /// OL-04：最近下载完成的 item ID，供 Toast「设为壁纸」按钮使用
     @Published var lastDownloadedItemID: Int? = nil
     @Published private(set) var inspectedDownloadedItemID: Int? = nil
-    /// 下载中途点「设为壁纸」时记录的待播放 ID，下载完成后自动触发（OL-06）
-    private var pendingSetAfterDownload: Set<Int> = []
+    /// 下载中途点「设为壁纸」时保留原始请求身份，下载完成后仅允许最新意图播放（OL-06）
+    private let autoplayRequests = OnlineVideoAutoplayRequests()
 
     var selectedDownloadedItemIDForInspector: Int? {
         inspectedDownloadedItemID
@@ -278,7 +278,7 @@ final class OnlineLibraryService: ObservableObject {
 
     /// 仅下载到本地，不触发播放
     func download(item: OnlineLibraryVideoItem) {
-        startDownload(item: item, setAsWallpaperWhenDone: false)
+        startDownload(item: item)
     }
 
     /// 下载后设为壁纸：下载完成后发通知给 Shell 层（MainWindowCoordinator）中转，
@@ -287,34 +287,28 @@ final class OnlineLibraryService: ObservableObject {
     func downloadAndSet(item: OnlineLibraryVideoItem) {
         // OL-05：文件已在本地，直接发通知，无需重新下载
         if downloadedIDs.contains(item.id) {
-            postReadyToPlay(id: item.id)
+            postReadyToPlay(id: item.id, autoplayToken: ImportedVideoAutoplayGate.shared.claim())
             return
         }
-        // OL-06：正在下载中，记录待播放，下载完成后自动触发
-        if downloadingIDs.contains(item.id) {
-            pendingSetAfterDownload.insert(item.id)
-            return
-        }
-        pendingSetAfterDownload.insert(item.id)
-        startDownload(item: item, setAsWallpaperWhenDone: true)
+        autoplayRequests.request(for: item.id)
+        // OL-06：正在下载中时只替换请求身份，原任务完成后使用最新身份继续。
+        guard !downloadingIDs.contains(item.id) else { return }
+        startDownload(item: item)
     }
 
     /// OL-05：已下载文件直接设为壁纸（从本地路径发通知，无需重新下载）
-    private func postReadyToPlay(id: Int) {
+    private func postReadyToPlay(id: Int, autoplayToken: ImportedVideoAutoplayGate.Token) {
         let local = Self.downloadDirectory.appendingPathComponent("online_\(id).mp4")
         guard FileManager.default.fileExists(atPath: local.path) else {
             // 文件不存在（可能被外部删除），移出已下载集合
             downloadedIDs.remove(id)
             return
         }
-        NotificationCenter.default.post(
-            name: .onlineVideoReadyToPlay,
-            object: nil,
-            userInfo: ["localURL": local]
-        )
+        ImportedVideoPlaybackRequest(localURL: local, autoplayToken: autoplayToken)
+            .post(name: .onlineVideoReadyToPlay)
     }
 
-    private func startDownload(item: OnlineLibraryVideoItem, setAsWallpaperWhenDone: Bool) {
+    private func startDownload(item: OnlineLibraryVideoItem) {
         guard !downloadingIDs.contains(item.id), let url = item.bestVideoURL else { return }
         downloadingIDs.insert(item.id)
         downloadProgressByID[item.id] = 0
@@ -328,13 +322,9 @@ final class OnlineLibraryService: ObservableObject {
                 downloadingIDs.remove(item.id)
                 downloadProgressByID[item.id] = nil
                 downloadedIDs.insert(item.id)
-                if setAsWallpaperWhenDone || pendingSetAfterDownload.contains(item.id) {
-                    pendingSetAfterDownload.remove(item.id)
-                    NotificationCenter.default.post(
-                        name: .onlineVideoReadyToPlay,
-                        object: nil,
-                        userInfo: ["localURL": local]
-                    )
+                if let autoplayToken = autoplayRequests.complete(for: item.id) {
+                    ImportedVideoPlaybackRequest(localURL: local, autoplayToken: autoplayToken)
+                        .post(name: .onlineVideoReadyToPlay)
                 } else {
                     lastDownloadedItemID = item.id
                     downloadSuccessMessage = "已保存到 \"影片/MyWallpaperX/在线图库\""
@@ -342,7 +332,7 @@ final class OnlineLibraryService: ObservableObject {
             } catch {
                 downloadingIDs.remove(item.id)
                 downloadProgressByID[item.id] = nil
-                pendingSetAfterDownload.remove(item.id)
+                autoplayRequests.cancel(for: item.id)
                 downloadError = error.localizedDescription
             }
         }
@@ -435,7 +425,7 @@ final class OnlineLibraryService: ObservableObject {
 
     /// 从本地已下载文件直接设为壁纸（下载管理面板调用）
     func setLocalFileAsWallpaper(id: Int) {
-        postReadyToPlay(id: id)
+        postReadyToPlay(id: id, autoplayToken: ImportedVideoAutoplayGate.shared.claim())
     }
 
     /// OL-12：便利搜索方法，用当前状态填充缺省值，消除调用方重复构建 OnlineLibrarySearchParams
