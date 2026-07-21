@@ -77,6 +77,7 @@ extension WallpaperEngine {
     }
 
     struct WebWallpaperLaunchRequest {
+        let id: UUID
         let entryURL: URL
         let rootURL: URL
         let propertiesJSON: String?
@@ -85,6 +86,28 @@ extension WallpaperEngine {
         let language: String
         let runtimeProfile: WebRuntimeProfile
         let multiDisplayEnabled: Bool
+
+        init(
+            id: UUID = UUID(),
+            entryURL: URL,
+            rootURL: URL,
+            propertiesJSON: String?,
+            source: WebWallpaperLaunchSource,
+            recordID: String?,
+            language: String,
+            runtimeProfile: WebRuntimeProfile,
+            multiDisplayEnabled: Bool
+        ) {
+            self.id = id
+            self.entryURL = entryURL
+            self.rootURL = rootURL
+            self.propertiesJSON = propertiesJSON
+            self.source = source
+            self.recordID = recordID
+            self.language = language
+            self.runtimeProfile = runtimeProfile
+            self.multiDisplayEnabled = multiDisplayEnabled
+        }
     }
 
     struct WebWallpaperRuntimeState {
@@ -105,11 +128,11 @@ extension WallpaperEngine {
     }
 
     enum WebWallpaperHostEvent {
-        case accepted
-        case ready
-        case audioSpectrumDemandChanged(Bool)
-        case failed(message: String)
-        case stopped
+        case accepted(requestID: UUID)
+        case ready(requestID: UUID)
+        case audioSpectrumDemandChanged(Bool, requestID: UUID)
+        case failed(message: String, requestID: UUID)
+        case stopped(requestID: UUID)
     }
 
     protocol WebWallpaperHostAdapter: AnyObject {

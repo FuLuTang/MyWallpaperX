@@ -57,6 +57,7 @@ extension WallpaperManager {
             pauseWhenIdle: settings.pauseWhenIdle,
             idleTimeoutMinutes: settings.idleTimeoutMinutes
         )
+        isPlaying = WallpaperEngine.shared.isPlaying()
         lastAppliedEnginePauseSettings = EnginePauseSettingsSnapshot(settings: settings)
         WallpaperEngine.shared.setVolume(Float(settings.volume))
         applySystemAudioSpectrumToEngine()

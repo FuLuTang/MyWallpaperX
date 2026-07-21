@@ -253,26 +253,7 @@ class WallpaperManager: ObservableObject {
         }
         .store(in: &cancellables)
 
-        NotificationCenter.default.publisher(for: WallpaperEngine.playbackFailedNotification)
-            .sink { [weak self] notification in
-                guard let self,
-                      let videoPath = notification.userInfo?["videoPath"] as? String else {
-                    return
-                }
-                // 播放失败只走失败恢复路径，不在这里做其他状态修正，避免与自动切换互相覆盖。
-                self.handlePlaybackFailure(forPath: videoPath)
-            }
-            .store(in: &cancellables)
-
-        NotificationCenter.default.publisher(for: WallpaperEngine.playbackEndedNotification)
-            .sink { [weak self] notification in
-                guard let self,
-                      let videoPath = notification.userInfo?["videoPath"] as? String else {
-                    return
-                }
-                self.handlePlaybackEnded(forPath: videoPath)
-            }
-            .store(in: &cancellables)
+        observePlaybackEvents(storeIn: &cancellables)
 
         GlobalHotkeyManager.shared.update(with: settings)
         lastAppliedHotkeySettings = HotkeySettingsSnapshot(settings: settings)

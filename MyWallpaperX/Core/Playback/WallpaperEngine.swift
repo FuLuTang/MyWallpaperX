@@ -57,6 +57,7 @@ public final class WallpaperEngine: NSObject {
     var currentPlaybackContentKind: PlaybackContentKind?
     var currentWebPropertiesJSON: String?
     var currentWebRecordID: String?
+    var currentWebRequestID: UUID?
     var currentWebHostStrategy: WebWallpaperHostStrategy = .dedicatedHostPlaceholder
     var currentWebLaunchSource: WebWallpaperLaunchSource?
     var playbackIntentEpoch: UInt64 = 0
@@ -120,8 +121,12 @@ public final class WallpaperEngine: NSObject {
         super.init()
         lastObservedLowPowerMode = ProcessInfo.processInfo.isLowPowerModeEnabled
         dedicatedWebHostAdapter.eventHandler = { [weak self] event in
-            DispatchQueue.main.async {
+            if Thread.isMainThread {
                 self?.handleWebHostEvent(event)
+            } else {
+                DispatchQueue.main.async {
+                    self?.handleWebHostEvent(event)
+                }
             }
         }
         systemAudioSpectrumService = makeSystemAudioSpectrumService(barCount: WallpaperEngine.defaultSpectrumBarCount)
@@ -176,8 +181,10 @@ public final class WallpaperEngine: NSObject {
             setWebAudioSpectrumRequested(false)
             dispatchWebRuntimeCommand(.stop)
             currentContentPath = nil
+            currentWebPropertiesJSON = nil
             currentWebLaunchSource = nil
             currentWebRecordID = nil
+            currentWebRequestID = nil
             setPlaybackPausedState(false)
         }
 
@@ -279,7 +286,9 @@ public final class WallpaperEngine: NSObject {
         currentPlaybackContentKind = nil
         currentWebPropertiesJSON = nil
         currentWebRecordID = nil
+        currentWebRequestID = nil
         currentWebLaunchSource = nil
+        currentWallpaper = nil
     }
 
     public func cleanup() {
@@ -303,6 +312,7 @@ public final class WallpaperEngine: NSObject {
         currentPlaybackContentKind = nil
         currentWebPropertiesJSON = nil
         currentWebRecordID = nil
+        currentWebRequestID = nil
         currentWebLaunchSource = nil
     }
 

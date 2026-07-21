@@ -141,6 +141,11 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
     }
 
     func handleNavigationFailure(_ error: Error, webView: WKWebView) {
+        guard currentRequest != nil,
+              let screenID = screenID(for: webView),
+              surfaces[screenID]?.webView === webView else {
+            return
+        }
         let nsError = error as NSError
         if nsError.domain == NSURLErrorDomain,
            ignoredNavigationFailureCodes.contains(nsError.code) {
@@ -155,8 +160,7 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
             handleWebContentTermination(for: webView)
             return
         }
-        if let screenID = screenID(for: webView),
-           recoveringWebContentScreenIDs.contains(screenID) {
+        if recoveringWebContentScreenIDs.contains(screenID) {
             recordDiagnostic(
                 type: "webcontent.recovery.failed",
                 severity: .error,
@@ -169,7 +173,7 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
             type: "navigation.fail",
             severity: .error,
             message: error.localizedDescription,
-            screenID: screenID(for: webView),
+            screenID: screenID,
             url: webView.url?.absoluteString
         )
         failCurrentLaunch(message: error.localizedDescription)

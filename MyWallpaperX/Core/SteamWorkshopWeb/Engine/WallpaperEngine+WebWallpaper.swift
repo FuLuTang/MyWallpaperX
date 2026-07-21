@@ -4,6 +4,7 @@
 //
 
 import Foundation
+import QuartzCore
 
 extension WallpaperEngine {
     func setWebWallpaper(
@@ -121,6 +122,7 @@ extension WallpaperEngine {
             currentPlaybackContentKind = nil
             currentWebPropertiesJSON = nil
             currentWebRecordID = nil
+            currentWebRequestID = nil
             currentWebLaunchSource = nil
             setPlaybackPausedState(false)
         }
@@ -138,6 +140,8 @@ extension WallpaperEngine {
         }
         let runtimeState = webWallpaperRuntimeState()
         currentMultiDisplayEnabled = request.multiDisplayEnabled
+        currentWebRecordID = request.recordID
+        currentWebRequestID = request.id
         if currentPlaybackContentKind == .video {
             for displayID in Array(displaySessions.keys) {
                 terminateSession(for: displayID)
@@ -170,28 +174,45 @@ extension WallpaperEngine {
 
     func handleWebHostEvent(_ event: WebWallpaperHostEvent) {
         switch event {
-        case .accepted:
+        case let .accepted(requestID):
+            guard currentWebRequestID == requestID else { return }
             break
-        case .ready:
+        case let .ready(requestID):
+            guard currentWebRequestID == requestID else { return }
             lastFailureVideoPath = nil
             lastFailureAt = 0
-        case let .audioSpectrumDemandChanged(active):
+        case let .audioSpectrumDemandChanged(active, requestID):
+            guard currentWebRequestID == requestID else { return }
             setWebAudioSpectrumRequested(active)
-        case let .failed(message):
+        case let .failed(message, requestID):
+            guard currentPlaybackContentKind == .web,
+                  currentWebRequestID == requestID else { return }
+            let failedRecordID = currentWebRecordID
+            let failedPath = currentContentPath
+            beginPlaybackIntent()
             setWebAudioSpectrumRequested(false)
-            lastFailureVideoPath = currentContentPath
-            lastFailureAt = Date().timeIntervalSinceReferenceDate
+            lastFailureVideoPath = failedPath
+            lastFailureAt = CACurrentMediaTime()
+            currentWallpaper = nil
+            currentContentPath = nil
+            currentPlaybackContentKind = nil
+            currentWebPropertiesJSON = nil
+            currentWebRecordID = nil
+            currentWebRequestID = nil
+            currentWebLaunchSource = nil
             NotificationCenter.default.post(
                 name: Self.playbackFailedNotification,
                 object: nil,
                 userInfo: [
-                    "recordID": currentWebRecordID as Any,
-                    "path": currentContentPath as Any,
+                    "recordID": failedRecordID as Any,
+                    "path": failedPath as Any,
                     "message": message,
-                    "contentKind": PlaybackContentKind.web.rawValue
+                    "contentKind": PlaybackContentKind.web.rawValue,
+                    "requestID": requestID.uuidString
                 ]
             )
-        case .stopped:
+        case let .stopped(requestID):
+            guard currentWebRequestID == requestID else { return }
             setWebAudioSpectrumRequested(false)
         }
     }

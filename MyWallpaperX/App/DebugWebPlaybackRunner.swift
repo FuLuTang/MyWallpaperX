@@ -21,6 +21,7 @@ enum DebugWebPlaybackRunner {
             || arguments.contains("--mwx-debug-web-property-persistence-stage")
             || arguments.contains("--mwx-debug-web-space-lifecycle-sequence")
             || arguments.contains("--mwx-debug-web-runtime-switch-sequence")
+            || arguments.contains("--mwx-debug-web-failure-state-report")
     }
 
     private static var arguments: [String] {
@@ -61,6 +62,10 @@ enum DebugWebPlaybackRunner {
     }
 
     static func scheduleWebWorkshopRuntimeIfRequested() {
+        if DebugWebFailureStateRunner.scheduleIfRequested() {
+            return
+        }
+
         if DebugWebRuntimeSwitchRunner.scheduleIfRequested() {
             return
         }

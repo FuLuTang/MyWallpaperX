@@ -50,8 +50,8 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
             screenID: screenID,
             url: surfaces[screenID]?.webView.url?.absoluteString
         )
-        if wasActive != isActive {
-            eventHandler?(.audioSpectrumDemandChanged(isActive))
+        if wasActive != isActive, let requestID = currentRequest?.id {
+            eventHandler?(.audioSpectrumDemandChanged(isActive, requestID: requestID))
         }
     }
 
@@ -65,6 +65,8 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
             screenID: nil,
             url: nil
         )
-        eventHandler?(.audioSpectrumDemandChanged(false))
+        if let requestID = currentRequest?.id {
+            eventHandler?(.audioSpectrumDemandChanged(false, requestID: requestID))
+        }
     }
 }

@@ -8,14 +8,6 @@ import AppKit
 import WebKit
 
 extension DedicatedWebWallpaperHostPlaceholderAdapter {
-    func failCurrentLaunch(message: String) {
-        phase = .failed
-        teardownHostSurfaces()
-        removeLifecycleObservers()
-        currentRequest = nil
-        eventHandler?(.failed(message: message))
-    }
-
     func beginHostActivity() {
         guard hostActivityToken == nil else { return }
         hostActivityToken = ProcessInfo.processInfo.beginActivity(
@@ -62,7 +54,7 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
         deferredDirectorySyncWorkItem = nil
         stopAllDirectoryWatchers()
         stopDirectoryWatchTimer()
-        eventHandler?(.accepted)
+        eventHandler?(.accepted(requestID: request.id))
 
         let targetScreens = targetScreens(for: request)
         guard !targetScreens.isEmpty else {
@@ -116,6 +108,7 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
             return
         }
         let updatedRequest = WallpaperEngine.WebWallpaperLaunchRequest(
+            id: request.id,
             entryURL: request.entryURL,
             rootURL: request.rootURL,
             propertiesJSON: request.propertiesJSON,
@@ -245,6 +238,7 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
                 )
                 if let request = currentRequest {
                     currentRequest = WallpaperEngine.WebWallpaperLaunchRequest(
+                        id: request.id,
                         entryURL: request.entryURL,
                         rootURL: request.rootURL,
                         propertiesJSON: effectivePropertiesJSON,
@@ -259,6 +253,7 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
                 syncFetchAllDirectoryProperties(using: effectivePropertiesJSON)
                 forEachWebView { self.applyProperties(propertiesJSON, to: $0) }
             case .stop:
+                let requestID = currentRequest?.id
                 teardownHostSurfaces()
                 removeLifecycleObservers()
                 phase = .idle
@@ -271,7 +266,9 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
                     url: nil
                 )
                 currentRequest = nil
-                eventHandler?(.stopped)
+                if let requestID {
+                    eventHandler?(.stopped(requestID: requestID))
+                }
             case .pushAudioSpectrum:
                 break
             }
@@ -415,7 +412,9 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
         }
         recordDiagnostic(type: "host.ready", severity: .info, message: "ready", screenID: screenID, url: nil)
         phase = .ready
-        eventHandler?(.ready)
+        if let requestID = currentRequest?.id {
+            eventHandler?(.ready(requestID: requestID))
+        }
         scheduleDebugEvidenceIfNeeded()
     }
 

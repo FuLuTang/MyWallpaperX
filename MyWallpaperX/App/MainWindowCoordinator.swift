@@ -436,7 +436,6 @@ enum MainWindowCoordinator {
             let runtimeProfile = notification.userInfo?["runtimeProfile"] as? WallpaperEngine.WebRuntimeProfile ?? .standard
             wallpaperManager.clearCurrentWallpaperReference()
             wallpaperManager.activeWallpaperRuntime = .web
-            wallpaperManager.isPlaying = false
             wallpaperManager.stopAutoSwitchTimer()
             WallpaperEngine.shared.setWebWallpaper(
                 entryURL: entryURL,
@@ -447,6 +446,7 @@ enum MainWindowCoordinator {
                 runtimeProfile: runtimeProfile,
                 multiDisplayEnabled: wallpaperManager.settings.multiDisplayEnabled
             )
+            wallpaperManager.isPlaying = WallpaperEngine.shared.isPlaying()
         }
         observerTokens.append(observer)
     }
