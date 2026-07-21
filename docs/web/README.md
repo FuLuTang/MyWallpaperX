@@ -9,7 +9,7 @@
 - [regression/WEB_EXTERNAL_SAMPLE_BASELINE_2026-07-20.md](regression/WEB_EXTERNAL_SAMPLE_BASELINE_2026-07-20.md)：5 个公开作者源码样本的来源、构建、能力矩阵和证据边界。
 - [regression/WEB_STEAM_REPRESENTATIVE_BASELINE_2026-07-20.md](regression/WEB_STEAM_REPRESENTATIVE_BASELINE_2026-07-20.md)：3 个 Steam CDN 代表样本的下载快照、多视口/联网能力和证据边界。
 
-截至 2026-07-21，10 项独立偏好域固定门全绿，2026-07-20 构建的 5 项作者源码、3 项 Steam CDN 和 34 项完整门也全绿；后者早于当天的音频恢复、偏好隔离、属性持久化与 Space 修复，当前最终 HEAD 仍需刷新 34+5+3，不能混用证据。境外远程字体失败恢复、当前非沙盒发行链的 file/directory 跨重启/reset 服务链与真实 64+64 双声道系统音频到 JS 主链已闭环。音频分发边界已恢复旧样本依赖的兼容幅度响应，`884307090` 两种展示模式和 `1509243786` 的确定性/真实系统音源回归通过；重叠系统/显示器休眠、部分唤醒、锁屏/解锁、CoreAudio 配置失效重建、Space 通知路由、屏幕 burst 合并和 observer 释放门也已通过。自动 Space 门不冒充 Mission Control 实际切换或显示器热插拔；配置失效门不冒充 AirPods/HDMI 物理切换；文件门也不冒充 NSOpenPanel 点击或未来签名沙盒 security extension。runtime 互切、物理设备变化、真实 OS 电源周期、长期性能、真实文件授权 UI/沙盒回归和发布门仍未闭环，因此不能声称“发布级最终完全闭环”或承诺未来所有样本必然成功。任何闭环结论都必须先更新上述状态文档并通过对应门禁。
+截至 2026-07-21，10 项独立偏好域固定门全绿，2026-07-20 构建的 5 项作者源码、3 项 Steam CDN 和 34 项完整门也全绿；后者早于当天的音频恢复、偏好隔离、属性持久化与 Space 修复，当前最终 HEAD 仍需刷新 34+5+3，不能混用证据。benchmark 已补齐签名 App 隔离 staging、运行前后身份复核、新鲜输出目录约束和当前进程窗口截图；`3700131876` 的 WebView/Canvas/window 三源截图已在隔离环境实跑确认，但该单样本 92 / A 结果不替代 34+5+3。境外远程字体失败恢复、当前非沙盒发行链的 file/directory 跨重启/reset 服务链与真实 64+64 双声道系统音频到 JS 主链已闭环。音频分发边界已恢复旧样本依赖的兼容幅度响应，`884307090` 两种展示模式和 `1509243786` 的确定性/真实系统音源回归通过；重叠系统/显示器休眠、部分唤醒、锁屏/解锁、CoreAudio 配置失效重建、Space 通知路由、屏幕 burst 合并和 observer 释放门也已通过。自动 Space 门不冒充 Mission Control 实际切换或显示器热插拔；配置失效门不冒充 AirPods/HDMI 物理切换；文件门也不冒充 NSOpenPanel 点击或未来签名沙盒 security extension。runtime 互切、物理设备变化、真实 OS 电源周期、长期性能、真实文件授权 UI/沙盒回归和发布门仍未闭环，因此不能声称“发布级最终完全闭环”或承诺未来所有样本必然成功。任何闭环结论都必须先更新上述状态文档并通过对应门禁。
 
 ## 1. 长期规范与运行模型
 
