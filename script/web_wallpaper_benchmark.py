@@ -12,7 +12,6 @@ import argparse
 import json
 import os
 import re
-import shutil
 import signal
 import subprocess
 import sys
@@ -28,6 +27,15 @@ from web_debug_defaults import (
     debug_defaults_suites,
     delete_debug_defaults_suite,
     make_debug_defaults_suite,
+)
+from web_benchmark_capture import (
+    AppIdentityError,
+    capture_non_black_screenshot,
+    has_window_snapshot,
+    logged_snapshot_paths,
+    require_fresh_output_dir,
+    stage_signed_app,
+    verify_staged_app,
 )
 
 
@@ -56,6 +64,7 @@ SNAPSHOT_RE = re.compile(
     r"avgLuma=(?P<avg>[0-9.]+) nonBlack=(?P<nonblack>[0-9.]+)"
     r"(?: lumaStdDev=(?P<stddev>[0-9.]+) colored=(?P<colored>[0-9.]+) white=(?P<white>[0-9.]+)"
     r"(?: peakLuma=(?P<peak>[0-9.]+))?)?"
+    r"(?: path=(?P<path>.+))?$"
 )
 MOTION_RE = re.compile(
     r"meanDelta=(?P<mean_delta>[0-9.]+) changedRatio=(?P<changed_ratio>[0-9.]+)"
@@ -150,7 +159,6 @@ def build_debug_app(derived_data: Path, log_path: Path) -> None:
         "Debug",
         "-derivedDataPath",
         str(derived_data),
-        "CODE_SIGNING_ALLOWED=NO",
         "build",
     ]
     run_command(command, REPO_ROOT, log_path)
@@ -260,9 +268,12 @@ def parse_log(log_path: Path) -> tuple[list[DiagnosticEvent], dict[str, Any]]:
 
         snapshot_match = SNAPSHOT_RE.search(line)
         if snapshot_match:
+            reason = snapshot_match.group("reason")
             metadata["snapshots"].append(
                 {
-                    "reason": snapshot_match.group("reason"),
+                    "reason": reason,
+                    "source": reason.rsplit("-", 1)[-1] if reason.endswith(("-canvas", "-window")) else "webview",
+                    "path": snapshot_match.group("path"),
                     "size": snapshot_match.group("size"),
                     "avgLuma": float(snapshot_match.group("avg")),
                     "nonBlack": float(snapshot_match.group("nonblack")),
@@ -862,12 +873,6 @@ def kill_existing_app() -> None:
     subprocess.run(["/usr/bin/pkill", "-x", APP_NAME], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
-def capture_screenshot(path: Path) -> None:
-    if shutil.which("screencapture") is None:
-        return
-    subprocess.run(["/usr/sbin/screencapture", "-x", str(path)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
-
 def start_unified_log_capture(handle: Any) -> subprocess.Popen[Any]:
     return subprocess.Popen(
         [
@@ -965,7 +970,7 @@ def run_one_sample(
             )
             time.sleep(duration)
             if screenshot_path:
-                capture_screenshot(screenshot_path)
+                screenshot_path = capture_non_black_screenshot(screenshot_path)
         finally:
             if process is not None:
                 exit_code = terminate_process(process)
@@ -976,7 +981,7 @@ def run_one_sample(
     events, metadata = parse_log(log_path)
     metadata["expected_debug_defaults_suite"] = defaults_suite
     metadata["stall_animation_frame_requested"] = stall_animation_frame
-    web_snapshot_paths = sorted(sample_dir.glob("web-snapshot-*.png"))
+    web_snapshot_paths = logged_snapshot_paths(metadata, sample_dir)
     return score_sample(
         sample,
         events,
@@ -1113,11 +1118,14 @@ def summarize(
 
 
 def write_json_report(output_dir: Path, args: argparse.Namespace, results: list[SampleResult], summary: dict[str, Any]) -> Path:
+    command = dict(vars(args))
+    app_identity = command.pop("app_identity", None)
     report = {
         "schema_version": 4,
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "repo_root": str(REPO_ROOT),
-        "command": vars(args),
+        "app_identity": app_identity,
+        "command": command,
         "summary": summary,
         "samples": [asdict(result) for result in results],
     }
@@ -1142,8 +1150,8 @@ def write_markdown_report(output_dir: Path, results: list[SampleResult], summary
         "",
         "## Samples",
         "",
-        "| ID | Capabilities | Score | Grade | Coverage | Web snapshots | Diagnostics | Raw errors | Shortfalls | Log |",
-        "| --- | --- | ---: | --- | ---: | ---: | ---: | ---: | --- | --- |",
+        "| ID | Capabilities | Score | Grade | Coverage | Web snapshots | Window snapshot | Diagnostics | Raw errors | Shortfalls | Log |",
+        "| --- | --- | ---: | --- | ---: | ---: | --- | ---: | ---: | --- | --- |",
     ]
     for result in sorted(results, key=lambda item: item.score):
         shortfalls = ", ".join(result.shortfall_categories) if result.shortfall_categories else "-"
@@ -1152,6 +1160,7 @@ def write_markdown_report(output_dir: Path, results: list[SampleResult], summary
             f"| `{result.sample.id}` | {', '.join(result.sample.capabilities) or '-'} | "
             f"{result.score:.1f} | {result.grade} | "
             f"{result.coverage:.1f}% | {len(result.web_snapshot_paths)} | "
+            f"{'yes' if has_window_snapshot(result.web_snapshot_paths) else 'no'} | "
             f"{len(result.diagnostic_warnings) + len(result.diagnostic_errors)} | "
             f"{len(result.raw_error_lines)} | {shortfalls} | `{log_name}` |"
         )
@@ -1204,10 +1213,9 @@ def make_output_dir(base: Path | None) -> Path:
     if base:
         output_dir = base
     else:
-        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        stamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
         output_dir = REPO_ROOT / f".codex/web-wallpaper-benchmark-{stamp}"
-    output_dir.mkdir(parents=True, exist_ok=True)
-    return output_dir
+    return require_fresh_output_dir(output_dir)
 
 
 def load_sample_matrix(path: Path) -> tuple[list[Sample], dict[str, Any]]:
@@ -1428,7 +1436,7 @@ def run_lifecycle_sequence(
 def run_benchmark(args: argparse.Namespace) -> int:
     output_dir = make_output_dir(Path(args.output_dir) if args.output_dir else None)
     build_log = output_dir / "build.log"
-    app_binary = Path(args.app) if args.app else DEFAULT_APP_BINARY
+    source_app_binary = Path(args.app) if args.app else DEFAULT_APP_BINARY
     runtime_workshop_root = Path(args.runtime_workshop_root).expanduser().resolve() if args.runtime_workshop_root else None
     runtime_home = Path(args.runtime_home).expanduser().resolve() if args.runtime_home else None
 
@@ -1445,19 +1453,33 @@ def run_benchmark(args: argparse.Namespace) -> int:
     if args.build:
         build_debug_app(Path(args.derived_data), build_log)
 
-    if not app_binary.exists():
-        print(f"App binary not found: {app_binary}", file=sys.stderr)
+    if not source_app_binary.exists():
+        print(f"App binary not found: {source_app_binary}", file=sys.stderr)
         print("Run with --build, or pass --app /path/to/MyWallpaperX.", file=sys.stderr)
         return 2
 
+    try:
+        app_binary, app_identity = stage_signed_app(source_app_binary, output_dir)
+    except AppIdentityError as error:
+        print(f"Cannot stage a verified Debug app: {error}", file=sys.stderr)
+        return 2
+    args.app = str(app_binary)
+    args.app_identity = app_identity
+
     if args.lifecycle_sequence:
-        return run_lifecycle_sequence(
+        result = run_lifecycle_sequence(
             args,
             app_binary=app_binary,
             runtime_workshop_root=runtime_workshop_root,
             runtime_home=runtime_home,
             output_dir=output_dir,
         )
+        try:
+            verify_staged_app(app_identity)
+        except AppIdentityError as error:
+            print(f"Staged Debug app verification failed: {error}", file=sys.stderr)
+            return 1
+        return result
 
     try:
         samples, matrix_config = load_samples_from_args(args)
@@ -1488,6 +1510,12 @@ def run_benchmark(args: argparse.Namespace) -> int:
                 stall_animation_frame=args.stall_animation_frame,
             )
         )
+
+    try:
+        verify_staged_app(app_identity)
+    except AppIdentityError as error:
+        print(f"Staged Debug app verification failed: {error}", file=sys.stderr)
+        return 1
 
     comparison = compare_with_baseline(results, Path(args.baseline) if args.baseline else None)
     summary = summarize(results, comparison, matrix_config=matrix_config)
@@ -1926,9 +1954,13 @@ def make_parser() -> argparse.ArgumentParser:
 def main(argv: list[str]) -> int:
     parser = make_parser()
     args = parser.parse_args(argv)
-    if args.self_test:
-        return run_self_test(args)
-    return run_benchmark(args)
+    try:
+        if args.self_test:
+            return run_self_test(args)
+        return run_benchmark(args)
+    except FileExistsError as error:
+        print(str(error), file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":

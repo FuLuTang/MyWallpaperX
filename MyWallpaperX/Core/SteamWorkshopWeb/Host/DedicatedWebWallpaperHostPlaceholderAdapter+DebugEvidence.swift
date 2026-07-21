@@ -1,6 +1,5 @@
 import AppKit
 import Foundation
-import ScreenCaptureKit
 import WebKit
 
 extension DedicatedWebWallpaperHostPlaceholderAdapter {
@@ -124,6 +123,12 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
         reason: String,
         outputDirectory: URL
     ) {
+        captureDebugWindowSnapshot(
+            from: webView,
+            screenID: screenID,
+            reason: reason,
+            outputDirectory: outputDirectory
+        )
         let configuration = WKSnapshotConfiguration()
         configuration.rect = webView.bounds
         webView.takeSnapshot(with: configuration) { [weak self, weak webView] image, error in
@@ -158,71 +163,6 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
                 source: "webview",
                 outputDirectory: outputDirectory
             )
-            self.captureDebugWindowSnapshot(
-                from: webView,
-                screenID: screenID,
-                reason: reason,
-                outputDirectory: outputDirectory
-            )
-        }
-    }
-
-    private func captureDebugWindowSnapshot(
-        from webView: WKWebView,
-        screenID: CGDirectDisplayID,
-        reason: String,
-        outputDirectory: URL
-    ) {
-        guard let windowID = webView.window.map({ CGWindowID($0.windowNumber) }) else { return }
-        SCShareableContent.getCurrentProcessShareableContent { [weak self, weak webView] content, error in
-            guard let self, let webView else { return }
-            guard let window = content?.windows.first(where: { $0.windowID == windowID }) else {
-                if let error {
-                    DispatchQueue.main.async {
-                        self.recordDiagnostic(
-                            type: "evidence.visual.window.error",
-                            severity: .warning,
-                            message: error.localizedDescription,
-                            screenID: screenID,
-                            url: webView.url?.absoluteString
-                        )
-                    }
-                }
-                return
-            }
-            let maximumDimension = 1024.0
-            let scale = min(1, maximumDimension / max(window.frame.width, window.frame.height))
-            let configuration = SCStreamConfiguration()
-            configuration.width = max(1, Int(window.frame.width * scale))
-            configuration.height = max(1, Int(window.frame.height * scale))
-            configuration.showsCursor = false
-            let filter = SCContentFilter(desktopIndependentWindow: window)
-            SCScreenshotManager.captureImage(
-                contentFilter: filter,
-                configuration: configuration
-            ) { [weak self, weak webView] image, error in
-                DispatchQueue.main.async {
-                    guard let self, let webView else { return }
-                    if let image {
-                        self.persistDebugSnapshot(
-                            NSBitmapImageRep(cgImage: image),
-                            from: webView,
-                            screenID: screenID,
-                            reason: reason,
-                            source: "window",
-                            outputDirectory: outputDirectory
-                        )
-                    } else if let error {
-                        self.recordDiagnostic(
-                            type: "evidence.visual.window.error",
-                            severity: .warning,
-                            message: error.localizedDescription,
-                            screenID: screenID,
-                            url: webView.url?.absoluteString
-                        )
-                    }
-                }
-            }
         }
     }
 
@@ -314,7 +254,7 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
         }
     }
 
-    private func persistDebugSnapshot(
+    func persistDebugSnapshot(
         _ bitmap: NSBitmapImageRep,
         from webView: WKWebView,
         screenID: CGDirectDisplayID,
