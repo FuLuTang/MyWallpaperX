@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "name": "web-runtime-full-baseline-2026-07-20",
-  "minimum_sample_duration_seconds": 12,
+  "minimum_sample_duration_seconds": 18,
   "gates": {
     "minimum_average_score": 95,
     "minimum_average_coverage": 90,

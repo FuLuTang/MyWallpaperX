@@ -192,7 +192,7 @@ benchmark 现在要求像素统计、DOM 状态和 pointer/click/drag/wheel 注�
 
 #### 已关闭：代表样本矩阵与单样本门禁
 
-固定矩阵由 [web_wallpaper_sample_matrix.json](../../script/web_wallpaper_sample_matrix.json) 定义。每个样本有能力标签、最低等级和最低 coverage，批次还限制平均分、平均 coverage 和关键短板。矩阵自带 12 秒最低观察窗，避免 Live2D 等延迟首帧样本被过早终止。
+固定矩阵由 [web_wallpaper_sample_matrix.json](../../script/web_wallpaper_sample_matrix.json) 定义。每个样本有能力标签、最低等级和最低 coverage，批次还限制平均分、平均 coverage 和关键短板。矩阵自带 18 秒最低观察窗，避免大体积或冷启动样本在首帧与属性回放完成前被过早终止。
 
 当前 34 样本已固化为 [web_wallpaper_full_baseline.json](../../script/web_wallpaper_full_baseline.json)，外部 5 样本由 [web_wallpaper_external_sample_matrix.json](../../script/web_wallpaper_external_sample_matrix.json) 定义，Steam CDN 3 样本由 [web_wallpaper_steam_representative_sample_matrix.json](../../script/web_wallpaper_steam_representative_sample_matrix.json) 定义。固定矩阵仍是公共 runtime 改动的快速门，完整基线用于高影响改动和发布候选，外部门用于扩展能力验证。大型脚本 Service Worker 静态识别已修复并由缓存版本 14 验证；补扫采用 64 KiB 分块匹配、单文件 1 MiB 上限，验证报告会复用描述符摘要，避免大批生成脚本重复拖慢冷启动。但 `1396475780` 在 Wallpaper Engine 分支实际注册数为 0；因此 Shadow DOM、Service Worker 真实注册、真实多屏 scale factor、外部网络失败/恢复等能力仍没有形成独立行为门。
 
