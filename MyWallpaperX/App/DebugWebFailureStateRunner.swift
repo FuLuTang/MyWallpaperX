@@ -8,34 +8,11 @@ import AppKit
 import Foundation
 import WebKit
 
-private final class DebugWebFailureCapture: @unchecked Sendable {
-    private let lock = NSLock()
-    private var payloads: [[AnyHashable: Any]] = []
-
-    func reset() {
-        lock.lock()
-        payloads.removeAll()
-        lock.unlock()
-    }
-
-    func append(_ payload: [AnyHashable: Any]) {
-        lock.lock()
-        payloads.append(payload)
-        lock.unlock()
-    }
-
-    func snapshot() -> [[AnyHashable: Any]] {
-        lock.lock()
-        defer { lock.unlock() }
-        return payloads
-    }
-}
-
 @MainActor
 enum DebugWebFailureStateRunner {
     private static let reportFlag = "--mwx-debug-web-failure-state-report"
     private static var reportURL: URL?
-    private static let failureCapture = DebugWebFailureCapture()
+    private static let failureCapture = DebugPlaybackFailureCapture()
     private static var failureObserver: NSObjectProtocol?
 
     static func scheduleIfRequested() -> Bool {
@@ -50,25 +27,19 @@ enum DebugWebFailureStateRunner {
     private static func start() {
         let fixtureRoot = FileManager.default.temporaryDirectory
             .appendingPathComponent("MyWallpaperXWebFailureState", isDirectory: true)
-        let firstRoot = fixtureRoot.appendingPathComponent("A", isDirectory: true)
-        let secondRoot = fixtureRoot.appendingPathComponent("B", isDirectory: true)
-        let firstEntryURL = firstRoot.appendingPathComponent("index.html")
-        let secondEntryURL = secondRoot.appendingPathComponent("index.html")
+        let entryURL = fixtureRoot.appendingPathComponent("index.html")
         do {
-            try FileManager.default.createDirectory(at: firstRoot, withIntermediateDirectories: true)
-            try FileManager.default.createDirectory(at: secondRoot, withIntermediateDirectories: true)
-            try "<html><body style='background:#246'>failure state A</body></html>"
-                .write(to: firstEntryURL, atomically: true, encoding: .utf8)
-            try "<html><body style='background:#642'>failure state B</body></html>"
-                .write(to: secondEntryURL, atomically: true, encoding: .utf8)
+            try FileManager.default.createDirectory(at: fixtureRoot, withIntermediateDirectories: true)
+            try "<html><body style='background:#246'>failure state</body></html>"
+                .write(to: entryURL, atomically: true, encoding: .utf8)
         } catch {
             finish(preconditionFailure: "fixture-write-failed: \(error.localizedDescription)")
             return
         }
 
         installFailureObserver()
-        postWebLaunch(entryURL: firstEntryURL, rootURL: firstRoot, recordID: "debug-terminal-failure-a")
-        waitForFirstWebReady(firstEntryURL: firstEntryURL, secondEntryURL: secondEntryURL, attempt: 0)
+        postWebLaunch(entryURL: entryURL, rootURL: fixtureRoot, recordID: "debug-terminal-failure")
+        waitForFirstWebReady(firstEntryURL: entryURL, secondEntryURL: entryURL, attempt: 0)
     }
 
     private static func postWebLaunch(entryURL: URL, rootURL: URL, recordID: String) {
@@ -92,8 +63,11 @@ enum DebugWebFailureStateRunner {
             finish(preconditionFailure: "dedicated-host-unavailable")
             return
         }
-        if host.phase == .ready, let firstRequestID = engine.currentWebRequestID,
-           let oldWebView = host.surfaces.values.first?.webView {
+        if host.phase == .ready,
+           let firstRequestID = engine.currentWebRequestID,
+           let surface = host.surfaces.values.first,
+           let staleNavigation = host.navigationOwnershipByScreen[surface.screenID]?.navigation {
+            let oldWebView = surface.webView
             let firstExpectedPath = firstEntryURL.resolvingSymlinksInPath().standardizedFileURL.path
             let manager = WallpaperManager.shared
             let webStarted = engine.currentContentPath == firstExpectedPath
@@ -104,11 +78,12 @@ enum DebugWebFailureStateRunner {
             postWebLaunch(
                 entryURL: secondEntryURL,
                 rootURL: secondEntryURL.deletingLastPathComponent(),
-                recordID: "debug-terminal-failure-b"
+                recordID: "debug-terminal-failure"
             )
             waitForSecondWebReady(
                 entryURL: secondEntryURL,
                 staleRequestID: firstRequestID,
+                staleNavigation: staleNavigation,
                 oldWebView: oldWebView,
                 webStarted: webStarted,
                 attempt: 0
@@ -131,6 +106,7 @@ enum DebugWebFailureStateRunner {
     private static func waitForSecondWebReady(
         entryURL: URL,
         staleRequestID: UUID,
+        staleNavigation: WKNavigation,
         oldWebView: WKWebView,
         webStarted: Bool,
         attempt: Int
@@ -145,11 +121,15 @@ enum DebugWebFailureStateRunner {
            let requestID = engine.currentWebRequestID,
            requestID != staleRequestID,
            engine.currentContentPath == expectedPath,
-           host.surfaces.values.contains(where: { $0.webView !== oldWebView }) {
+           let currentSurface = host.surfaces.values.first,
+           currentSurface.webView !== oldWebView,
+           let currentNavigation = host.navigationOwnershipByScreen[currentSurface.screenID]?.navigation,
+           currentNavigation !== staleNavigation {
             exerciseFailureState(
                 entryURL: entryURL,
                 requestID: requestID,
                 staleRequestID: staleRequestID,
+                staleNavigation: staleNavigation,
                 oldWebView: oldWebView,
                 host: host,
                 webStarted: webStarted
@@ -164,6 +144,7 @@ enum DebugWebFailureStateRunner {
             waitForSecondWebReady(
                 entryURL: entryURL,
                 staleRequestID: staleRequestID,
+                staleNavigation: staleNavigation,
                 oldWebView: oldWebView,
                 webStarted: webStarted,
                 attempt: attempt + 1
@@ -175,6 +156,7 @@ enum DebugWebFailureStateRunner {
         entryURL: URL,
         requestID: UUID,
         staleRequestID: UUID,
+        staleNavigation: WKNavigation,
         oldWebView: WKWebView,
         host: DedicatedWebWallpaperHostPlaceholderAdapter,
         webStarted: Bool
@@ -193,26 +175,39 @@ enum DebugWebFailureStateRunner {
             && host.surfaces.count == baselineSurfaceCount
             && failureCapture.snapshot().isEmpty
 
-        host.handleNavigationFailure(
-            NSError(domain: NSURLErrorDomain, code: NSURLErrorCannotConnectToHost),
-            webView: oldWebView
-        )
-        let staleNavigationIgnored = engine.currentWebRequestID == requestID
-            && engine.currentContentPath == expectedPath
-            && engine.currentPlaybackContentKind == .web
-            && host.currentRequest?.id == requestID
-            && host.phase == .ready
-            && host.surfaces.count == baselineSurfaceCount
-            && failureCapture.snapshot().isEmpty
+        guard let navigationResult = DebugWebNavigationIdentityProbe.run(
+            host: host,
+            engine: engine,
+            requestID: requestID,
+            staleNavigation: staleNavigation,
+            staleWebView: oldWebView,
+            expectedPath: expectedPath,
+            baselineSurfaceCount: baselineSurfaceCount,
+            failureCount: { failureCapture.snapshot().count }
+        ) else {
+            finish(preconditionFailure: "navigation-identity-probe-failed")
+            return
+        }
 
-        host.failCurrentLaunch(message: "debug-terminal-failure")
+        host.handleNavigationFailure(
+            NSError(
+                domain: "com.songziqiang.MyWallpaperX.DebugWebFailure",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "debug-terminal-failure"]
+            ),
+            navigation: navigationResult.terminalNavigation,
+            webView: navigationResult.terminalWebView
+        )
         waitForTerminalFailure(
             entryURL: entryURL,
             requestID: requestID,
             checks: [
                 "webStarted": webStarted,
                 "staleFailureIgnored": staleFailureIgnored,
-                "staleNavigationIgnored": staleNavigationIgnored
+                "staleNavigationIgnored": navigationResult.staleSurfaceNavigationIgnored,
+                "staleRecoveryNavigationIgnored": navigationResult.staleRecoveryNavigationIgnored,
+                "currentRecoveryNavigationFinished": navigationResult.currentRecoveryNavigationFinished,
+                "pageNavigationFinished": navigationResult.pageNavigationFinished
             ],
             attempt: 0
         )
@@ -266,6 +261,7 @@ enum DebugWebFailureStateRunner {
         let hostCleared = host.phase == .failed
             && host.currentRequest == nil
             && host.surfaces.isEmpty
+            && host.navigationOwnershipByScreen.isEmpty
             && host.loopbackServers.isEmpty
             && host.lifecycleObservers.isEmpty
             && host.directoryWatchersByProperty.isEmpty
@@ -276,7 +272,7 @@ enum DebugWebFailureStateRunner {
             && !manager.isPlaying
             && manager.autoSwitchTimer == nil
         let payloadPreserved = failurePayloads.count == 1
-            && payload?["recordID"] as? String == "debug-terminal-failure-b"
+            && payload?["recordID"] as? String == "debug-terminal-failure"
             && payload?["path"] as? String == expectedPath
             && payload?["videoPath"] == nil
             && payload?["message"] as? String == "debug-terminal-failure"
@@ -359,7 +355,7 @@ enum DebugWebFailureStateRunner {
         let payload: [String: Any] = [
             "checks": checks,
             "failureCount": failureCount,
-            "passed": preconditionFailure == nil && checks.count == 9 && checks.values.allSatisfy { $0 },
+            "passed": preconditionFailure == nil && checks.count == 12 && checks.values.allSatisfy { $0 },
             "preconditionFailure": preconditionFailure.map { $0 as Any } ?? NSNull()
         ]
         guard let reportURL,

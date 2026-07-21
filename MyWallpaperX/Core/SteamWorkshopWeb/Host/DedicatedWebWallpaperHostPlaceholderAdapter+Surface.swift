@@ -136,6 +136,7 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
         for screenID in Array(surfaces.keys) {
             removeSurface(for: screenID)
         }
+        navigationOwnershipByScreen.removeAll()
         clearAudioSpectrumDemand()
         for server in loopbackServers.values {
             server.stop()
@@ -152,6 +153,7 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
     }
 
     func removeSurface(for screenID: CGDirectDisplayID) {
+        navigationOwnershipByScreen.removeValue(forKey: screenID)
         setAudioSpectrumDemand(false, for: screenID)
         guard let surface = surfaces[screenID] else { return }
         resetWebContentRecoveryState(for: screenID)

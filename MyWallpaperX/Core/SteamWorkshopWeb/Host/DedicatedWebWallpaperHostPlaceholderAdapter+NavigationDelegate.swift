@@ -7,17 +7,17 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
     }
 
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
-        guard let screenID = screenID(for: webView) else { return }
+        guard let screenID = screenIDForStartedNavigation(navigation, webView: webView) else { return }
         setAudioSpectrumDemand(false, for: screenID)
     }
 
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {}
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        guard let screenID = screenIDForCurrentNavigation(navigation, webView: webView) else { return }
         installDefaultInteractiveRegionsIfNeeded()
         applyCompatibilityState(to: webView, deferDirectorySync: false)
         startSyntheticInputForwardingIfNeeded()
-        guard let screenID = screenID(for: webView) else { return }
         finishWebContentRecovery(for: screenID, webView: webView)
         recordDiagnostic(type: "navigation.finish", severity: .info, message: "ready", screenID: screenID, url: webView.url?.absoluteString)
         markScreenReady(screenID)
@@ -31,7 +31,7 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
         guard let screenID = screenID(for: webView),
               let surface = surfaces[screenID],
               surface.webView === webView,
-              currentRequest != nil else {
+              let requestID = currentRequest?.id else {
             return
         }
         setAudioSpectrumDemand(false, for: screenID)
@@ -73,7 +73,7 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
         let workItem = DispatchWorkItem { [weak self, weak webView] in
             guard let self,
                   let webView,
-                  self.currentRequest != nil,
+                  self.currentRequest?.id == requestID,
                   self.recoveringWebContentScreenIDs.contains(screenID),
                   let currentSurface = self.surfaces[screenID],
                   currentSurface.webView === webView else {
@@ -81,7 +81,13 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
             }
             self.webContentRecoveryWorkItems.removeValue(forKey: screenID)
             self.webContentRecoveryReloadStartedScreenIDs.insert(screenID)
-            webView.reload()
+            guard self.reloadTrackedNavigation(on: currentSurface, requestID: requestID) else {
+                self.failWebContentRecovery(
+                    for: screenID,
+                    message: "WKWebView recovery reload did not create a navigation"
+                )
+                return
+            }
         }
         webContentRecoveryWorkItems[screenID] = workItem
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: workItem)
@@ -133,19 +139,15 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-        handleNavigationFailure(error, webView: webView)
+        handleNavigationFailure(error, navigation: navigation, webView: webView)
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-        handleNavigationFailure(error, webView: webView)
+        handleNavigationFailure(error, navigation: navigation, webView: webView)
     }
 
-    func handleNavigationFailure(_ error: Error, webView: WKWebView) {
-        guard currentRequest != nil,
-              let screenID = screenID(for: webView),
-              surfaces[screenID]?.webView === webView else {
-            return
-        }
+    func handleNavigationFailure(_ error: Error, navigation: WKNavigation?, webView: WKWebView) {
+        guard let screenID = screenIDForCurrentNavigation(navigation, webView: webView) else { return }
         let nsError = error as NSError
         if nsError.domain == NSURLErrorDomain,
            ignoredNavigationFailureCodes.contains(nsError.code) {

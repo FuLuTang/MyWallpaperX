@@ -26,7 +26,8 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
         _ request: WallpaperEngine.WebWallpaperLaunchRequest,
         runtimeState: WallpaperEngine.WebWallpaperRuntimeState
     ) {
-        let shouldRebuildSurfaces = currentRequest?.entryURL.resolvingSymlinksInPath().standardizedFileURL != request.entryURL.resolvingSymlinksInPath().standardizedFileURL
+        let shouldRebuildSurfaces = currentRequest?.id != request.id
+            || currentRequest?.entryURL.resolvingSymlinksInPath().standardizedFileURL != request.entryURL.resolvingSymlinksInPath().standardizedFileURL
             || currentRequest?.rootURL.resolvingSymlinksInPath().standardizedFileURL != request.rootURL.resolvingSymlinksInPath().standardizedFileURL
             || currentRequest?.runtimeProfile != request.runtimeProfile
             || currentRequest?.recordID != request.recordID
@@ -76,27 +77,22 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
 
         if !shouldRebuildSurfaces, !surfaces.isEmpty {
             installDefaultInteractiveRegionsIfNeeded()
-            for surface in surfaces.values {
-                setTransientMouseCaptureEnabled(false, for: surface)
-                surface.schemeHandler.updateAdditionalReadableRoots(accessibleResourceURLs(from: request.propertiesJSON))
-                surface.window.orderFrontRegardless()
-                surface.window.level = Self.webWindowLevel
-                surface.webView.stopLoading()
-                surface.webView.load(URLRequest(url: runtimeEntryURL(for: request, localEntryURL: entryURL, surface: surface)))
+            guard reloadTrackedSurfaces(for: request, localEntryURL: entryURL) else {
+                failCurrentLaunch(message: "dedicated_web_host_navigation_unavailable")
+                return
             }
             return
         }
 
-        var createdSurface = false
-        for screen in targetScreens {
-            createdSurface = createAndLoadSurface(
+        let createdAllSurfaces = targetScreens.allSatisfy { screen in
+            createAndLoadSurface(
                 for: screen,
                 request: request,
                 localEntryURL: entryURL
-            ) || createdSurface
+            )
         }
 
-        guard createdSurface else {
+        guard createdAllSurfaces, surfaces.count == targetScreens.count else {
             failCurrentLaunch(message: "dedicated_web_host_no_surface")
             return
         }
@@ -127,22 +123,6 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
         return request.multiDisplayEnabled ? availableScreens : Array(availableScreens.prefix(1))
     }
 
-    @discardableResult
-    func createAndLoadSurface(
-        for screen: NSScreen,
-        request: WallpaperEngine.WebWallpaperLaunchRequest,
-        localEntryURL: URL
-    ) -> Bool {
-        guard let screenID = Self.screenID(for: screen) else { return false }
-        let surface = makeSurface(for: screen, screenID: screenID)
-        surfaces[screenID] = surface
-        setTransientMouseCaptureEnabled(false, for: surface)
-        surface.window.orderFrontRegardless()
-        surface.window.level = Self.webWindowLevel
-        surface.webView.load(URLRequest(url: runtimeEntryURL(for: request, localEntryURL: localEntryURL, surface: surface)))
-        return true
-    }
-
     func reconcileDisplaySurfaces(for request: WallpaperEngine.WebWallpaperLaunchRequest) {
         let screens = targetScreens(for: request)
         guard !screens.isEmpty else {
@@ -155,7 +135,7 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
                 Self.screenID(for: screen).map { ($0, screen) }
             }
         )
-        guard !screensByID.isEmpty else {
+        guard !screensByID.isEmpty, screensByID.count == screens.count else {
             failCurrentLaunch(message: "dedicated_web_host_no_surface")
             return
         }
@@ -179,15 +159,18 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
             if let surface = surfaces[screenID] {
                 updateSurface(surface, for: screen, request: request)
             } else {
-                _ = createAndLoadSurface(
+                guard createAndLoadSurface(
                     for: screen,
                     request: request,
                     localEntryURL: entryURL
-                )
+                ) else {
+                    failCurrentLaunch(message: "dedicated_web_host_navigation_unavailable")
+                    return
+                }
             }
         }
 
-        guard !surfaces.isEmpty else {
+        guard Set(surfaces.keys) == targetScreenIDs else {
             failCurrentLaunch(message: "dedicated_web_host_no_surface")
             return
         }
@@ -322,7 +305,8 @@ extension DedicatedWebWallpaperHostPlaceholderAdapter {
                 screenID: screenID,
                 url: webView.url?.absoluteString
             )
-            if type == "dom.ready", let screenID {
+            if type == "dom.ready", let screenID,
+               !recoveringWebContentScreenIDs.contains(screenID) {
                 installDefaultInteractiveRegionsIfNeeded()
                 applyCompatibilityState(to: webView, deferDirectorySync: false)
                 startSyntheticInputForwardingIfNeeded()

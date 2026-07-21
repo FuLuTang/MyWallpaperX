@@ -181,6 +181,11 @@ final class DedicatedWebWallpaperHostPlaceholderAdapter: NSObject, WallpaperEngi
         let dataStoreIdentity: String
     }
 
+    struct NavigationOwnership {
+        let requestID: UUID
+        let navigation: WKNavigation
+    }
+
     struct DirectorySnapshot {
         let filesByPath: [String: TimeInterval]
     }
@@ -259,6 +264,7 @@ final class DedicatedWebWallpaperHostPlaceholderAdapter: NSObject, WallpaperEngi
     var readyScreenIDs = Set<CGDirectDisplayID>()
     var audioSpectrumDemandScreenIDs = Set<CGDirectDisplayID>()
     var surfaces: [CGDirectDisplayID: HostSurface] = [:]
+    var navigationOwnershipByScreen: [CGDirectDisplayID: NavigationOwnership] = [:]
     var loopbackServers: [CGDirectDisplayID: WebWallpaperLoopbackServer] = [:]
     var directorySnapshotsByProperty: [String: DirectorySnapshot] = [:]
     var directoryAccessErrorsByProperty: [String: String] = [:]

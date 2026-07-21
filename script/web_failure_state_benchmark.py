@@ -19,11 +19,14 @@ DEFAULT_APP_BINARY = (
     REPO_ROOT / ".codex/DerivedData/Build/Products/Debug/MyWallpaperX.app/Contents/MacOS/MyWallpaperX"
 )
 EXPECTED_CHECKS = {
+    "currentRecoveryNavigationFinished",
     "hostCleared",
     "managerStopped",
+    "pageNavigationFinished",
     "payloadPreserved",
     "staleFailureIgnored",
     "staleNavigationIgnored",
+    "staleRecoveryNavigationIgnored",
     "stopCleared",
     "terminalCleared",
     "videoRecovered",
