@@ -9,7 +9,7 @@
 - [regression/WEB_EXTERNAL_SAMPLE_BASELINE_2026-07-20.md](regression/WEB_EXTERNAL_SAMPLE_BASELINE_2026-07-20.md)：5 个公开作者源码样本的来源、构建、能力矩阵和证据边界。
 - [regression/WEB_STEAM_REPRESENTATIVE_BASELINE_2026-07-20.md](regression/WEB_STEAM_REPRESENTATIVE_BASELINE_2026-07-20.md)：3 个 Steam CDN 代表样本的下载快照、多视口/联网能力和证据边界。
 
-截至 2026-07-22，10 项独立偏好域固定门保持全绿；2026-07-20 构建的 5 项作者源码、3 项 Steam CDN 和 34 项历史门为全绿基线。当前 HEAD 的 34 项已重新实跑：34/34 可运行、28A/6B、平均 96.3、coverage 94.7%，但完整门失败。失败没有出现启动、导航、资源映射、交互、视觉或动画短板；4 个新增 B 和 3 个 coverage-only 失败来自 scorer 对“无 `applyUserProperties` listener 页面”的属性成功证据要求，9 项定向复跑已确认可重复。修正评测合同并重新跑绿之前，不能把当前完整门写成闭环；5+3 外部门也仍需基于同一最终构建刷新。真实 OS/物理设备、runtime 互切、长期性能、真实文件授权 UI/沙盒回归和发布门仍未闭环。
+截至 2026-07-22，10 项独立偏好域固定门保持全绿；当前最终签名 Debug App 的 34 项完整门为 32A/2B、平均 97.7、coverage 95.9%，作者源码门为 5A / 98.8 / 97.9%，Steam CDN 门为 3A / 98.0 / 94.8%，三组矩阵门均通过。两个 B 只保留 `3700131876`、`3700928191` 的既有样本脚本属性错误，并由矩阵明确允许；当前没有新增启动、宿主、导航、资源映射、交互、视觉或动画短板。评测合同已区分无 listener 页面、正向日志事件和当前 listener/payload 的 DOM 应用签名；Debug evidence 窗口也会进入当前 Space，避免 WebKit 因遮挡停止 rAF。真实 OS/物理设备、runtime 互切、长期性能、真实文件授权 UI/沙盒回归和发布门仍未闭环，因此不能声称发布级最终完全闭环。
 
 ## 1. 长期规范与运行模型
 

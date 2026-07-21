@@ -10,13 +10,15 @@
 
 Web 已经具备可持续回归的正式运行主链。文件属性类型推断与跨重启恢复、强 DOM/视觉/交互证据、纹理 WebGL 的 loopback 路由、旧式颜色数组兼容、空 `file:///` 占位符处理、境外远程样式降级恢复、真实 64+64 双声道频谱及 Wallpaper Engine 兼容幅度响应、固定样本矩阵、签名 Debug App 身份门、切换/停止释放门禁、重叠系统中断恢复门、CoreAudio 配置失效重建和 Space 通知路由均已落地。
 
-当前固定矩阵包含 10 个真实 Workshop 样本，覆盖 file/directory、dependency、媒体、Canvas、WebGL/WebGL2、Live2D、WASM、iframe、持久化存储、音频、指针输入和动态画面。最新隔离运行结果为 **10 个 A，平均 98.2，证据覆盖 94.3%，矩阵门禁通过**。每个 App 进程使用唯一 Debug UserDefaults suite，日志必须确认 suite，结束后必须删除；因此结果不再继承用户在产品 UI 中保存的样本属性。另外 5 个作者公开源码样本的独立门覆盖属性密集、Worker、音频频谱、约 33 MB 生成脚本和复杂 WebGL 动画；其中 `1396475780` 的大型脚本还验证了 Service Worker 静态识别，结果为 **5 个 A，平均 98.8，证据覆盖 94.3%**；3 个 Steam CDN 代表样本覆盖响应式 Canvas、手工三视口 WebGL 和 CoinGecko 实时数据，结果为 **3 个 A，平均 98.0，证据覆盖 90.3%**。
+当前固定矩阵包含 10 个真实 Workshop 样本，覆盖 file/directory、dependency、媒体、Canvas、WebGL/WebGL2、Live2D、WASM、iframe、持久化存储、音频、指针输入和动态画面。最新隔离运行结果为 **10 个 A，平均 98.2，证据覆盖 94.3%，矩阵门禁通过**。每个 App 进程使用唯一 Debug UserDefaults suite，日志必须确认 suite，结束后必须删除；因此结果不再继承用户在产品 UI 中保存的样本属性。另外 5 个作者公开源码样本的独立门覆盖属性密集、Worker、音频频谱、约 33 MB 生成脚本和复杂 WebGL 动画；其中 `1396475780` 的大型脚本还验证了 Service Worker 静态识别，当前最终结果为 **5 个 A，平均 98.8，证据覆盖 97.9%**；3 个 Steam CDN 代表样本覆盖响应式 Canvas、手工三视口 WebGL 和 CoinGecko 实时数据，当前最终结果为 **3 个 A，平均 98.0，证据覆盖 94.8%**。
 
 当前本机 34 个 Web 样本已固化为完整基线。2026-07-20 构建的长批次为 **34 个 A，平均 98.2，证据覆盖 93.3%，完整门通过**；同一构建的作者源码和 Steam CDN 批次分别为 5A 与 3A。这组结果继续作为历史基线，但不再代表当前最终 HEAD。
 
-2026-07-22 对当前 HEAD 的 34 项完整门实跑为 **34/34 可运行、28A/6B、平均 96.3、证据覆盖 94.7%，矩阵门失败**。14 条门禁消息集中在 7 个样本：`3696478440`、`3749492163`、`3761112434`、`3765121260` 因页面没有 `applyUserProperties` listener，却被泛化的 `properties` 标签要求必须产生用户属性成功事件；`3762337744`、`3763203095`、`3765238355` 功能得分仍为 98/A，但属性证据由 medium 降为 weak 后 coverage 从 90.3% 降至 85%。`3700131876`、`3700928191` 的既有样本脚本属性错误仍按允许例外得到 B。9 项同构定向复跑完全复现，四个新增 B 样本的窗口截图均肉眼确认有效；本轮没有 `launch`、`host_runtime`、`navigation`、`resource_mapping`、`interaction`、`visual_output` 或 `animation` 短板。当前阻断首先是 `5dac800` 后 scorer、能力标签与“无 listener 页面”的属性契约不一致，而不是已确认的渲染主链回归；在修正并重跑前仍不能把完整门称为绿色。
+2026-07-22 首轮 34 项完整门的 28A/6B 失败已完成归因和修正：4 个无 `applyUserProperties` listener 的样本移除错误 `properties` 标签；无需属性桥的样本不再被记为 weak coverage；当前 listener 与当前 payload 的 DOM 应用签名可作为正向属性证据；完整门最低观察窗提升为 18 秒；Debug evidence 窗口会进入当前 Space 并成为 key，避免 WebKit 因 `isOnScreen=0` 停止 `requestAnimationFrame`。这些修正没有放宽评分阈值、隐藏错误或修改样本源码。
 
-Web 目前没有已确认的宿主 P0 阻断，已知样本的功能兼容主链和系统音频到 JS 主链可以视为闭环，但仍不能称为发布级“最终完全闭环”。确定性锁屏、重叠休眠、采集配置失效恢复、Space 通知中心路由/观察者释放和当前非沙盒发行链的 file/directory 服务持久化已关闭；当前 HEAD 的 34 项已刷新但属性证据合同待修正，5+3 外部门仍待刷新，真实 OS 电源周期、物理 Space/显示器与音频设备变化、runtime 互切、性能和长期运行预算、真实文件选择器 UI 与签名沙盒授权回归，以及 CI/发布流程接入也未完成。按本文八项能力门重算，当前工程成熟度仍约为 **90/100**。
+当前最终签名 Debug App 的同构建结果为：**34/34 可运行、32A/2B、平均 97.7、证据覆盖 95.9%，完整门通过**；作者源码门为 **5A / 98.8 / 97.9%**，Steam CDN 门为 **3A / 98.0 / 94.8%**，三组 App 身份均为 Team ID `H9QWU9XN8R`、CDHash `f3eb94e6f511403263775b7ee8e04f3fdc0ceb30`、可执行文件 SHA-256 `5278316bbc5ca6d5b22c8b014380ebdb857c1635a107a04f2b38a52bd40bd7db`。`3700131876`、`3700928191` 仍保留样本脚本属性错误和 B 等级，只因矩阵明确允许该既有短板而不阻断批次；其余非空 shortfall 均与各样本允许例外一致。
+
+Web 目前没有已确认的宿主 P0 阻断，当前 HEAD 的 34+5+3 已知样本功能兼容主链和系统音频到 JS 主链可以视为闭环，但仍不能称为发布级“最终完全闭环”。确定性锁屏、重叠休眠、采集配置失效恢复、Space 通知中心路由/观察者释放和当前非沙盒发行链的 file/directory 服务持久化已关闭；真实 OS 电源周期、物理 Space/显示器与音频设备变化、runtime 互切、性能和长期运行预算、真实文件选择器 UI 与签名沙盒授权回归，以及 CI/发布流程接入仍未完成。按本文八项能力门重算，当前工程成熟度仍约为 **90/100**。
 
 ### Scene
 
@@ -46,8 +48,11 @@ Scene 已建立清晰的独立模块、PKGV 读取、受控缓存、typed interp
 16. 2026-07-21 的截图证据身份门：benchmark 先严格验证并隔离复制签名 Debug App，运行后复核 bundle ID、Team ID、CDHash、版本和可执行文件 SHA-256；`3700131876` 在隔离 Workshop root/HOME 下取得 ready 与 after-interaction 的 WebView、Canvas、当前进程窗口三源快照，窗口截图肉眼确认非空。单样本结果为 92 / A、coverage 90.3%，既有 `properties.error` 仍按短板保留；报告保存在 `.codex/web-wallpaper-benchmark-capture-final-20260721/`。
 17. 2026-07-22 的当前 HEAD 34 项完整门：34/34 可运行，28A/6B，平均 96.3，coverage 94.7%，矩阵门失败；报告保存在 `.codex/web-full-final-20260722/`。
 18. 2026-07-22 的 9 项属性证据定向复跑：完全复现 4 个属性 B、3 个 coverage-only 失败和 2 个既有允许例外，排除长批次偶发；报告保存在 `.codex/web-full-targeted-retry-20260722/`。
+19. 2026-07-22 的当前最终 34 项完整门：32A/2B，平均 97.7，coverage 95.9%，矩阵门通过；报告保存在 `.codex/web-full-final-pass-20260722/`。
+20. 2026-07-22 的当前最终作者源码门：5A，平均 98.8，coverage 97.9%，矩阵门通过；报告保存在 `.codex/web-external-final-pass2-20260722/`。
+21. 2026-07-22 的当前最终 Steam CDN 门：3A，平均 98.0，coverage 94.8%，矩阵门通过；报告保存在 `.codex/web-steam-final-pass-20260722/`。
 
-前序专项报告保存在 `.codex/web-closure-final-20260720/`；作者源码、Steam CDN、34 项历史基线、系统中断门、音频配置失效门、文件持久化门、偏好隔离矩阵和 Space/屏幕门报告分别保存在 `.codex/web-external-final-20260720/results/`、`.codex/web-steam-final-20260720/results/`、`.codex/web-full-final-20260720/results/`、`.codex/web-system-state-final-20260721/results-pass2/`、`.codex/web-audio-restart-final-20260721/results-pass/`、`.codex/web-property-persistence-final-20260721/results-suite-pass/`、`.codex/web-defaults-isolation-final-20260721/matrix-regression/` 和 `.codex/web-space-lifecycle-final-20260721/results-pass2/`，Steam 样本副本保存在 `.codex/web-steam-representative-samples-20260720/`。这些目录被 Git 忽略，只作为本地复核证据保留到分支合并，不替代仓库内的矩阵定义和生产测试。
+前序专项报告保存在 `.codex/web-closure-final-20260720/`；作者源码、Steam CDN、34 项历史基线、系统中断门、音频配置失效门、文件持久化门、偏好隔离矩阵和 Space/屏幕门报告分别保存在 `.codex/web-external-final-20260720/results/`、`.codex/web-steam-final-20260720/results/`、`.codex/web-full-final-20260720/results/`、`.codex/web-system-state-final-20260721/results-pass2/`、`.codex/web-audio-restart-final-20260721/results-pass/`、`.codex/web-property-persistence-final-20260721/results-suite-pass/`、`.codex/web-defaults-isolation-final-20260721/matrix-regression/` 和 `.codex/web-space-lifecycle-final-20260721/results-pass2/`；作者源码和 Steam 样本副本分别保存在 `.codex/web-external-representative-samples-20260722/` 与 `.codex/web-steam-representative-samples-20260720/`。这些目录被 Git 忽略，只作为本地复核证据保留到分支合并，不替代仓库内的矩阵定义和生产测试。
 
 本次 Web 固定矩阵结果：
 
@@ -216,7 +221,7 @@ benchmark 现在要求像素统计、DOM 状态和 pointer/click/drag/wheel 注�
 
 #### 部分关闭：全样本门禁已建立，尚未接入发布流程
 
-2026-07-20 已对当前 34 个本机样本建立固定清单、能力标签、已知样本例外和失败退出条件，并增加 5 个作者源码样本和 3 个 Steam CDN 代表样本的独立门。固定矩阵用于每次公共 runtime 改动；涉及 parser、origin、资源、属性、缓存签名、音频或评分规则的改动，以及发布候选版本，再运行完整门。2026-07-20 的历史结果为作者源码 5A、Steam CDN 3A、完整基线 34A；2026-07-22 当前 HEAD 的完整门为 28A/6B，暴露了 scorer、能力标签和无 listener 页面之间的属性证据合同不一致。下一步先修正评测合同并重跑完整门，再刷新 5+3，随后接入发布 checklist；仍不能用平均分或失败项单独重跑通过替代批次关键短板判断。
+2026-07-20 已对当前 34 个本机样本建立固定清单、能力标签、已知样本例外和失败退出条件，并增加 5 个作者源码样本和 3 个 Steam CDN 代表样本的独立门。固定矩阵用于每次公共 runtime 改动；涉及 parser、origin、资源、属性、缓存签名、音频或评分规则的改动，以及发布候选版本，再运行完整门。2026-07-22 当前 HEAD 已在同一签名 Debug App 上完成 34+5+3 刷新，三组矩阵门均通过；首轮 28A/6B 暴露的 scorer、能力标签和无 listener 页面属性证据合同不一致也已修正。下一步是把完整门接入发布 checklist；仍不能用平均分或失败项单独重跑通过替代批次关键短板判断。
 
 #### P2：正式宿主契约和发布流程尚未收口
 
@@ -438,18 +443,18 @@ descriptor 能识别 image、particle、text、container，但 renderer 当前�
 - `3700131876` 和 `3700928191` 的雨滴回归已从属性回调顺序根因修复；两样本双帧动态证据通过。
 - 当前没有已确认的宿主 P0 Web 问题。
 
-### M2：Web 强证据回归门（框架已完成，当前门待修正）
+### M2：Web 强证据回归门（已完成）
 
 - 已固定 10 个代表样本并加入能力标签、最低等级、最低 coverage 和批次禁用短板。
 - benchmark 已增加 WebView/Canvas/当前进程窗口视觉像素、同源运动、DOM、主动音频和自动 pointer/click/drag/wheel 断言。
-- 当前独立偏好域固定门结果：平均 98.2、coverage 94.3%、10A。2026-07-20 历史作者源码、Steam CDN 和完整门分别为 5A、3A、34A；2026-07-22 当前 HEAD 完整门为平均 96.3、coverage 94.7%、28A/6B，属性证据合同修正前不算通过。
+- 当前独立偏好域固定门结果：平均 98.2、coverage 94.3%、10A；当前最终完整门为平均 97.7、coverage 95.9%、32A/2B；作者源码门为 98.8 / 97.9% / 5A；Steam CDN 门为 98.0 / 94.8% / 3A。四层门均通过。
 - 音频生产链已按 Wallpaper Engine 契约输出 signed stereo 64+64 布局，并在分发边界应用兼容幅度响应；受控系统音源验证频率、幅度和声道，Debug fixture 只用于确定性桥接和样本视觉回归证据。
 - coverage 未设为 95% 的原因是部分样本没有媒体节点或特定能力事件，不能用伪造事件抬高覆盖率；单样本关键门禁优先于平均 coverage。
 
 ### M3：Web 生命周期与性能闭环（进行中）
 
 - 已完成 Web-to-Web 切换、loopback 启停、WKWebView 释放、Web 音频需求启停、重叠睡眠/锁屏恢复、CoreAudio 配置失效重建、Space/屏幕 observer 和最终 stop 零状态门禁。
-- 2026-07-22 已刷新当前 HEAD 的 34 项长批次，结果为 28A/6B；先修正属性证据合同并重跑 34 项，再刷新 5+3。随后完成真实 OS/设备状态、Web/Video/Scene 互切、30 分钟交互运行和 2 小时 soak。
+- 2026-07-22 已刷新当前 HEAD 的 34+5+3，三组矩阵门均通过。随后完成真实 OS/设备状态、Web/Video/Scene 互切、30 分钟交互运行和 2 小时 soak。
 - 建立单屏/双屏 CPU、GPU、内存、功耗和缓存预算。
 - 验收：无持续资源增长、无窗口/端口/音频残留、暂停后负载下降、恢复序列可诊断。
 
@@ -469,6 +474,6 @@ descriptor 能识别 image、particle、text、container，但 renderer 当前�
 
 ## 8. 最终判断
 
-Web 的运行主链已从“基本可用”推进到“有固定、作者源码、Steam CDN、完整四层兼容门、远程网络降级门、真实音频证据、文件跨重启恢复门、确定性系统中断恢复门、配置失效重建门、Space/屏幕 observer 门和释放门”。2026-07-20 的历史 34+5+3 与 2026-07-21 的独立偏好域 10 项门均全绿；Google Fonts 在国内无直连或代理失效时不再阻塞启动，Web 音频也已从重复的桌面假波形改为按需 signed stereo FFT，并补回旧样本依赖的兼容幅度响应。2026-07-22 当前 HEAD 的 34 项门为 28A/6B，新增失败集中在无 `applyUserProperties` listener 页面与 scorer/能力标签的属性证据合同，不是已确认的宿主渲染主链回归。当前可声明“历史 34+5+3 构建的已知样本功能兼容闭环、当前非沙盒发行链的 Web 文件服务持久化闭环、Web 音频宿主主链及确定性睡眠/锁屏、配置失效和 Space observer 恢复闭环”；当前完整门仍需修正评测合同并重跑，5+3 也需刷新，因此仍不能声明“发布级最终完全闭环”或“以后所有样本都会成功”。后续应集中完成当前门禁修正、runtime 互切、物理设备与真实 OS 状态、长期资源预算、真实 UI/签名沙盒授权回归和发布流程接入。当前专用 WKWebView 宿主、受控资源协议、按需 loopback 和结构化诊断路线应继续保留，不应改回宽权限 `file://` 或引入重复宿主。
+Web 的运行主链已从“基本可用”推进到“有固定、作者源码、Steam CDN、完整四层兼容门、远程网络降级门、真实音频证据、文件跨重启恢复门、确定性系统中断恢复门、配置失效重建门、Space/屏幕 observer 门和释放门”。2026-07-22 当前 HEAD 的 34+5+3 与独立偏好域 10 项门均全绿；Google Fonts 在国内无直连或代理失效时不再阻塞启动，Web 音频也已从重复的桌面假波形改为按需 signed stereo FFT，并补回旧样本依赖的兼容幅度响应。当前可声明“当前构建 34+5+3 的已知样本功能兼容闭环、当前非沙盒发行链的 Web 文件服务持久化闭环、Web 音频宿主主链及确定性睡眠/锁屏、配置失效和 Space observer 恢复闭环”；仍不能声明“发布级最终完全闭环”或“以后所有样本都会成功”。后续应集中完成 runtime 互切、物理设备与真实 OS 状态、长期资源预算、真实 UI/签名沙盒授权回归和发布流程接入。当前专用 WKWebView 宿主、受控资源协议、按需 loopback 和结构化诊断路线应继续保留，不应改回宽权限 `file://` 或引入重复宿主。
 
 Scene 的情况相反：基础架构成立，但运行能力仍是明确子集。要么把 Scene Lite 的范围、体验和质量做好，要么投入一个来源清晰、可测试的兼容渲染运行时；继续增加样本硬编码和手写视觉替身不会形成最终兼容闭环。
