@@ -91,11 +91,16 @@ extension SteamWorkshopToolbarController {
     }
 
     func syncSortPopup() {
-        let allSources = SteamWorkshopSource.allCases
-        sortPopupButton.selectItem(at: allSources.firstIndex(of: SteamWorkshopService.shared.source) ?? 0)
+        let source = SteamWorkshopService.shared.source
+        sortPopupButton.itemArray.first { ($0.representedObject as? String) == source.rawValue }.map {
+            sortPopupButton.select($0)
+        }
         let isEnabled = !SteamWorkshopService.shared.isBrowsingAuthorWorkshop
         sortToolbarItem.isEnabled = isEnabled
         sortPopupButton.isEnabled = isEnabled
+        sortToolbarItem.toolTip = isEnabled
+            ? "当前浏览来源：\(source.displayName)"
+            : "作者工坊模式暂不支持切换浏览来源"
     }
 
     func syncContentModePopup() {

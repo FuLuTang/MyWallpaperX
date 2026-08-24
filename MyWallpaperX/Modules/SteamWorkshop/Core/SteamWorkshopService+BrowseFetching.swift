@@ -6,7 +6,7 @@ extension SteamWorkshopService {
         requestedURL = requestedURLForCurrentContext(page: 1)
         navigationVersion += 1
         currentWorkshopItemID = nil
-        currentPageTitle = browseContext.title
+        currentPageTitle = browseContext.isAuthorWorkshop ? browseContext.title : source.pageTitle
         fetchBrowserItems()
     }
 
@@ -88,7 +88,7 @@ extension SteamWorkshopService {
                         .filter { !existingIDs.contains($0.id) }
                     self.browserItems.append(contentsOf: fallbackItems)
                     self.browserNextPage = page + 1
-                    self.hasMoreBrowserItems = pageResult.hasMore
+                    self.hasMoreBrowserItems = pageResult.hasMore && !fallbackItems.isEmpty
                     self.isLoadingMoreBrowserItems = false
                     self.browserLoadMoreRetryAfter = .distantPast
                     self.statusMessage = self.prefetchStatusMessage(for: browseContext, page: page)
@@ -179,10 +179,11 @@ extension SteamWorkshopService {
         let resolutionFilter = self.resolutionFilter
         let categoryFilter = self.categoryFilter
         let expectedNavigationVersion = navigationVersion
-        let pageSize = browsePageSize(for: browseContext)
+        let pageSize = browsePageSize(for: browseContext, source: source)
         logBrowserDebug(
             "fetchBrowserItems start context=\(browseContext.title) forceRefresh=\(forceRefresh) query=\(query) pageSize=\(pageSize)"
         )
+        if preparePersonalWorkshopFetchIfNeeded(source: source, forceRefresh: forceRefresh, navigationVersion: expectedNavigationVersion) { return }
 
         if browseContext == .discovery,
            let itemID = Self.workshopItemIDSearchID(from: query) {
@@ -262,7 +263,6 @@ extension SteamWorkshopService {
             browserItems = []
             statusMessage = loadingStatusMessage(for: browseContext)
         }
-
         browserFetchTask = Task(priority: .userInitiated) { [weak self] in
             do {
                 let pageResult = try await Self.fetchWorkshopStubPage(
@@ -422,7 +422,7 @@ extension SteamWorkshopService {
         case .authorWorkshop(_, let workshopURL):
             url = makeAuthorWorkshopURL(baseURL: workshopURL, page: page)
         }
-        let html = try await fetchHTML(url: url)
+        let html = try await fetchHTMLForBrowseSource(url: url, context: context, source: source)
         let stubs = parseBrowsePage(html: html)
         for stub in stubs {
             await saveAuthorNameIfPossible(
@@ -432,7 +432,7 @@ extension SteamWorkshopService {
                 authorWorkshopURL: stub.authorWorkshopURL
             )
         }
-        let pageSize = await context.isAuthorWorkshop ? Constants.authorWorkshopPageSize : Constants.browserPageSize
+        let pageSize = await context.isAuthorWorkshop ? Constants.authorWorkshopPageSize : (source.isPersonal ? Constants.personalWorkshopPageSize : Constants.browserPageSize)
         let hasNextPageLink = browsePageHasMore(html: html, currentPage: page)
         let hasMore = hasNextPageLink || stubs.count >= pageSize
         if !stubs.isEmpty {
@@ -802,7 +802,7 @@ extension SteamWorkshopService {
         _ detail: SteamWorkshopPublishedFileDetail,
         browserContentMode: SteamWorkshopBrowserContentMode
     ) -> Bool {
-        detail.tags.contains { tag in
+        browserContentMode.isAll || detail.tags.contains { tag in
             tag.tag.compare(browserContentMode.requiredTagValue, options: .caseInsensitive) == .orderedSame
         }
     }
@@ -811,18 +811,18 @@ extension SteamWorkshopService {
         browserContentMode: SteamWorkshopBrowserContentMode,
         workshopTypeText: String
     ) -> Bool {
-        workshopTypeText.compare(browserContentMode.requiredTagValue, options: .caseInsensitive) == .orderedSame
+        browserContentMode.isAll || workshopTypeText.compare(browserContentMode.requiredTagValue, options: .caseInsensitive) == .orderedSame
     }
 
     nonisolated static func browserItemMatchesContentMode(
         _ item: SteamWorkshopBrowserItem,
         browserContentMode: SteamWorkshopBrowserContentMode
     ) -> Bool {
-        if let workshopTypeText = item.workshopTypeText,
+        if !browserContentMode.isAll, let workshopTypeText = item.workshopTypeText,
            workshopTypeMatches(browserContentMode: browserContentMode, workshopTypeText: workshopTypeText) {
             return true
         }
-        return item.tags.contains {
+        return browserContentMode.isAll || item.tags.contains {
             $0.compare(browserContentMode.requiredTagValue, options: .caseInsensitive) == .orderedSame
         }
     }

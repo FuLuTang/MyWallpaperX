@@ -18,7 +18,7 @@ extension SteamWorkshopService {
         requestedURL = requestedURLForCurrentContext(page: 1)
         navigationVersion += 1
         currentWorkshopItemID = nil
-        currentPageTitle = browseContext.title
+        currentPageTitle = browseContext.isAuthorWorkshop ? browseContext.title : source.pageTitle
         statusMessage = loadingStatusMessage(for: browseContext)
         fetchBrowserItems()
         requestSteamWorkshopBrowserSelection()

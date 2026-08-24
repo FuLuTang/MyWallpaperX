@@ -22,9 +22,9 @@ extension SteamWorkshopToolbarController {
             syncBrowserContextControls()
             return
         }
-        let sources = SteamWorkshopSource.allCases
-        guard sender.indexOfSelectedItem >= 0, sender.indexOfSelectedItem < sources.count else { return }
-        SteamWorkshopService.shared.source = sources[sender.indexOfSelectedItem]
+        guard let rawValue = sender.selectedItem?.representedObject as? String,
+              let source = SteamWorkshopSource(rawValue: rawValue) else { return }
+        SteamWorkshopService.shared.source = source
         syncTrendingWindowPopup()
     }
 
@@ -75,8 +75,19 @@ extension SteamWorkshopToolbarController {
             menu.addItem(anonymousItem)
         }
 
+        menu.addItem(.separator())
+        let communityTitle = service.communityAccountName.map { "Steam 社区：\($0)" } ?? "登录 Steam 社区以查看我的订阅"
+        let communityItem = NSMenuItem(title: communityTitle, action: #selector(handlePresentCommunityLogin), keyEquivalent: "")
+        communityItem.target = self
+        communityItem.isEnabled = true
+        menu.addItem(communityItem)
+
         let buttonBounds = accountButton.bounds
         menu.popUp(positioning: nil, at: NSPoint(x: 0, y: buttonBounds.height + 4), in: accountButton)
+    }
+
+    @objc func handlePresentCommunityLogin() {
+        SteamWorkshopService.shared.presentCommunityLogin()
     }
 
     @objc func handleFilterMenu() {

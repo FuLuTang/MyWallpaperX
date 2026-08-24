@@ -75,6 +75,10 @@ final class SteamWorkshopService: ObservableObject {
     @Published var activeAuthorWorkshopName: String?
     @Published var requestedURL: URL
     @Published var navigationVersion: Int = 0
+    @Published var communityAccountID: String?
+    @Published var communityAccountName: String?
+
+    let communitySession = SteamCommunitySessionController.shared
 
     // MARK: - Download selection state
 

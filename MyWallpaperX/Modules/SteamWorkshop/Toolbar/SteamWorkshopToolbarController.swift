@@ -538,17 +538,15 @@ final class SteamWorkshopToolbarController: NSObject, NSSearchFieldDelegate {
         let button = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 118, height: 30), pullsDown: false)
         button.target = self
         button.action = #selector(handleSortAction(_:))
-        SteamWorkshopSource.allCases.forEach { source in
-            button.menu?.addItem(withTitle: source.displayName, action: nil, keyEquivalent: "")
-        }
+        populateSourceMenu(button.menu)
         return button
     }()
 
     lazy var sortToolbarItem: NSToolbarItem = {
         let item = NSToolbarItem(itemIdentifier: .steamSort)
-        item.label = "排序"
-        item.paletteLabel = "排序"
-        item.toolTip = "切换 Steam 创意工坊排序方式"
+        item.label = "浏览来源"
+        item.paletteLabel = "浏览来源"
+        item.toolTip = "切换 Steam 创意工坊浏览来源"
         item.autovalidates = false
         item.view = sortPopupButton
         return item
