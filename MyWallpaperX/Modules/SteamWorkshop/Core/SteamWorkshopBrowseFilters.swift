@@ -188,26 +188,34 @@ enum SteamWorkshopThemeFilter: String, CaseIterable, Identifiable {
     }
 }
 
-enum SteamWorkshopAgeRatingFilter: String, CaseIterable, Identifiable {
-    case all
-    case everyone = "Everyone"
-    case mature = "Mature"
-    case unspecified = "Unspecified"
+struct SteamWorkshopAgeRatingFilter: OptionSet, Hashable {
+    let rawValue: UInt8
 
-    nonisolated var id: String { rawValue }
+    static let everyone = Self(rawValue: 1 << 0)
+    static let questionable = Self(rawValue: 1 << 1)
+    static let mature = Self(rawValue: 1 << 2)
+    static let all: Self = [.everyone, .questionable, .mature]
+    nonisolated static let selectableRatings: [Self] = [.everyone, .questionable, .mature]
 
     nonisolated var displayName: String {
         switch self {
-        case .all: return "全部年龄"
-        case .everyone: return "大众级"
-        case .mature: return "成人级"
-        case .unspecified: return "未指定"
+        case .everyone: return "大众级 (G)"
+        case .questionable: return "家长指导级 (PG-13)"
+        case .mature: return "限制级 / 成人级 (R-18)"
+        default: return "全部年龄"
         }
     }
 
-    nonisolated var tagValue: String? {
-        self == .all ? nil : rawValue
+    nonisolated var tagValue: String {
+        switch self {
+        case .everyone: return "Everyone"
+        case .questionable: return "Questionable"
+        case .mature: return "Mature"
+        default: return ""
+        }
     }
+
+    nonisolated static let ratingTagValues = selectableRatings.map(\.tagValue)
 }
 
 enum SteamWorkshopResolutionFilter: String, CaseIterable, Identifiable {
