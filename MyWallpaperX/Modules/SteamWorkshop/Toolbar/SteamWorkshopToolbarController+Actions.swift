@@ -102,11 +102,11 @@ extension SteamWorkshopToolbarController {
 
         let ageMenuItem = NSMenuItem(title: "分级", action: nil, keyEquivalent: "")
         let ageMenu = NSMenu()
-        SteamWorkshopAgeRatingFilter.allCases.forEach { filter in
+        SteamWorkshopAgeRatingFilter.selectableRatings.forEach { filter in
             let item = NSMenuItem(title: filter.displayName, action: #selector(handleAgeFilterItem(_:)), keyEquivalent: "")
             item.target = self
-            item.state = service.ageRatingFilter == filter ? .on : .off
-            item.representedObject = filter.rawValue
+            item.state = service.ageRatingFilter.contains(filter) ? .on : .off
+            item.representedObject = Int(filter.rawValue)
             ageMenu.addItem(item)
         }
         ageMenuItem.submenu = ageMenu
@@ -263,9 +263,9 @@ extension SteamWorkshopToolbarController {
     }
 
     @objc func handleAgeFilterItem(_ sender: NSMenuItem) {
-        guard let rawValue = sender.representedObject as? String,
-              let filter = SteamWorkshopAgeRatingFilter(rawValue: rawValue) else { return }
-        SteamWorkshopService.shared.ageRatingFilter = filter
+        guard let rawValue = sender.representedObject as? Int,
+              let value = UInt8(exactly: rawValue) else { return }
+        SteamWorkshopService.shared.ageRatingFilter.formSymmetricDifference(.init(rawValue: value))
         configureFilterItem()
     }
 

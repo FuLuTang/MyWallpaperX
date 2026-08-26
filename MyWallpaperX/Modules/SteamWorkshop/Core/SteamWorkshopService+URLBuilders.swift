@@ -26,9 +26,6 @@ extension SteamWorkshopService {
         if let themeTag = themeFilter.tagValue {
             queryItems.append(URLQueryItem(name: "requiredtags[]", value: themeTag))
         }
-        if let ageTag = ageRatingFilter.tagValue {
-            queryItems.append(URLQueryItem(name: "requiredtags[]", value: ageTag))
-        }
         if let resolutionTag = resolutionFilter.tagValue {
             queryItems.append(URLQueryItem(name: "requiredtags[]", value: resolutionTag))
         }
