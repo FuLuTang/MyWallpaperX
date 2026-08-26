@@ -10,7 +10,8 @@ extension SteamWorkshopService {
         ageRatingFilter: SteamWorkshopAgeRatingFilter,
         resolutionFilter: SteamWorkshopResolutionFilter,
         categoryFilter: SteamWorkshopCategoryFilter,
-        page: Int
+        page: Int,
+        personalSort: SteamWorkshopPersonalSort = .subscriptionDate
     ) -> URL {
         if source.isPersonal {
             return makePersonalWorkshopURL(
@@ -21,7 +22,8 @@ extension SteamWorkshopService {
                 ageRatingFilter: ageRatingFilter,
                 resolutionFilter: resolutionFilter,
                 categoryFilter: categoryFilter,
-                page: page
+                page: page,
+                personalSort: personalSort
             )
         }
         var components = URLComponents(string: Constants.steamCommunityBase)!
@@ -65,7 +67,8 @@ extension SteamWorkshopService {
         ageRatingFilter: SteamWorkshopAgeRatingFilter,
         resolutionFilter: SteamWorkshopResolutionFilter,
         categoryFilter: SteamWorkshopCategoryFilter,
-        page: Int
+        page: Int,
+        personalSort: SteamWorkshopPersonalSort = .subscriptionDate
     ) -> URL {
         var components = URLComponents(string: "https://steamcommunity.com/my/myworkshopfiles/")!
         var queryItems = [
@@ -73,6 +76,7 @@ extension SteamWorkshopService {
             URLQueryItem(name: "searchtext", value: query),
             URLQueryItem(name: "browsesort", value: source.browseFilter),
             URLQueryItem(name: "browsefilter", value: source.browseFilter),
+            URLQueryItem(name: "sortmethod", value: personalSort.rawValue),
             URLQueryItem(name: "numperpage", value: "\(Constants.personalWorkshopPageSize)"),
             URLQueryItem(name: "p", value: "\(max(1, page))")
         ]

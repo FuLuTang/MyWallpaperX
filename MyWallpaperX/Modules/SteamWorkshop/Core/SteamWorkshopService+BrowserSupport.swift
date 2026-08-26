@@ -118,7 +118,8 @@ extension SteamWorkshopService {
         themeFilter: SteamWorkshopThemeFilter,
         ageRatingFilter: SteamWorkshopAgeRatingFilter,
         resolutionFilter: SteamWorkshopResolutionFilter,
-        categoryFilter: SteamWorkshopCategoryFilter
+        categoryFilter: SteamWorkshopCategoryFilter,
+        personalSort: SteamWorkshopPersonalSort = .subscriptionDate
     ) -> SteamWorkshopBrowserCacheSnapshot? {
         let url = cacheFileURL(
             context: context,
@@ -129,7 +130,8 @@ extension SteamWorkshopService {
             themeFilter: themeFilter,
             ageRatingFilter: ageRatingFilter,
             resolutionFilter: resolutionFilter,
-            categoryFilter: categoryFilter
+            categoryFilter: categoryFilter,
+            personalSort: personalSort
         )
         guard let data = try? Data(contentsOf: url) else { return nil }
         return try? JSONDecoder().decode(SteamWorkshopBrowserCacheSnapshot.self, from: data)
@@ -145,7 +147,8 @@ extension SteamWorkshopService {
         ageRatingFilter: SteamWorkshopAgeRatingFilter,
         resolutionFilter: SteamWorkshopResolutionFilter,
         categoryFilter: SteamWorkshopCategoryFilter,
-        items: [SteamWorkshopBrowserItem]
+        items: [SteamWorkshopBrowserItem],
+        personalSort: SteamWorkshopPersonalSort = .subscriptionDate
     ) {
         let snapshot = SteamWorkshopBrowserCacheSnapshot(fetchedAt: Date(), items: items)
         guard let data = try? JSONEncoder().encode(snapshot) else { return }
@@ -158,9 +161,10 @@ extension SteamWorkshopService {
                 query: query,
                 trendingWindow: trendingWindow,
                 themeFilter: themeFilter,
-                ageRatingFilter: ageRatingFilter,
-                resolutionFilter: resolutionFilter,
-                categoryFilter: categoryFilter
+            ageRatingFilter: ageRatingFilter,
+            resolutionFilter: resolutionFilter,
+            categoryFilter: categoryFilter,
+            personalSort: personalSort
             ),
             options: [.atomic]
         )
@@ -212,14 +216,15 @@ extension SteamWorkshopService {
         themeFilter: SteamWorkshopThemeFilter,
         ageRatingFilter: SteamWorkshopAgeRatingFilter,
         resolutionFilter: SteamWorkshopResolutionFilter,
-        categoryFilter: SteamWorkshopCategoryFilter
+        categoryFilter: SteamWorkshopCategoryFilter,
+        personalSort: SteamWorkshopPersonalSort
     ) -> URL {
         switch context {
         case .discovery:
             if source.isPersonal {
                 let account = safeCacheComponent(for: communityAccountID ?? "pending", fallback: "unknown")
                 let search = safeCacheComponent(for: query, fallback: "all")
-                return cacheDirectoryURL.appendingPathComponent("personal-\(account)-\(source.rawValue)-\(browserContentMode.rawValue)-\(themeFilter.rawValue)-\(ageRatingFilter.rawValue)-\(resolutionFilter.rawValue)-\(categoryFilter.rawValue)-\(search).json")
+                return cacheDirectoryURL.appendingPathComponent("personal-\(account)-\(source.rawValue)-\(personalSort.rawValue)-\(browserContentMode.rawValue)-\(themeFilter.rawValue)-\(ageRatingFilter.rawValue)-\(resolutionFilter.rawValue)-\(categoryFilter.rawValue)-\(search).json")
             }
         case .authorWorkshop:
             return cacheDirectoryURL.appendingPathComponent("\(context.cacheKeyComponent).json")

@@ -91,16 +91,39 @@ extension SteamWorkshopToolbarController {
     }
 
     func syncSortPopup() {
-        let source = SteamWorkshopService.shared.source
-        sortPopupButton.itemArray.first { ($0.representedObject as? String) == source.rawValue }.map {
+        let service = SteamWorkshopService.shared
+        let source = service.source
+        sortPopupButton.menu?.removeAllItems()
+        if source.isPersonal {
+            populatePersonalSortMenu(sortPopupButton.menu)
+        } else {
+            populateSourceMenu(sortPopupButton.menu)
+        }
+        let selectedRawValue = source.isPersonal ? service.personalSort.rawValue : source.rawValue
+        sortPopupButton.itemArray.first { ($0.representedObject as? String) == selectedRawValue }.map {
             sortPopupButton.select($0)
         }
-        let isEnabled = !SteamWorkshopService.shared.isBrowsingAuthorWorkshop
+        let isEnabled = !service.isBrowsingAuthorWorkshop
         sortToolbarItem.isEnabled = isEnabled
         sortPopupButton.isEnabled = isEnabled
+        sortToolbarItem.label = source.isPersonal ? "排序" : "浏览来源"
+        sortToolbarItem.paletteLabel = sortToolbarItem.label
         sortToolbarItem.toolTip = isEnabled
-            ? "当前浏览来源：\(source.displayName)"
+            ? (source.isPersonal ? "当前个人库排序：\(service.personalSort.displayName)" : "当前浏览来源：\(source.displayName)")
             : "作者工坊模式暂不支持切换浏览来源"
+    }
+
+    func syncPersonalListPopup() {
+        let service = SteamWorkshopService.shared
+        let isEnabled = service.source.isPersonal && !service.isBrowsingAuthorWorkshop
+        personalListPopupButton.itemArray.first {
+            ($0.representedObject as? String) == service.source.rawValue
+        }.map { personalListPopupButton.select($0) }
+        personalListToolbarItem.isEnabled = isEnabled
+        personalListPopupButton.isEnabled = isEnabled
+        personalListToolbarItem.toolTip = isEnabled
+            ? "当前个人列表：\(service.source.displayName)"
+            : "进入 Steam 已订阅后选择个人列表"
     }
 
     func syncContentModePopup() {
@@ -153,6 +176,7 @@ extension SteamWorkshopToolbarController {
         configureAuthorBackItem()
         syncContentModePopup()
         syncSortPopup()
+        syncPersonalListPopup()
         syncTrendingWindowPopup()
         configureFilterItem()
         syncSearchField()
@@ -164,6 +188,7 @@ extension SteamWorkshopToolbarController {
             authorBackButton,
             contentModePopupButton,
             sortPopupButton,
+            personalListPopupButton,
             trendingWindowPopupButton,
             filterButton,
             searchField

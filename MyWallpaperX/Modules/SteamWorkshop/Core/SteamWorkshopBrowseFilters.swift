@@ -55,6 +55,9 @@ enum SteamWorkshopSource: String, CaseIterable, Identifiable {
     case mySubscriptions
     case myFavorites
 
+    nonisolated static let publicSources: [Self] = [.featured, .recent, .mostSubscribed, .updated]
+    nonisolated static let personalSources: [Self] = [.mySubscriptions, .myFavorites]
+
     nonisolated var id: String { rawValue }
 
     nonisolated var displayName: String {
@@ -63,7 +66,7 @@ enum SteamWorkshopSource: String, CaseIterable, Identifiable {
         case .recent: return "最新发布"
         case .mostSubscribed: return "最多订阅"
         case .updated: return "最后更新"
-        case .mySubscriptions: return "我的订阅"
+        case .mySubscriptions: return "Steam 已订阅"
         case .myFavorites: return "我的收藏"
         }
     }
@@ -92,6 +95,28 @@ enum SteamWorkshopSource: String, CaseIterable, Identifiable {
         case .mySubscriptions: return "我的订阅"
         case .myFavorites: return "我的收藏"
         default: return "Steam 创意工坊"
+        }
+    }
+}
+
+enum SteamWorkshopPersonalSort: String, CaseIterable, Identifiable {
+    case name = "alpha"
+    case rating
+    case favorites
+    case fileSize = "filesize"
+    case subscriptionDate = "subscriptiondate"
+    case lastUpdated = "lastupdated"
+
+    nonisolated var id: String { rawValue }
+
+    nonisolated var displayName: String {
+        switch self {
+        case .name: return "名称"
+        case .rating: return "分级"
+        case .favorites: return "收藏"
+        case .fileSize: return "文件大小"
+        case .subscriptionDate: return "订阅日期"
+        case .lastUpdated: return "最近更新"
         }
     }
 }

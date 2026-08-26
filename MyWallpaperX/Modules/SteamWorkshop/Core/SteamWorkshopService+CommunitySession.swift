@@ -47,6 +47,23 @@ extension SteamWorkshopService {
         }
     }
 
+    func switchCommunityAccount() {
+        Task { [weak self] in
+            guard let self else { return }
+            await self.communitySession.clearSession()
+            self.communityAccountID = nil
+            self.communityAccountName = nil
+            do {
+                let account = try await self.communitySession.presentLogin()
+                self.communityAccountID = account.id
+                self.communityAccountName = account.displayName
+                if self.source.isPersonal { self.refresh() }
+            } catch {
+                self.statusMessage = "Steam 社区账号切换未完成。"
+            }
+        }
+    }
+
     func clearCommunitySession() {
         communityAccountID = nil
         communityAccountName = nil

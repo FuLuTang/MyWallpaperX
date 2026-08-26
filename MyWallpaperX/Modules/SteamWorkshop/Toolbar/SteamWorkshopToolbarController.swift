@@ -59,27 +59,13 @@ final class SteamWorkshopToolbarController: NSObject, NSSearchFieldDelegate {
     ]
 
     var browserIdentifiers: [NSToolbarItem.Identifier] {
-        SteamWorkshopService.shared.isBrowsingAuthorWorkshop
-            ? authorWorkshopBrowserIdentifiers
+        if SteamWorkshopService.shared.isBrowsingAuthorWorkshop {
+            return authorWorkshopBrowserIdentifiers
+        }
+        return SteamWorkshopService.shared.source.isPersonal
+            ? personalBrowserIdentifiers
             : discoveryBrowserIdentifiers
     }
-
-    let downloadsIdentifiers: [NSToolbarItem.Identifier] = [
-        .sidebarTrackingSeparator,
-        .steamDownloadsTitle,
-        .flexibleSpace,
-        .steamDownloadsSelect,
-        .space,
-        .steamDownloadsDelete,
-        .steamDownloadsInfo,
-        .steamDownloadsReveal,
-        .steamDownloadsFilter,
-        .steamDownloadsSort,
-        .space,
-        .steamZoom,
-        .space,
-        .steamDownloadsSearch
-    ]
 
     init(toolbar: NSToolbar, window: NSWindow?) {
         self.toolbar = toolbar
@@ -141,6 +127,7 @@ final class SteamWorkshopToolbarController: NSObject, NSSearchFieldDelegate {
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
                 self?.syncSortPopup()
+                self?.syncPersonalListPopup()
                 self?.syncTrendingWindowPopup()
             }
             .store(in: &cancellables)
@@ -262,50 +249,23 @@ final class SteamWorkshopToolbarController: NSObject, NSSearchFieldDelegate {
         configureZoomItem()
     }
 
-    func makeItem(for identifier: NSToolbarItem.Identifier) -> NSToolbarItem? {
-        switch identifier {
-        case .steamAuthorBack:
-            configureAuthorBackItem()
-            return authorBackToolbarItem
-        case .steamContentMode:
-            syncContentModePopup()
-            return contentModeToolbarItem
-        case .steamSort:
-            syncSortPopup()
-            return sortToolbarItem
-        case .steamTrendingWindow:
-            syncTrendingWindowPopup()
-            return trendingWindowToolbarItem
-        case .steamFilter:
-            configureFilterItem()
-            return filterToolbarItem
-        case .steamAccount: return accountToolbarItem
-        case .steamRefresh: return refreshToolbarItem
-        case .steamZoom: return zoomToolbarItem
-        case .steamSearch:
-            syncSearchField()
-            return searchToolbarItem
-        case .steamDownloadsTitle: return downloadsTitleItem
-        case .steamDownloadsReveal: return downloadsRevealItem
-        case .steamDownloadsSelect:
-            configureDownloadsSelectItem()
-            return downloadsSelectItem
-        case .steamDownloadsDelete:
-            configureDownloadsDeleteItem()
-            return downloadsDeleteItem
-        case .steamDownloadsInfo:
-            configureDownloadsInfoItem()
-            return downloadsInfoItem
-        case .steamDownloadsFilter:
-            configureDownloadsFilterItem()
-            return downloadsFilterItem
-        case .steamDownloadsSort:
-            configureDownloadsSortItem()
-            return downloadsSortItem
-        case .steamDownloadsSearch: return downloadsSearchItem
-        default: return nil
-        }
-    }
+    lazy var personalListPopupButton: NSPopUpButton = {
+        let button = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 112, height: 30), pullsDown: false)
+        button.target = self
+        button.action = #selector(handlePersonalListAction(_:))
+        populatePersonalListMenu(button.menu)
+        return button
+    }()
+
+    lazy var personalListToolbarItem: NSToolbarItem = {
+        let item = NSToolbarItem(itemIdentifier: .steamPersonalList)
+        item.label = "列表"
+        item.paletteLabel = "个人列表"
+        item.toolTip = "切换 Steam 个人列表"
+        item.autovalidates = false
+        item.view = personalListPopupButton
+        return item
+    }()
 
     lazy var downloadsTitleLabel: NSTextField = {
         let label = NSTextField(labelWithString: Title.downloads)

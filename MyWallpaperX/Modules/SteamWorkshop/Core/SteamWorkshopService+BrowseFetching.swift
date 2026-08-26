@@ -22,123 +22,6 @@ extension SteamWorkshopService {
         fetchBrowserItems(forceRefresh: true)
     }
 
-    func loadMoreBrowserItemsIfNeeded() {
-        guard !isLoadingMoreBrowserItems, hasMoreBrowserItems, browserState == .loaded else { return }
-        guard Date() >= browserLoadMoreRetryAfter else { return }
-
-        let browseContext = self.browseContext
-        let browserContentMode = self.browserContentMode
-        let source = self.source
-        let query = browserQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trendingWindow = self.trendingWindow
-        let themeFilter = self.themeFilter
-        let ageRatingFilter = self.ageRatingFilter
-        let resolutionFilter = self.resolutionFilter
-        let categoryFilter = self.categoryFilter
-        let page = browserNextPage
-        let expectedNavigationVersion = navigationVersion
-        let prefetchKey = browserPagePrefetchKey(
-            context: browseContext,
-            browserContentMode: browserContentMode,
-            source: source,
-            query: query,
-            trendingWindow: trendingWindow,
-            themeFilter: themeFilter,
-            ageRatingFilter: ageRatingFilter,
-            resolutionFilter: resolutionFilter,
-            categoryFilter: categoryFilter,
-            page: page
-        )
-
-        logBrowserDebug(
-            "loadMore start context=\(browseContext.title) page=\(page) query=\(query) currentCount=\(browserItems.count) hasMore=\(hasMoreBrowserItems)"
-        )
-        isLoadingMoreBrowserItems = true
-        noteUserBrowsingActivity()
-
-        Task(priority: .userInitiated) { [weak self] in
-            do {
-                let pageResult: SteamWorkshopBrowseStubPage
-                if let prefetched = await MainActor.run(body: { self?.prefetchedBrowserPages.removeValue(forKey: prefetchKey) }) {
-                    pageResult = prefetched
-                } else {
-                    pageResult = try await Self.fetchWorkshopStubPage(
-                        context: browseContext,
-                        browserContentMode: browserContentMode,
-                        source: source,
-                        query: query,
-                        trendingWindow: trendingWindow,
-                        themeFilter: themeFilter,
-                        ageRatingFilter: ageRatingFilter,
-                        resolutionFilter: resolutionFilter,
-                        categoryFilter: categoryFilter,
-                        page: page
-                    )
-                }
-                let stubs = pageResult.stubs
-                let seededItems = stubs.map(Self.seededBrowserItem)
-                guard !Task.isCancelled else { return }
-                await MainActor.run {
-                    guard let self else { return }
-                    guard self.navigationVersion == expectedNavigationVersion,
-                          self.browseContext == browseContext,
-                          self.browserContentMode == browserContentMode else { return }
-                    let existingIDs = Set(self.browserItems.map(\.id))
-                    let fallbackItems = seededItems
-                        .filter { !existingIDs.contains($0.id) }
-                    self.browserItems.append(contentsOf: fallbackItems)
-                    self.browserNextPage = page + 1
-                    self.hasMoreBrowserItems = pageResult.hasMore && !fallbackItems.isEmpty
-                    self.isLoadingMoreBrowserItems = false
-                    self.browserLoadMoreRetryAfter = .distantPast
-                    self.statusMessage = self.prefetchStatusMessage(for: browseContext, page: page)
-                    self.enqueueBrowserDetailHydration(
-                        stubs: stubs,
-                        context: browseContext,
-                        browserContentMode: browserContentMode,
-                        navigationVersion: expectedNavigationVersion,
-                        resetQueue: false
-                    )
-                }
-                await MainActor.run {
-                    guard let self else { return }
-                    guard self.navigationVersion == expectedNavigationVersion,
-                          self.browseContext == browseContext,
-                          self.browserContentMode == browserContentMode else { return }
-                    self.statusMessage = self.baseCardsStatusMessage(for: browseContext, count: self.browserItems.count)
-                    self.logBrowserDebug(
-                        "loadMore enqueued context=\(browseContext.title) page=\(page) stubCount=\(stubs.count) total=\(self.browserItems.count) nextPage=\(self.browserNextPage) hasMore=\(self.hasMoreBrowserItems)"
-                    )
-                    self.prefetchUpcomingBrowserPageIfNeeded(
-                        context: browseContext,
-                        browserContentMode: browserContentMode,
-                        source: source,
-                        query: query,
-                        trendingWindow: trendingWindow,
-                        themeFilter: themeFilter,
-                        ageRatingFilter: ageRatingFilter,
-                        resolutionFilter: resolutionFilter,
-                        categoryFilter: categoryFilter,
-                        page: self.browserNextPage,
-                        lookaheadDepth: 1
-                    )
-                }
-            } catch {
-                await MainActor.run {
-                    guard let self else { return }
-                    guard self.navigationVersion == expectedNavigationVersion, self.browseContext == browseContext else { return }
-                    self.isLoadingMoreBrowserItems = false
-                    self.hasMoreBrowserItems = true
-                    self.browserLoadMoreRetryAfter = Date().addingTimeInterval(Constants.loadMoreRetryCooldown)
-                    self.statusMessage = "加载下一页失败，稍后继续下滑会重试。"
-                    self.logBrowserDebug(
-                        "loadMore failed context=\(browseContext.title) page=\(page) error=\(error.localizedDescription)"
-                    )
-                }
-            }
-        }
-    }
-
     func prepareForBrowserEntry() {
         startupTask?.cancel()
         startupTask = Task(priority: .userInitiated) { [weak self] in
@@ -171,6 +54,7 @@ extension SteamWorkshopService {
         prefetchedBrowserPages.removeAll()
         let browseContext = self.browseContext
         let source = self.source
+        let personalSort = self.personalSort
         let browserContentMode = self.browserContentMode
         let query = browserQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         let trendingWindow = self.trendingWindow
@@ -238,7 +122,8 @@ extension SteamWorkshopService {
             themeFilter: themeFilter,
             ageRatingFilter: ageRatingFilter,
             resolutionFilter: resolutionFilter,
-            categoryFilter: categoryFilter
+            categoryFilter: categoryFilter,
+            personalSort: personalSort
         ) {
             browserItems = cached.items
             browserState = .loaded
@@ -275,7 +160,8 @@ extension SteamWorkshopService {
                     ageRatingFilter: ageRatingFilter,
                     resolutionFilter: resolutionFilter,
                     categoryFilter: categoryFilter,
-                    page: 1
+                    page: 1,
+                    personalSort: personalSort
                 )
                 let stubs = pageResult.stubs
                 let seededItems = stubs.map(Self.seededBrowserItem)
@@ -284,6 +170,8 @@ extension SteamWorkshopService {
                     guard let self else { return }
                     guard self.navigationVersion == expectedNavigationVersion,
                           self.browseContext == browseContext,
+                          self.source == source,
+                          self.personalSort == personalSort,
                           self.browserContentMode == browserContentMode else { return }
                     self.isRefreshingBrowserFeed = false
                     self.browserItems = seededItems
@@ -297,9 +185,6 @@ extension SteamWorkshopService {
                         navigationVersion: expectedNavigationVersion,
                         resetQueue: true
                     )
-                    self.logBrowserDebug(
-                        "fetchBrowserItems page1Fallback context=\(browseContext.title) stubCount=\(stubs.count) hasMore=\(pageResult.hasMore)"
-                    )
                     self.statusMessage = self.browserItems.isEmpty
                         ? self.emptyResultsStatusMessage(for: browseContext)
                         : self.baseCardsStatusMessage(for: browseContext, count: self.browserItems.count)
@@ -308,15 +193,14 @@ extension SteamWorkshopService {
                     guard let self else { return }
                     guard self.navigationVersion == expectedNavigationVersion,
                           self.browseContext == browseContext,
+                          self.source == source,
+                          self.personalSort == personalSort,
                           self.browserContentMode == browserContentMode else { return }
                     self.isRefreshingBrowserFeed = false
                     self.browserState = .loaded
                     self.hasMoreBrowserItems = pageResult.hasMore
                     self.browserNextPage = 2
                     self.isLoadingMoreBrowserItems = false
-                    self.logBrowserDebug(
-                        "fetchBrowserItems enqueued context=\(browseContext.title) stubCount=\(stubs.count) hasMore=\(pageResult.hasMore)"
-                    )
                     self.prefetchUpcomingBrowserPageIfNeeded(
                         context: browseContext,
                         browserContentMode: browserContentMode,
@@ -328,6 +212,7 @@ extension SteamWorkshopService {
                         resolutionFilter: resolutionFilter,
                         categoryFilter: categoryFilter,
                         page: self.browserNextPage,
+                        personalSort: personalSort,
                         lookaheadDepth: 1
                     )
                 }
@@ -337,6 +222,8 @@ extension SteamWorkshopService {
                     guard let self else { return }
                     guard self.navigationVersion == expectedNavigationVersion,
                           self.browseContext == browseContext,
+                          self.source == source,
+                          self.personalSort == personalSort,
                           self.browserContentMode == browserContentMode else { return }
                     self.isRefreshingBrowserFeed = false
                     if self.browserItems.isEmpty {
@@ -391,74 +278,6 @@ extension SteamWorkshopService {
             return item
         }
         return try await enrichPreviewKind(for: item, requestPriority: requestPriority)
-    }
-
-    nonisolated static func fetchWorkshopStubPage(
-        context: SteamWorkshopBrowseContext,
-        browserContentMode: SteamWorkshopBrowserContentMode,
-        source: SteamWorkshopSource,
-        query: String,
-        trendingWindow: SteamWorkshopTrendingWindow,
-        themeFilter: SteamWorkshopThemeFilter,
-        ageRatingFilter: SteamWorkshopAgeRatingFilter,
-        resolutionFilter: SteamWorkshopResolutionFilter,
-        categoryFilter: SteamWorkshopCategoryFilter,
-        page: Int
-    ) async throws -> SteamWorkshopBrowseStubPage {
-        let url: URL
-        switch context {
-        case .discovery:
-            url = makeBrowseURL(
-                browserContentMode: browserContentMode,
-                source: source,
-                query: query,
-                trendingWindow: trendingWindow,
-                themeFilter: themeFilter,
-                ageRatingFilter: ageRatingFilter,
-                resolutionFilter: resolutionFilter,
-                categoryFilter: categoryFilter,
-                page: page
-            )
-        case .authorWorkshop(_, let workshopURL):
-            url = makeAuthorWorkshopURL(baseURL: workshopURL, page: page)
-        }
-        let html = try await fetchHTMLForBrowseSource(url: url, context: context, source: source)
-        let stubs = parseBrowsePage(html: html)
-        for stub in stubs {
-            await saveAuthorNameIfPossible(
-                stub.author,
-                creatorID: creatorID(from: stub.authorProfileURL) ?? creatorID(from: stub.authorWorkshopURL),
-                authorProfileURL: stub.authorProfileURL,
-                authorWorkshopURL: stub.authorWorkshopURL
-            )
-        }
-        let pageSize = await context.isAuthorWorkshop ? Constants.authorWorkshopPageSize : (source.isPersonal ? Constants.personalWorkshopPageSize : Constants.browserPageSize)
-        let hasNextPageLink = browsePageHasMore(html: html, currentPage: page)
-        let hasMore = hasNextPageLink || stubs.count >= pageSize
-        if !stubs.isEmpty {
-            return SteamWorkshopBrowseStubPage(stubs: stubs, hasMore: hasMore)
-        }
-
-        let pattern = #"sharedfiles/filedetails/\?id=(\d+)"#
-        let matches = firstCaptureMatches(pattern: pattern, in: html)
-        var ordered: [SteamWorkshopBrowseStub] = []
-        var seen = Set<String>()
-        for id in matches where seen.insert(id).inserted {
-            ordered.append(
-                SteamWorkshopBrowseStub(
-                    id: id,
-                    title: nil,
-                    author: nil,
-                    authorProfileURL: nil,
-                    authorWorkshopURL: nil,
-                    hasAdultContent: false,
-                    summary: nil,
-                    previewImageURL: nil
-                )
-            )
-        }
-        let fallbackHasMore = hasNextPageLink || ordered.count >= pageSize
-        return SteamWorkshopBrowseStubPage(stubs: ordered, hasMore: fallbackHasMore)
     }
 
     nonisolated static func fetchWorkshopItems(

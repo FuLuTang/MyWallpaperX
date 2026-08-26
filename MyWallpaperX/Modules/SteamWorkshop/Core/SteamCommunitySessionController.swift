@@ -131,6 +131,14 @@ final class SteamCommunitySessionController: NSObject, WKNavigationDelegate, NSW
     private func finishPage(with html: String) {
         let detectedAccount = Self.account(from: html)
         account = detectedAccount ?? account
+        if purpose == .login, Self.isSteamErrorPage(html) {
+            loginContinuation?.resume(
+                throwing: SessionError.navigationFailed("Steam 社区暂时拒绝了登录请求，请稍后重试。")
+            )
+            loginContinuation = nil
+            purpose = nil
+            return
+        }
         if purpose == .login, let account {
             loginContinuation?.resume(returning: account)
             loginContinuation = nil
@@ -156,6 +164,11 @@ final class SteamCommunitySessionController: NSObject, WKNavigationDelegate, NSW
         let name = SteamWorkshopService.firstCapture(pattern: #"account_pulldown[^>]*>([^<]+)<"#, in: html)?
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return Account(id: id, displayName: name?.isEmpty == false ? name! : "Steam 用户")
+    }
+
+    private static func isSteamErrorPage(_ html: String) -> Bool {
+        html.localizedCaseInsensitiveContains("Something Went Wrong")
+            || html.localizedCaseInsensitiveContains("We were unable to service your request")
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
@@ -208,6 +221,7 @@ final class SteamCommunitySessionController: NSObject, WKNavigationDelegate, NSW
     }
 
     private func fail(_ error: Error) {
+        if (error as? URLError)?.code == .cancelled { return }
         if purpose == .login { return }
         pageContinuation?.resume(throwing: error)
         pageContinuation = nil

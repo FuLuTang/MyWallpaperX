@@ -31,6 +31,20 @@ final class SteamWorkshopService: ObservableObject {
         didSet { if !suppressAutomaticBrowseNavigation { navigateToBrowse() } }
     }
     @Published var source: SteamWorkshopSource = .featured {
+        didSet {
+            if !browseContext.isAuthorWorkshop {
+                currentPageTitle = source.pageTitle
+                browserSectionTitle = source.pageTitle
+            }
+            NotificationCenter.default.post(
+                name: .steamWorkshopBrowseContextDidChange,
+                object: nil,
+                userInfo: ["isAuthorWorkshop": browseContext.isAuthorWorkshop, "title": source.pageTitle]
+            )
+            if !suppressAutomaticBrowseNavigation { navigateToBrowse() }
+        }
+    }
+    @Published var personalSort: SteamWorkshopPersonalSort = .subscriptionDate {
         didSet { if !suppressAutomaticBrowseNavigation { navigateToBrowse() } }
     }
     @Published var browserQuery: String = "" {
@@ -187,7 +201,7 @@ final class SteamWorkshopService: ObservableObject {
     var suppressAutomaticBrowseNavigation = false
     var browseContext: SteamWorkshopBrowseContext = .discovery {
         didSet {
-            browserSectionTitle = browseContext.title
+            browserSectionTitle = browseContext.isAuthorWorkshop ? browseContext.title : source.pageTitle
             isBrowsingAuthorWorkshop = browseContext.isAuthorWorkshop
             if case let .authorWorkshop(authorName, _) = browseContext {
                 activeAuthorWorkshopName = authorName
@@ -218,7 +232,8 @@ final class SteamWorkshopService: ObservableObject {
             ageRatingFilter: .all,
             resolutionFilter: .all,
             categoryFilter: .all,
-            page: 1
+            page: 1,
+            personalSort: .subscriptionDate
         )
 #if DEBUG
         let isIsolatedWebSampleRun = ProcessInfo.processInfo.arguments.contains("--mwx-debug-run-web-workshop-id")
