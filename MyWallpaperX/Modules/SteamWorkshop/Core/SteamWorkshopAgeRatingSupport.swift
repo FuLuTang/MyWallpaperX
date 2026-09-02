@@ -2,10 +2,12 @@ import Foundation
 
 extension SteamWorkshopAgeRatingFilter {
     func allows(tags: [String]) -> Bool {
+        guard self != .all else { return true }
+        guard !isEmpty else { return false }
         guard let rating = Self.selectableRatings.first(where: { candidate in
             tags.contains { $0.caseInsensitiveCompare(candidate.tagValue) == .orderedSame }
         }) else {
-            return true
+            return false
         }
         return contains(rating)
     }
@@ -40,6 +42,7 @@ extension SteamWorkshopService {
 
     func continueAgeFilteredPaginationIfNeeded(loadedVisibleItemCount: Int) {
         guard ageRatingFilter != .all,
+              !ageRatingFilter.isEmpty,
               loadedVisibleItemCount == 0,
               hasMoreBrowserItems,
               !isLoadingMoreBrowserItems else {
@@ -55,7 +58,10 @@ extension SteamWorkshopService {
         let hiddenIDs = Set(stubs.map(\.id)).subtracting(visibleIDs)
         guard !hiddenIDs.isEmpty else { return }
         browserItems.removeAll { hiddenIDs.contains($0.id) }
-        if browserItems.isEmpty, hasMoreBrowserItems, !isLoadingMoreBrowserItems {
+        if !ageRatingFilter.isEmpty,
+           browserItems.isEmpty,
+           hasMoreBrowserItems,
+           !isLoadingMoreBrowserItems {
             Task { @MainActor [weak self] in
                 self?.loadMoreBrowserItemsIfNeeded()
             }
