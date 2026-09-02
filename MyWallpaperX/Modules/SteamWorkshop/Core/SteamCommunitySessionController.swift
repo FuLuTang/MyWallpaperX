@@ -130,7 +130,11 @@ final class SteamCommunitySessionController: NSObject, WKNavigationDelegate, NSW
 
     private func finishPage(with html: String) {
         let detectedAccount = Self.account(from: html)
-        account = detectedAccount ?? account
+        if purpose == .page {
+            account = detectedAccount
+        } else if let detectedAccount {
+            account = detectedAccount
+        }
         if purpose == .login, Self.isSteamErrorPage(html) {
             loginContinuation?.resume(
                 throwing: SessionError.navigationFailed("Steam 社区暂时拒绝了登录请求，请稍后重试。")
@@ -222,7 +226,14 @@ final class SteamCommunitySessionController: NSObject, WKNavigationDelegate, NSW
 
     private func fail(_ error: Error) {
         if (error as? URLError)?.code == .cancelled { return }
-        if purpose == .login { return }
+        if purpose == .login {
+            loginContinuation?.resume(
+                throwing: SessionError.navigationFailed("Steam 社区页面加载失败：\(error.localizedDescription)")
+            )
+            loginContinuation = nil
+            purpose = nil
+            return
+        }
         pageContinuation?.resume(throwing: error)
         pageContinuation = nil
         purpose = nil
