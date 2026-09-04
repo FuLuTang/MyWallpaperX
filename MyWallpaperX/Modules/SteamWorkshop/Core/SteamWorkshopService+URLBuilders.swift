@@ -42,9 +42,6 @@ extension SteamWorkshopService {
         if let themeTag = themeFilter.tagValue {
             queryItems.append(URLQueryItem(name: "requiredtags[]", value: themeTag))
         }
-        if let ageTag = ageRatingFilter.tagValue {
-            queryItems.append(URLQueryItem(name: "requiredtags[]", value: ageTag))
-        }
         if let resolutionTag = resolutionFilter.tagValue {
             queryItems.append(URLQueryItem(name: "requiredtags[]", value: resolutionTag))
         }
@@ -83,7 +80,7 @@ extension SteamWorkshopService {
         if !browserContentMode.isAll {
             queryItems.append(URLQueryItem(name: "requiredtags[0]", value: browserContentMode.requiredTagValue))
         }
-        [themeFilter.tagValue, ageRatingFilter.tagValue, resolutionFilter.tagValue, categoryFilter.tagValue]
+        [themeFilter.tagValue, resolutionFilter.tagValue, categoryFilter.tagValue]
             .compactMap { $0 }
             .filter { $0.caseInsensitiveCompare(browserContentMode.requiredTagValue) != .orderedSame }
             .forEach { queryItems.append(URLQueryItem(name: "requiredtags[]", value: $0)) }

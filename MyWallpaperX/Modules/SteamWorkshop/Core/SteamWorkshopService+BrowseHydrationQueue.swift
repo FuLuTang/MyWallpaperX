@@ -75,12 +75,14 @@ extension SteamWorkshopService {
                     guard self.navigationVersion == navigationVersion,
                           self.browseContext == context,
                           self.browserContentMode == browserContentMode else { return }
-                    for item in items {
+                    let visibleItems = self.visibleItemsAfterApplyingAgeRating(items)
+                    self.removeAgeFilteredStubs(stubs, keeping: visibleItems)
+                    for item in visibleItems {
                         self.browserDetailRetryCounts[item.id] = nil
                     }
-                    self.mergeBrowserItems(items)
+                    self.mergeBrowserItems(visibleItems)
                     if let selectedID = self.selectedBrowserItem?.id,
-                       let refreshedSelected = items.first(where: { $0.id == selectedID }) {
+                       let refreshedSelected = visibleItems.first(where: { $0.id == selectedID }) {
                         self.selectedBrowserItem = refreshedSelected
                         self.selectedBrowserItemError = nil
                     }

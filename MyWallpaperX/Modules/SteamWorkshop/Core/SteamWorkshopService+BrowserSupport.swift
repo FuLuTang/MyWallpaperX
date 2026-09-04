@@ -231,7 +231,7 @@ extension SteamWorkshopService {
         }
         let normalized = safeCacheComponent(for: query, fallback: "all")
         let theme = themeFilter.rawValue.lowercased().replacingOccurrences(of: #"[^a-z0-9]+"#, with: "-", options: .regularExpression)
-        let age = ageRatingFilter.rawValue.lowercased().replacingOccurrences(of: #"[^a-z0-9]+"#, with: "-", options: .regularExpression)
+        let age = String(ageRatingFilter.rawValue)
         let resolution = resolutionFilter.rawValue.lowercased().replacingOccurrences(of: #"[^a-z0-9]+"#, with: "-", options: .regularExpression)
         let category = categoryFilter.rawValue.lowercased().replacingOccurrences(of: #"[^a-z0-9]+"#, with: "-", options: .regularExpression)
         let period = source.supportsTimeRange ? trendingWindow.rawValue : "na"

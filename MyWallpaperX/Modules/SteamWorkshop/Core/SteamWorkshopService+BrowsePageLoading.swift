@@ -34,6 +34,10 @@ extension SteamWorkshopService {
             page: page,
             personalSort: personalSort
         )
+        logBrowserDebug(
+            "loadMore start context=\(browseContext.title) page=\(page) query=\(query) "
+                + "currentCount=\(browserItems.count) hasMore=\(hasMoreBrowserItems)"
+        )
         isLoadingMoreBrowserItems = true
         noteUserBrowsingActivity()
 
@@ -61,11 +65,15 @@ extension SteamWorkshopService {
                 }
                 let stubs = pageResult.stubs
                 let seededItems = stubs.map(Self.seededBrowserItem)
+                guard let self else { return }
+                let ageFilteredItems = try await self.fetchAgeFilteredBrowserItemsIfNeeded(
+                    stubs: stubs,
+                    browserContentMode: browserContentMode
+                )
                 guard !Task.isCancelled else { return }
 
                 await MainActor.run {
-                    guard let self,
-                          self.navigationVersion == expectedNavigationVersion,
+                    guard self.navigationVersion == expectedNavigationVersion,
                           self.browseContext == browseContext,
                           self.source == source,
                           self.personalSort == personalSort,
@@ -73,19 +81,55 @@ extension SteamWorkshopService {
                         return
                     }
                     let existingIDs = Set(self.browserItems.map(\.id))
-                    let newItems = seededItems.filter { !existingIDs.contains($0.id) }
+                    let newItems = (ageFilteredItems ?? seededItems).filter {
+                        !existingIDs.contains($0.id)
+                    }
                     self.browserItems.append(contentsOf: newItems)
                     self.browserNextPage = page + 1
                     self.hasMoreBrowserItems = pageResult.hasMore
                     self.isLoadingMoreBrowserItems = false
                     self.browserLoadMoreRetryAfter = .distantPast
-                    self.statusMessage = self.prefetchStatusMessage(for: browseContext, page: page)
-                    self.enqueueBrowserDetailHydration(
-                        stubs: stubs,
-                        context: browseContext,
-                        browserContentMode: browserContentMode,
-                        navigationVersion: expectedNavigationVersion,
-                        resetQueue: false
+                    if ageFilteredItems == nil {
+                        self.statusMessage = self.prefetchStatusMessage(
+                            for: browseContext,
+                            page: page
+                        )
+                        self.enqueueBrowserDetailHydration(
+                            stubs: stubs,
+                            context: browseContext,
+                            browserContentMode: browserContentMode,
+                            navigationVersion: expectedNavigationVersion,
+                            resetQueue: false
+                        )
+                    } else {
+                        self.statusMessage = self.completedStatusMessage(
+                            for: browseContext,
+                            totalCount: self.browserItems.count,
+                            hasMore: self.hasMoreBrowserItems
+                        )
+                        self.saveBrowserCache(
+                            context: browseContext,
+                            browserContentMode: browserContentMode,
+                            source: source,
+                            query: query,
+                            trendingWindow: trendingWindow,
+                            themeFilter: themeFilter,
+                            ageRatingFilter: ageRatingFilter,
+                            resolutionFilter: resolutionFilter,
+                            categoryFilter: categoryFilter,
+                            items: self.browserItems,
+                            personalSort: personalSort
+                        )
+                        self.continueAgeFilteredPaginationIfNeeded(
+                            loadedVisibleItemCount: newItems.count
+                        )
+                    }
+
+                    self.logBrowserDebug(
+                        "loadMore completed context=\(browseContext.title) page=\(page) "
+                            + "stubCount=\(stubs.count) visibleCount=\(newItems.count) "
+                            + "total=\(self.browserItems.count) nextPage=\(self.browserNextPage) "
+                            + "hasMore=\(self.hasMoreBrowserItems)"
                     )
                     self.prefetchUpcomingBrowserPageIfNeeded(
                         context: browseContext,
@@ -108,7 +152,8 @@ extension SteamWorkshopService {
                           self.navigationVersion == expectedNavigationVersion,
                           self.browseContext == browseContext,
                           self.source == source,
-                          self.personalSort == personalSort else {
+                          self.personalSort == personalSort,
+                          self.browserContentMode == browserContentMode else {
                         return
                     }
                     self.isLoadingMoreBrowserItems = false
@@ -117,6 +162,10 @@ extension SteamWorkshopService {
                         Constants.loadMoreRetryCooldown
                     )
                     self.statusMessage = "加载下一页失败，稍后继续下滑会重试。"
+                    self.logBrowserDebug(
+                        "loadMore failed context=\(browseContext.title) page=\(page) "
+                            + "error=\(error.localizedDescription)"
+                    )
                 }
             }
         }

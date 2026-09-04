@@ -127,13 +127,15 @@ extension SteamWorkshopService {
         ) {
             browserItems = cached.items
             browserState = .loaded
-            hasMoreBrowserItems = cached.items.count >= pageSize
+            hasMoreBrowserItems = ageRatingFilter != .all || cached.items.count >= pageSize
             browserNextPage = max(2, (cached.items.count / pageSize) + 1)
             statusMessage = cachedStatusMessage(for: browseContext)
             logBrowserDebug(
                 "fetchBrowserItems cacheHit context=\(browseContext.title) cachedCount=\(cached.items.count) nextPage=\(browserNextPage) hasMore=\(hasMoreBrowserItems)"
             )
-            if !forceRefresh && Date().timeIntervalSince(cached.fetchedAt) < Constants.cacheTTL {
+            if !forceRefresh,
+               ageRatingFilter == .all,
+               Date().timeIntervalSince(cached.fetchedAt) < Constants.cacheTTL {
                 isRefreshingBrowserFeed = false
                 logBrowserDebug("fetchBrowserItems skipRemote context=\(browseContext.title) reason=freshCache")
                 return
@@ -165,32 +167,64 @@ extension SteamWorkshopService {
                 )
                 let stubs = pageResult.stubs
                 let seededItems = stubs.map(Self.seededBrowserItem)
+                guard let self else { return }
+                let ageFilteredItems = try await self.fetchAgeFilteredBrowserItemsIfNeeded(
+                    stubs: stubs,
+                    browserContentMode: browserContentMode
+                )
                 guard !Task.isCancelled else { return }
                 await MainActor.run {
-                    guard let self else { return }
                     guard self.navigationVersion == expectedNavigationVersion,
                           self.browseContext == browseContext,
                           self.source == source,
                           self.personalSort == personalSort,
                           self.browserContentMode == browserContentMode else { return }
                     self.isRefreshingBrowserFeed = false
-                    self.browserItems = seededItems
+                    self.browserItems = ageFilteredItems ?? seededItems
                     self.browserState = .loaded
                     self.hasMoreBrowserItems = pageResult.hasMore
                     self.browserNextPage = 2
-                    self.enqueueBrowserDetailHydration(
-                        stubs: stubs,
-                        context: browseContext,
-                        browserContentMode: browserContentMode,
-                        navigationVersion: expectedNavigationVersion,
-                        resetQueue: true
+                    if ageFilteredItems == nil {
+                        self.enqueueBrowserDetailHydration(
+                            stubs: stubs,
+                            context: browseContext,
+                            browserContentMode: browserContentMode,
+                            navigationVersion: expectedNavigationVersion,
+                            resetQueue: true
+                        )
+                        self.statusMessage = self.browserItems.isEmpty
+                            ? self.emptyResultsStatusMessage(for: browseContext)
+                            : self.baseCardsStatusMessage(for: browseContext, count: self.browserItems.count)
+                    } else {
+                        self.statusMessage = self.browserItems.isEmpty && !pageResult.hasMore
+                            ? self.emptyResultsStatusMessage(for: browseContext)
+                            : self.completedStatusMessage(
+                                for: browseContext,
+                                totalCount: self.browserItems.count,
+                                hasMore: pageResult.hasMore
+                            )
+                        self.saveBrowserCache(
+                            context: browseContext,
+                            browserContentMode: browserContentMode,
+                            source: source,
+                            query: query,
+                            trendingWindow: trendingWindow,
+                            themeFilter: themeFilter,
+                            ageRatingFilter: ageRatingFilter,
+                            resolutionFilter: resolutionFilter,
+                            categoryFilter: categoryFilter,
+                            items: self.browserItems,
+                            personalSort: personalSort
+                        )
+                        self.continueAgeFilteredPaginationIfNeeded(
+                            loadedVisibleItemCount: self.browserItems.count
+                        )
+                    }
+                    self.logBrowserDebug(
+                        "fetchBrowserItems page1Fallback context=\(browseContext.title) stubCount=\(stubs.count) hasMore=\(pageResult.hasMore)"
                     )
-                    self.statusMessage = self.browserItems.isEmpty
-                        ? self.emptyResultsStatusMessage(for: browseContext)
-                        : self.baseCardsStatusMessage(for: browseContext, count: self.browserItems.count)
                 }
                 await MainActor.run {
-                    guard let self else { return }
                     guard self.navigationVersion == expectedNavigationVersion,
                           self.browseContext == browseContext,
                           self.source == source,
@@ -236,48 +270,6 @@ extension SteamWorkshopService {
                 }
             }
         }
-    }
-
-    nonisolated static func fetchWorkshopItemByIDSearch(id: String) async throws -> SteamWorkshopBrowserItem? {
-        let stub = SteamWorkshopBrowseStub(
-            id: id,
-            title: nil,
-            author: nil,
-            authorProfileURL: nil,
-            authorWorkshopURL: nil,
-            hasAdultContent: false,
-            summary: nil,
-            previewImageURL: nil
-        )
-
-        let detailsByID = try await fetchPublishedFileDetails(
-            ids: [id],
-            requestPriority: .userInitiated
-        )
-        guard let detail = detailsByID[id],
-              let workshopAppID = Int(Constants.workshopAppID),
-              detail.consumerAppID == workshopAppID else {
-            return nil
-        }
-
-        let resolved = await item(from: detail, stub: stub)
-        let enriched = try await maybeEnrichPreviewKind(for: resolved, requestPriority: .userInitiated)
-        saveDetailCache(item: enriched)
-        return enriched
-    }
-
-    nonisolated static func shouldEagerlyResolvePreviewKind(for requestPriority: SteamWorkshopDetailRequestPriority) -> Bool {
-        requestPriority == .userInitiated
-    }
-
-    nonisolated static func maybeEnrichPreviewKind(
-        for item: SteamWorkshopBrowserItem,
-        requestPriority: SteamWorkshopDetailRequestPriority
-    ) async throws -> SteamWorkshopBrowserItem {
-        guard shouldEagerlyResolvePreviewKind(for: requestPriority) else {
-            return item
-        }
-        return try await enrichPreviewKind(for: item, requestPriority: requestPriority)
     }
 
     nonisolated static func fetchWorkshopItems(
@@ -557,7 +549,7 @@ extension SteamWorkshopService {
         let summaryText = stub.summary?.trimmingCharacters(in: .whitespacesAndNewlines)
         let summary = summaryText?.isEmpty == false ? summaryText! : descriptionText
         let workshopType = preferredTag(in: tags, matching: SteamWorkshopBrowserContentMode.allCases.map(\.requiredTagValue))
-        let ageRating = preferredTag(in: tags, matching: SteamWorkshopAgeRatingFilter.allCases.map(\.rawValue))
+        let ageRating = preferredTag(in: tags, matching: SteamWorkshopAgeRatingFilter.ratingTagValues)
         let category = preferredTag(in: tags, matching: SteamWorkshopCategoryFilter.allCases.dropFirst().map(\.rawValue))
         let resolution = tags.first(where: isResolutionTag)
         let genre = tags.first(where: { tag in
