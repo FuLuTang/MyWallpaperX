@@ -29,7 +29,7 @@
     "MyWallpaperX/Modules/StaticImageLibrary/UI/SILGridContainerView.swift": 642,
     "MyWallpaperX/Modules/StaticImageLibrary/UI/SILGridItemView.swift": 494,
     "MyWallpaperX/Modules/SteamWorkshop/Core/SteamWorkshopService+Authentication.swift": 745,
-    "MyWallpaperX/Modules/SteamWorkshop/Core/SteamWorkshopService+BrowseFetching.swift": 1062,
+    "MyWallpaperX/Modules/SteamWorkshop/Core/SteamWorkshopService+BrowseFetching.swift": 975,
     "MyWallpaperX/Modules/SteamWorkshop/Core/SteamWorkshopService+BrowseParsing.swift": 489,
     "MyWallpaperX/Modules/SteamWorkshop/Core/SteamWorkshopService+DownloadLibrarySync.swift": 417,
     "MyWallpaperX/Modules/SteamWorkshop/Core/SteamWorkshopService+Downloads.swift": 560,

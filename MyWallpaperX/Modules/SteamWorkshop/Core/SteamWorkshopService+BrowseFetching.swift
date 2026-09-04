@@ -22,123 +22,6 @@ extension SteamWorkshopService {
         fetchBrowserItems(forceRefresh: true)
     }
 
-    func loadMoreBrowserItemsIfNeeded() {
-        guard !isLoadingMoreBrowserItems, hasMoreBrowserItems, browserState == .loaded else { return }
-        guard Date() >= browserLoadMoreRetryAfter else { return }
-
-        let browseContext = self.browseContext
-        let browserContentMode = self.browserContentMode
-        let source = self.source
-        let query = browserQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trendingWindow = self.trendingWindow
-        let themeFilter = self.themeFilter
-        let ageRatingFilter = self.ageRatingFilter
-        let resolutionFilter = self.resolutionFilter
-        let categoryFilter = self.categoryFilter
-        let page = browserNextPage
-        let expectedNavigationVersion = navigationVersion
-        let prefetchKey = browserPagePrefetchKey(
-            context: browseContext,
-            browserContentMode: browserContentMode,
-            source: source,
-            query: query,
-            trendingWindow: trendingWindow,
-            themeFilter: themeFilter,
-            ageRatingFilter: ageRatingFilter,
-            resolutionFilter: resolutionFilter,
-            categoryFilter: categoryFilter,
-            page: page
-        )
-
-        logBrowserDebug(
-            "loadMore start context=\(browseContext.title) page=\(page) query=\(query) currentCount=\(browserItems.count) hasMore=\(hasMoreBrowserItems)"
-        )
-        isLoadingMoreBrowserItems = true
-        noteUserBrowsingActivity()
-
-        Task(priority: .userInitiated) { [weak self] in
-            do {
-                let pageResult: SteamWorkshopBrowseStubPage
-                if let prefetched = await MainActor.run(body: { self?.prefetchedBrowserPages.removeValue(forKey: prefetchKey) }) {
-                    pageResult = prefetched
-                } else {
-                    pageResult = try await Self.fetchWorkshopStubPage(
-                        context: browseContext,
-                        browserContentMode: browserContentMode,
-                        source: source,
-                        query: query,
-                        trendingWindow: trendingWindow,
-                        themeFilter: themeFilter,
-                        ageRatingFilter: ageRatingFilter,
-                        resolutionFilter: resolutionFilter,
-                        categoryFilter: categoryFilter,
-                        page: page
-                    )
-                }
-                let stubs = pageResult.stubs
-                let seededItems = stubs.map(Self.seededBrowserItem)
-                guard !Task.isCancelled else { return }
-                await MainActor.run {
-                    guard let self else { return }
-                    guard self.navigationVersion == expectedNavigationVersion,
-                          self.browseContext == browseContext,
-                          self.browserContentMode == browserContentMode else { return }
-                    let existingIDs = Set(self.browserItems.map(\.id))
-                    let fallbackItems = seededItems
-                        .filter { !existingIDs.contains($0.id) }
-                    self.browserItems.append(contentsOf: fallbackItems)
-                    self.browserNextPage = page + 1
-                    self.hasMoreBrowserItems = pageResult.hasMore
-                    self.isLoadingMoreBrowserItems = false
-                    self.browserLoadMoreRetryAfter = .distantPast
-                    self.statusMessage = self.prefetchStatusMessage(for: browseContext, page: page)
-                    self.enqueueBrowserDetailHydration(
-                        stubs: stubs,
-                        context: browseContext,
-                        browserContentMode: browserContentMode,
-                        navigationVersion: expectedNavigationVersion,
-                        resetQueue: false
-                    )
-                }
-                await MainActor.run {
-                    guard let self else { return }
-                    guard self.navigationVersion == expectedNavigationVersion,
-                          self.browseContext == browseContext,
-                          self.browserContentMode == browserContentMode else { return }
-                    self.statusMessage = self.baseCardsStatusMessage(for: browseContext, count: self.browserItems.count)
-                    self.logBrowserDebug(
-                        "loadMore enqueued context=\(browseContext.title) page=\(page) stubCount=\(stubs.count) total=\(self.browserItems.count) nextPage=\(self.browserNextPage) hasMore=\(self.hasMoreBrowserItems)"
-                    )
-                    self.prefetchUpcomingBrowserPageIfNeeded(
-                        context: browseContext,
-                        browserContentMode: browserContentMode,
-                        source: source,
-                        query: query,
-                        trendingWindow: trendingWindow,
-                        themeFilter: themeFilter,
-                        ageRatingFilter: ageRatingFilter,
-                        resolutionFilter: resolutionFilter,
-                        categoryFilter: categoryFilter,
-                        page: self.browserNextPage,
-                        lookaheadDepth: 1
-                    )
-                }
-            } catch {
-                await MainActor.run {
-                    guard let self else { return }
-                    guard self.navigationVersion == expectedNavigationVersion, self.browseContext == browseContext else { return }
-                    self.isLoadingMoreBrowserItems = false
-                    self.hasMoreBrowserItems = true
-                    self.browserLoadMoreRetryAfter = Date().addingTimeInterval(Constants.loadMoreRetryCooldown)
-                    self.statusMessage = "加载下一页失败，稍后继续下滑会重试。"
-                    self.logBrowserDebug(
-                        "loadMore failed context=\(browseContext.title) page=\(page) error=\(error.localizedDescription)"
-                    )
-                }
-            }
-        }
-    }
-
     func prepareForBrowserEntry() {
         startupTask?.cancel()
         startupTask = Task(priority: .userInitiated) { [weak self] in
@@ -241,13 +124,15 @@ extension SteamWorkshopService {
         ) {
             browserItems = cached.items
             browserState = .loaded
-            hasMoreBrowserItems = cached.items.count >= pageSize
+            hasMoreBrowserItems = ageRatingFilter != .all || cached.items.count >= pageSize
             browserNextPage = max(2, (cached.items.count / pageSize) + 1)
             statusMessage = cachedStatusMessage(for: browseContext)
             logBrowserDebug(
                 "fetchBrowserItems cacheHit context=\(browseContext.title) cachedCount=\(cached.items.count) nextPage=\(browserNextPage) hasMore=\(hasMoreBrowserItems)"
             )
-            if !forceRefresh && Date().timeIntervalSince(cached.fetchedAt) < Constants.cacheTTL {
+            if !forceRefresh,
+               ageRatingFilter == .all,
+               Date().timeIntervalSince(cached.fetchedAt) < Constants.cacheTTL {
                 isRefreshingBrowserFeed = false
                 logBrowserDebug("fetchBrowserItems skipRemote context=\(browseContext.title) reason=freshCache")
                 return
@@ -279,33 +164,61 @@ extension SteamWorkshopService {
                 )
                 let stubs = pageResult.stubs
                 let seededItems = stubs.map(Self.seededBrowserItem)
+                guard let self else { return }
+                let ageFilteredItems = try await self.fetchAgeFilteredBrowserItemsIfNeeded(
+                    stubs: stubs,
+                    browserContentMode: browserContentMode
+                )
                 guard !Task.isCancelled else { return }
                 await MainActor.run {
-                    guard let self else { return }
                     guard self.navigationVersion == expectedNavigationVersion,
                           self.browseContext == browseContext,
                           self.browserContentMode == browserContentMode else { return }
                     self.isRefreshingBrowserFeed = false
-                    self.browserItems = seededItems
+                    self.browserItems = ageFilteredItems ?? seededItems
                     self.browserState = .loaded
                     self.hasMoreBrowserItems = pageResult.hasMore
                     self.browserNextPage = 2
-                    self.enqueueBrowserDetailHydration(
-                        stubs: stubs,
-                        context: browseContext,
-                        browserContentMode: browserContentMode,
-                        navigationVersion: expectedNavigationVersion,
-                        resetQueue: true
-                    )
+                    if ageFilteredItems == nil {
+                        self.enqueueBrowserDetailHydration(
+                            stubs: stubs,
+                            context: browseContext,
+                            browserContentMode: browserContentMode,
+                            navigationVersion: expectedNavigationVersion,
+                            resetQueue: true
+                        )
+                        self.statusMessage = self.browserItems.isEmpty
+                            ? self.emptyResultsStatusMessage(for: browseContext)
+                            : self.baseCardsStatusMessage(for: browseContext, count: self.browserItems.count)
+                    } else {
+                        self.statusMessage = self.browserItems.isEmpty && !pageResult.hasMore
+                            ? self.emptyResultsStatusMessage(for: browseContext)
+                            : self.completedStatusMessage(
+                                for: browseContext,
+                                totalCount: self.browserItems.count,
+                                hasMore: pageResult.hasMore
+                            )
+                        self.saveBrowserCache(
+                            context: browseContext,
+                            browserContentMode: browserContentMode,
+                            source: source,
+                            query: query,
+                            trendingWindow: trendingWindow,
+                            themeFilter: themeFilter,
+                            ageRatingFilter: ageRatingFilter,
+                            resolutionFilter: resolutionFilter,
+                            categoryFilter: categoryFilter,
+                            items: self.browserItems
+                        )
+                        self.continueAgeFilteredPaginationIfNeeded(
+                            loadedVisibleItemCount: self.browserItems.count
+                        )
+                    }
                     self.logBrowserDebug(
                         "fetchBrowserItems page1Fallback context=\(browseContext.title) stubCount=\(stubs.count) hasMore=\(pageResult.hasMore)"
                     )
-                    self.statusMessage = self.browserItems.isEmpty
-                        ? self.emptyResultsStatusMessage(for: browseContext)
-                        : self.baseCardsStatusMessage(for: browseContext, count: self.browserItems.count)
                 }
                 await MainActor.run {
-                    guard let self else { return }
                     guard self.navigationVersion == expectedNavigationVersion,
                           self.browseContext == browseContext,
                           self.browserContentMode == browserContentMode else { return }
@@ -738,7 +651,7 @@ extension SteamWorkshopService {
         let summaryText = stub.summary?.trimmingCharacters(in: .whitespacesAndNewlines)
         let summary = summaryText?.isEmpty == false ? summaryText! : descriptionText
         let workshopType = preferredTag(in: tags, matching: SteamWorkshopBrowserContentMode.allCases.map(\.requiredTagValue))
-        let ageRating = preferredTag(in: tags, matching: SteamWorkshopAgeRatingFilter.allCases.map(\.rawValue))
+        let ageRating = preferredTag(in: tags, matching: SteamWorkshopAgeRatingFilter.ratingTagValues)
         let category = preferredTag(in: tags, matching: SteamWorkshopCategoryFilter.allCases.dropFirst().map(\.rawValue))
         let resolution = tags.first(where: isResolutionTag)
         let genre = tags.first(where: { tag in
